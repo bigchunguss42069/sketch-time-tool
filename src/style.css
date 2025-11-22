@@ -82,6 +82,8 @@ body {
 .sidebar-header-text {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  align-items: flex-start; /* main title & pill stay left */
 }
 
 .sidebar-title {
@@ -120,7 +122,7 @@ body {
 .day-button {
   width: 100%;
   border: none;
-  border-radius: 999px;
+  border-radius: 15px;
   padding: 9px 12px;
   margin-top: 6px;
   background: transparent;
@@ -213,4 +215,269 @@ body {
 
 .day-content li + li {
   margin-top: 4px;
+}
+
+
+/* Day name + date in one row */
+
+.day-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.day-date {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* layout for < KW XX > */
+.week-control {
+  display: inline-flex;
+  align-items: center;  /* center KW + arrows in its own mini-row */
+  gap: 4px;
+
+  /* make the whole block ~5% bigger */
+  transform: scale(1.30);
+  transform-origin: center;
+}
+
+/* KW badge itself */
+.week-label {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  color: #e0f2fe;
+
+  line-height: 1;              /* NEW: keeps text vertically centered */
+  display: inline-flex;        /* NEW: treat it like a flex item */
+  align-items: center;         /* NEW: center text inside pill */
+ 
+}
+
+/* arrow buttons on each side */
+.week-arrow {
+  border: none;
+  padding: 2px 6px;           /* NEW: add vertical padding like the pill */
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 0.9rem;
+  cursor: pointer;
+  line-height: 1;             /* NEW: no extra line height */
+  display: flex;              /* NEW: flex container */
+  align-items: center;        /* NEW: center the arrow glyph vertically */
+  justify-content: center;    /* NEW: center horizontally too */
+
+ position: relative;
+  top: -3px;   /* ⬅ nudge arrow slightly up */
+
+  transform: scale(1.50);
+  transform-origin: center;
+}
+
+.week-arrow:hover {
+  color: #bae6fd;
+
+}
+
+
+
+/* ----- Weekday content card layout ----- */
+
+.day-section-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* Flags (Tagesstatus) */
+
+.day-flags {
+  margin-bottom: 12px;
+}
+
+.flags-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.flag-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-size: 0.75rem;
+}
+
+.flag-item input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+}
+
+/* Kommissions-Bereich */
+
+.kom-section {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kom-card {
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kom-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.kom-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  flex: 1;
+}
+
+.kom-label span {
+  margin-bottom: 2px;
+}
+
+.kom-input {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--text);
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+.kom-input::placeholder {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.kom-remove-btn {
+  border: none;
+  border-radius: 999px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(156, 163, 175, 0.9);
+  cursor: pointer;
+  font-size: 0.85rem;
+  position: relative;
+  top: 9px;
+}
+
+.kom-remove-btn:hover {
+  background: rgba(30, 64, 175, 0.4);
+  color: #e5e7eb;
+}
+
+/* Stunden-Optionen grid (3 Spalten × 2 Reihen für 6 Optionen) */
+
+.kom-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kom-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+}
+
+.kom-option-label {
+  color: var(--muted);
+}
+
+.hours-input {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.9);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.hours-input::placeholder {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+/* Add-Kom.Nummer button */
+
+.kom-add-wrapper {
+  margin-top: 4px;
+}
+
+.kom-add-btn {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px dashed rgba(148, 163, 184, 0.7);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.kom-add-btn:hover {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+
+/* Header row inside the content card:
+   left = day title, right = total hours */
+.main-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* remove extra gap now that the row handles spacing */
+#dayTitle {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
+/* total hours block on the right */
+.day-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 0.8rem;
+}
+
+.day-total-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+#dayTotal {
+  font-weight: 600;
+  color: var(--text);
 }
