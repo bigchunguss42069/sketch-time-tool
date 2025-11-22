@@ -1,84 +1,129 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <title>Wochenplan</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>time-tool</title>
   </head>
+  <body>
+    <div id="app">
+      <!-- Sidebar / Wochenplan -->
+      <aside class="sidebar">
+        <details class="sidebar-group" open>
+          <summary class="sidebar-header">
+            <div class="sidebar-header-text">
+              <span class="sidebar-title">Wochenplan</span>
+              <span class="sidebar-pill">Montag – Freitag</span>
+            </div>
+            <span class="chevron"></span>
+          </summary>
 
-       <h1>Time Tool</h1>
+          <div class="sidebar-body">
+            <button
+              class="day-button active"
+              data-day="montag"
+              data-title="Montag – Wochenstart"
+            >
+              <span class="day-name">Montag</span>
+              <span class="day-desc">Akutelles Datum</span>
+            </button>
 
-<!-- Accordion Start -->
-<div class="accordion">
+            <button
+              class="day-button"
+              data-day="dienstag"
+              data-title="Dienstag – Deep Work"
+            >
+              <span class="day-name">Dienstag</span>
+              <span class="day-desc">Aktuelles Datum</span>
+            </button>
 
-<!-- Montag  -->
-  <article>
-    <input id="article1" type="radio" name="articles" checked>
-    <label for="article1">
-       <h2>Montag</h2>
-    </label>
+            <button
+              class="day-button"
+              data-day="mittwoch"
+              data-title="Mittwoch – Team &amp; Meetings"
+            >
+              <span class="day-name">Mittwoch</span>
+              <span class="day-desc">Aktuelles Datum</span>
+            </button>
 
-       <div>Test</div>
+            <button
+              class="day-button"
+              data-day="donnerstag"
+              data-title="Donnerstag – Projektarbeit"
+            >
+              <span class="day-name">Donnerstag</span>
+              <span class="day-desc">Aktuelles Datum</span>
+            </button>
 
-</article>
+            <button
+              class="day-button"
+              data-day="freitag"
+              data-title="Freitag – Review &amp; Planung"
+            >
+              <span class="day-name">Freitag</span>
+              <span class="day-desc">Aktuelles Datum</span>
+            </button>
+          </div>
+        </details>
+      </aside>
 
-<!-- Dienstag  -->
-  <article>
-    <input id="article2" type="radio" name="articles">
-    <label for="article2">
-       <h2>Dienstag</h2>
-    </label>
+      <!-- Main content -->
+      <main class="main">
+        <h1 id="dayTitle">Montag – Wochenstart</h1>
 
-       <div>Test</div>
+        <section class="day-content active" id="montag">
+          <p><strong>Fokus:</strong> Überblick bekommen &amp; Prioritäten setzen.</p>
+          <ul>
+            <li>Wöchentliche To-do-Liste erstellen.</li>
+            <li>Kalender &amp; Meetings für die Woche checken.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+            <li>Top 3 Aufgaben für heute definieren.</li>
+          </ul>
+        </section>
 
-</article>
+        <section class="day-content" id="dienstag">
+          <p><strong>Fokus:</strong> Konzentrierte Arbeit ohne Ablenkung.</p>
+          <ul>
+            <li>2–3 Deep-Work-Blöcke à 60–90 Minuten.</li>
+            <li>Notifications aus, Fokusmodus an.</li>
+            <li>Nur ein großes Thema pro Block bearbeiten.</li>
+          </ul>
+        </section>
 
-<!-- Mittwoch -->
-  <article>
-    <input id="article3" type="radio" name="articles">
-    <label for="article3">
-       <h2>Mittwoch</h2>
-    </label>
+        <section class="day-content" id="mittwoch">
+          <p><strong>Fokus:</strong> Abstimmung &amp; Kommunikation.</p>
+          <ul>
+            <li>Wöchentliches Team-Check-in.</li>
+            <li>Offene Punkte &amp; Blocker klären.</li>
+            <li>Aktionspunkte aus Meetings direkt notieren.</li>
+          </ul>
+        </section>
 
-       <div>Test</div>
+        <section class="day-content" id="donnerstag">
+          <p><strong>Fokus:</strong> Fortschritt in wichtigen Projekten.</p>
+          <ul>
+            <li>Projektstatus aktualisieren.</li>
+            <li>Ein größeres Teilziel fertigstellen.</li>
+            <li>Optional: kurze Status-Mail ans Team.</li>
+          </ul>
+        </section>
 
-</article>
+        <section class="day-content" id="freitag">
+          <p><strong>Fokus:</strong> Rückblick &amp; entspannt ins Wochenende.</p>
+          <ul>
+            <li>Wochenerfolge notieren („Done“-Liste).</li>
+            <li>Offene Aufgaben in die nächste Woche schieben.</li>
+            <li>Kurzer Ausblick: Ziele für nächste Woche grob planen.</li>
+          </ul>
+        </section>
 
-<!-- Doonnerstag  -->
-  <article>
-    <input id="article4" type="radio" name="articles">
-    <label for="article4">
-       <h2>Donnerstag</h2>
-    </label>
+      </main>
+    </div>
 
-       <div>Test</div>
-
-</article>
-
-
-<!-- Freitag  -->
-  <article>
-    <input id="article5" type="radio" name="articles">
-    <label for="article5">
-       <h2>Montag</h2>
-    </label>
-
-       <div>Test</div>
-
-</article>
-
-
-
-
-
-
-<!-- Accordion Endpoint -->
-</div>
-
-
-
-<!-- Link for Js -->
-<script type="module" src="src/main.js"></script>
-
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
