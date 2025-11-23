@@ -481,3 +481,58 @@ body {
   font-weight: 600;
   color: var(--text);
 }
+
+/* Views (Wochenplan / Pikett / Dashboard / Dokumente) */
+.app-view {
+  display: none;
+}
+
+.app-view.active {
+  display: block;
+}
+
+/* Top navigation bar */
+.top-nav {
+  display: flex;             /* shrink to fit pills */
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px auto 12px;           /* ⬅ center horizontally */
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
+}
+
+
+/* Individual nav tabs */
+.top-nav-tab {
+  flex: 1;                           /* each tab takes equal width */
+  text-align: center;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s ease,
+    box-shadow 0.18s ease;
+}
+
+/* keep your active style as before */
+.top-nav-tab.active {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.9),
+    rgba(56, 189, 248, 0.9)
+  );
+  color: #0b1120;
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.65);
+  transform: translateY(-1px);
+}
