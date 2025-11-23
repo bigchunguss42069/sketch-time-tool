@@ -1,5 +1,7 @@
 import './style.css';
 
+// --- DOM references (common) --- //
+
 const dayButtons = document.querySelectorAll('.day-button');
 const daySections = document.querySelectorAll('.day-content');
 const titleEl = document.getElementById('dayTitle');
@@ -9,13 +11,19 @@ const weekPrevBtn = document.getElementById('weekPrev');
 const weekNextBtn = document.getElementById('weekNext');
 const dayTotalEl = document.getElementById('dayTotal');
 
-const STORAGE_KEY = 'wochenplan-v1'; // NEW: key for localStorage
+const STORAGE_KEY = 'wochenplan-v1';
 
-const topNavTabs = document.querySelectorAll('.top-nav-tab'); // NEW
-const appViews = document.querySelectorAll('.app-view');      // NEW
+const topNavTabs = document.querySelectorAll('.top-nav-tab');
+const appViews = document.querySelectorAll('.app-view');
 
+const pikettAddBtn = document.getElementById('pikettAddBtn');
+const PIKETT_STORAGE_KEY = 'pikett-v1';
+const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
+const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
+const pikettMonthNextBtn = document.getElementById('pikettMonthNext');
+const pikettMonthTotalEl = document.getElementById('pikettMonthTotal');
 
-
+// --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
 topNavTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -32,12 +40,12 @@ topNavTabs.forEach((tab) => {
   });
 });
 
-
+// --- Wochenplan state + storage --- //
 
 let weekOffset = 0; // 0 = current week, -1 = previous, +1 = next, etc.
-let currentDayId = 'montag'; // active weekday ("montag", "dienstag", ...)
+let currentDayId = 'montag'; // active weekday
 
-// shared mapping for offsets and later date calculations
+// mapping weekday -> offset from Monday
 const DAY_OFFSETS = {
   montag: 0,
   dienstag: 1,
@@ -49,8 +57,6 @@ const DAY_OFFSETS = {
 // In-memory store: dateKey -> { flags: {...}, entries: [...] }
 const dayStore = {}; // e.g. { "2025-11-25": { flags: { sick: true, ... }, entries: [...] } }
 
-
-
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -58,7 +64,6 @@ function loadFromStorage() {
 
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      // copy into our existing dayStore object
       Object.assign(dayStore, parsed);
     }
   } catch (err) {
@@ -75,29 +80,371 @@ function saveToStorage() {
   }
 }
 
+// --- Pikett localStorage helpers --- //
 
+function loadPikettStore() {
+  const raw = localStorage.getItem(PIKETT_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
+function savePikettStore() {
+  localStorage.setItem(PIKETT_STORAGE_KEY, JSON.stringify(pikettStore));
+}
 
+// Create a new empty Pikett-Einsatz entry (default date = today)
+function createEmptyPikettEntry() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const today = `${yyyy}-${mm}-${dd}`;
 
+  return {
+    date: today,
+    komNr: '',
+    hours: 0,
+    note: '',
+  };
+}
 
-// --- Date helpers --- //
+// Global store for Pikett entries
+let pikettStore = loadPikettStore();
 
-// Get Monday of the current week (ISO: Monday = first day)
+// 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat
+let pikettMonthOffset = 0;
+
+// Info über den aktuell ausgewählten Pikett-Monat
+function getCurrentPikettMonthInfo() {
+  const today = new Date();
+
+  const base = new Date(today.getFullYear(), today.getMonth(), 1);
+  base.setMonth(base.getMonth() + pikettMonthOffset);
+
+  const year = base.getFullYear();
+  const monthIndex = base.getMonth(); // 0–11
+
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 1);
+
+  const label = base.toLocaleString('de-DE', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return {
+    year,
+    monthIndex,
+    start,
+    end,
+    label,
+  };
+}
+
+// Pikett-Liste für aktuellen Monat rendern
+function renderPikettList() {
+  const listEl = document.getElementById('pikettList');
+  if (!listEl) return;
+
+  const info = getCurrentPikettMonthInfo();
+
+  // Monatstitel aktualisieren
+  if (pikettMonthLabelEl) {
+    const text =
+      info.label.charAt(0).toUpperCase() + info.label.slice(1);
+    pikettMonthLabelEl.textContent = text;
+  }
+
+  listEl.innerHTML = '';
+
+  const monthEntries = [];
+
+  pikettStore.forEach((entry, index) => {
+    if (!entry.date) return;
+
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return;
+
+    const y = d.getFullYear();
+    const m = d.getMonth();
+
+    if (y !== info.year || m !== info.monthIndex) return;
+
+    monthEntries.push({ entry, index, dateObj: d });
+  });
+
+  // Keine Einträge im Monat → Hinweis + 0,0 h
+  if (monthEntries.length === 0) {
+    if (pikettMonthTotalEl) {
+      pikettMonthTotalEl.textContent = '0,0 h';
+    }
+
+    const emptyCard = document.createElement('div');
+    emptyCard.className = 'pikett-card';
+    emptyCard.textContent =
+      'Noch keine Pikett-Einsätze in diesem Monat erfasst.';
+    listEl.appendChild(emptyCard);
+
+    return;
+  }
+
+  // Sortieren nach Datum (aufsteigend)
+  monthEntries.sort((a, b) => a.dateObj - b.dateObj);
+
+  let monthTotal = 0;
+
+  monthEntries.forEach(({ entry, index }) => {
+    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours)) {
+      monthTotal += entry.hours;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'pikett-card';
+    card.dataset.index = String(index);
+
+    // Header: Date + Kom.Nummer + remove
+    const header = document.createElement('div');
+    header.className = 'pikett-card-header';
+
+    const fieldGroup = document.createElement('div');
+    fieldGroup.className = 'pikett-field-group';
+
+    // Date
+    const dateLabel = document.createElement('label');
+    dateLabel.className = 'pikett-label';
+
+    const dateSpan = document.createElement('span');
+    dateSpan.textContent = 'Datum';
+
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'pikett-date';
+    dateInput.value = entry.date || '';
+
+    dateLabel.appendChild(dateSpan);
+    dateLabel.appendChild(dateInput);
+
+    // Kom.Nummer
+    const komLabel = document.createElement('label');
+    komLabel.className = 'pikett-label';
+
+    const komSpan = document.createElement('span');
+    komSpan.textContent = 'Kom.Nummer (Anlage)';
+
+    const komInput = document.createElement('input');
+    komInput.type = 'text';
+    komInput.className = 'pikett-kom';
+    komInput.placeholder = 'z.B. 123456';
+    komInput.value = entry.komNr || '';
+
+    komLabel.appendChild(komSpan);
+    komLabel.appendChild(komInput);
+
+    fieldGroup.appendChild(dateLabel);
+    fieldGroup.appendChild(komLabel);
+
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'pikett-remove-btn';
+    removeBtn.textContent = '✕';
+
+    header.appendChild(fieldGroup);
+    header.appendChild(removeBtn);
+
+    // Body: hours + note
+    const body = document.createElement('div');
+    body.className = 'pikett-card-body';
+
+    const hoursLabel = document.createElement('label');
+    hoursLabel.className = 'pikett-label';
+
+    const hoursSpan = document.createElement('span');
+    hoursSpan.textContent = 'Pikett-Stunden';
+
+    const hoursInput = document.createElement('input');
+    hoursInput.type = 'number';
+    hoursInput.min = '0';
+    hoursInput.step = '0.25';
+    hoursInput.placeholder = '0,0';
+    hoursInput.className = 'pikett-hours';
+
+    if (
+      typeof entry.hours === 'number' &&
+      !Number.isNaN(entry.hours) &&
+      entry.hours !== 0
+    ) {
+      hoursInput.value = entry.hours.toString().replace('.', ',');
+    }
+
+    hoursLabel.appendChild(hoursSpan);
+    hoursLabel.appendChild(hoursInput);
+
+    const noteLabel = document.createElement('label');
+    noteLabel.className = 'pikett-label';
+
+    const noteSpan = document.createElement('span');
+    noteSpan.textContent = 'Notiz (optional)';
+
+    const noteInput = document.createElement('input');
+    noteInput.type = 'text';
+    noteInput.className = 'pikett-note';
+    noteInput.placeholder = 'z.B. kurze Beschreibung';
+    noteInput.value = entry.note || '';
+
+    noteLabel.appendChild(noteSpan);
+    noteLabel.appendChild(noteInput);
+
+    body.appendChild(hoursLabel);
+    body.appendChild(noteLabel);
+
+    card.appendChild(header);
+    card.appendChild(body);
+
+    listEl.appendChild(card);
+  });
+
+  // Monatstotal anzeigen
+  if (pikettMonthTotalEl) {
+    const formatted = monthTotal.toFixed(1).replace('.', ',') + ' h';
+    pikettMonthTotalEl.textContent = formatted;
+  }
+}
+
+// Nur die Monatssumme für Pikett neu berechnen, ohne neu zu rendern
+function updatePikettMonthTotal() {
+  if (!pikettMonthTotalEl) return;
+
+  const info = getCurrentPikettMonthInfo();
+  let monthTotal = 0;
+
+  pikettStore.forEach((entry) => {
+    if (!entry.date) return;
+
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return;
+
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    if (y !== info.year || m !== info.monthIndex) return;
+
+    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours)) {
+      monthTotal += entry.hours;
+    }
+  });
+
+  const formatted = monthTotal.toFixed(1).replace('.', ',') + ' h';
+  pikettMonthTotalEl.textContent = formatted;
+}
+
+// Add new Pikett-Einsatz when clicking the button
+if (pikettAddBtn) {
+  pikettAddBtn.addEventListener('click', () => {
+    pikettStore.push(createEmptyPikettEntry());
+    savePikettStore();
+    renderPikettList();
+    updatePikettMonthTotal();
+  });
+}
+
+// Update Pikett entries when the user edits fields
+document.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!target) return;
+
+  // Only care about elements inside a .pikett-card
+  const card = target.closest('.pikett-card');
+  if (!card) return;
+
+  const index = Number(card.dataset.index);
+  if (Number.isNaN(index) || !pikettStore[index]) return;
+
+  const entry = pikettStore[index];
+
+  if (target.classList.contains('pikett-date')) {
+    entry.date = target.value || '';
+  } else if (target.classList.contains('pikett-kom')) {
+    const normalized = normalizeKomNr(target.value);
+    target.value = normalized;
+    entry.komNr = normalized;
+  } else if (target.classList.contains('pikett-hours')) {
+    const raw = target.value.trim();
+    const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+    entry.hours = Number.isNaN(num) ? 0 : num;
+  } else if (target.classList.contains('pikett-note')) {
+    entry.note = target.value;
+  } else {
+    return;
+  }
+
+  savePikettStore();
+  updatePikettMonthTotal(); // nur Summe aktualisieren
+});
+
+// Remove a Pikett-Einsatz card
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!target) return;
+
+  if (target.classList.contains('pikett-remove-btn')) {
+    const card = target.closest('.pikett-card');
+    if (!card) return;
+
+    const index = Number(card.dataset.index);
+    if (Number.isNaN(index)) return;
+
+    pikettStore.splice(index, 1);
+    savePikettStore();
+    renderPikettList();
+    updatePikettMonthTotal();
+  }
+});
+
+// Pikett-Monat wechseln
+if (pikettMonthPrevBtn) {
+  pikettMonthPrevBtn.addEventListener('click', () => {
+    pikettMonthOffset -= 1;
+    renderPikettList();
+    updatePikettMonthTotal();
+  });
+}
+
+if (pikettMonthNextBtn) {
+  pikettMonthNextBtn.addEventListener('click', () => {
+    pikettMonthOffset += 1;
+    renderPikettList();
+    updatePikettMonthTotal();
+  });
+}
+
+// --- Helpers --- //
+
+// Normalize Kom.Nummer: remove all whitespace (spaces, tabs, line breaks)
+function normalizeKomNr(value) {
+  if (!value) return '';
+  return value.replace(/\s+/g, '');
+}
+
+// --- Date helpers for Wochenplan --- //
+
 function getMonday(date) {
   const d = new Date(date);
   const day = d.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const diff = day === 0 ? -6 : 1 - day; // if Sunday, go back 6, else go back (day-1)
+  const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
 }
 
-// Get ISO week number + year (for KW)
 function getISOWeekInfo(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7; // Sunday=0 → 7
+  const dayNum = d.getUTCDay() || 7;
 
-  // Set to Thursday of this week (ISO trick)
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
 
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -107,7 +454,6 @@ function getISOWeekInfo(date) {
   return { week: weekNo, year };
 }
 
-// Format date as "dd.mm.yy"
 function formatShortDate(date) {
   const dd = String(date.getDate()).padStart(2, '0');
   const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -115,7 +461,6 @@ function formatShortDate(date) {
   return `${dd}.${mm}.${yy}`;
 }
 
-// Monday of the currently selected week
 function getMondayForCurrentWeek() {
   const today = new Date();
   const baseMonday = getMonday(today);
@@ -124,7 +469,6 @@ function getMondayForCurrentWeek() {
   return monday;
 }
 
-// Get "YYYY-MM-DD" for the currently selected week + weekday
 function getCurrentDateKey() {
   const monday = getMondayForCurrentWeek();
   const offset = DAY_OFFSETS[currentDayId] ?? 0;
@@ -137,7 +481,6 @@ function getCurrentDateKey() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// Ensure we have a dayData object for a given dateKey
 function getOrCreateDayData(dateKey) {
   if (!dayStore[dateKey]) {
     dayStore[dateKey] = {
@@ -160,7 +503,6 @@ function getOrCreateDayData(dateKey) {
   return dayStore[dateKey];
 }
 
-// For now: exactly one Kom.-Eintrag pro Tag
 function createEmptyEntry() {
   return {
     komNr: '',
@@ -200,7 +542,7 @@ function renderWeekInfo() {
   }
 
   dayDateSpans.forEach((span) => {
-    const key = span.dataset.day; // "montag" etc.
+    const key = span.dataset.day;
     const offset = DAY_OFFSETS[key] ?? 0;
     const d = new Date(monday);
     d.setDate(monday.getDate() + offset);
@@ -248,7 +590,7 @@ function applyFlagsForCurrentDay() {
 
   const flagInputs = activeSection.querySelectorAll('.day-flag');
   flagInputs.forEach((input) => {
-    const key = input.dataset.flag; // "sick", "vacation", ...
+    const key = input.dataset.flag;
     input.checked = !!flags[key];
   });
 }
@@ -262,7 +604,6 @@ function applyKomForCurrentDay() {
   const dateKey = getCurrentDateKey();
   const dayData = getOrCreateDayData(dateKey);
 
-  // Ensure at least one entry exists
   if (!dayData.entries || dayData.entries.length === 0) {
     dayData.entries = [createEmptyEntry()];
   }
@@ -270,10 +611,8 @@ function applyKomForCurrentDay() {
   const komSection = activeSection.querySelector('.kom-section');
   if (!komSection) return;
 
-  // Make sure there is an add-wrapper inside THIS komSection
   let addWrapper = komSection.querySelector('.kom-add-wrapper');
   if (!addWrapper) {
-    // create one if it doesn't exist
     addWrapper = document.createElement('div');
     addWrapper.className = 'kom-add-wrapper';
     const btn = document.createElement('button');
@@ -283,12 +622,10 @@ function applyKomForCurrentDay() {
     addWrapper.appendChild(btn);
     komSection.appendChild(addWrapper);
   } else if (addWrapper.parentElement !== komSection) {
-    // if it's in the wrong place, move it into this komSection
     addWrapper.parentElement.removeChild(addWrapper);
     komSection.appendChild(addWrapper);
   }
 
-  // Remove all existing Kom-Karten
   const oldCards = komSection.querySelectorAll('.kom-card');
   oldCards.forEach((card) => card.remove());
 
@@ -299,7 +636,6 @@ function applyKomForCurrentDay() {
     card.className = 'kom-card';
     card.dataset.entryIndex = String(index);
 
-    // Header: Kom.Nummer + X
     const header = document.createElement('div');
     header.className = 'kom-card-header';
 
@@ -326,7 +662,6 @@ function applyKomForCurrentDay() {
     header.appendChild(label);
     header.appendChild(removeBtn);
 
-    // Stunden-Grid
     const grid = document.createElement('div');
     grid.className = 'kom-grid';
 
@@ -359,14 +694,11 @@ function applyKomForCurrentDay() {
     card.appendChild(header);
     card.appendChild(grid);
 
-    // SAFE insert: addWrapper is guaranteed to be in this komSection now
     komSection.insertBefore(card, addWrapper);
   });
 }
 
-
-
-// --- Global input listener: hours + Kom.Nummer --- //
+// --- Global input listener: Stunden + Kom.Nummer im Wochenplan --- //
 
 document.addEventListener('input', (event) => {
   const target = event.target;
@@ -374,6 +706,9 @@ document.addEventListener('input', (event) => {
 
   // Stunden-Felder: Gesamt aktualisieren + in Store schreiben
   if (target.classList.contains('hours-input')) {
+    // ignore if it's a Pikett hours field (we handle those in the other listener)
+    if (target.classList.contains('pikett-hours')) return;
+
     updateDayTotalFromInputs();
 
     const dateKey = getCurrentDateKey();
@@ -384,19 +719,17 @@ document.addEventListener('input', (event) => {
     const entryIndex = Number(card.dataset.entryIndex || '0');
     const entry = getOrCreateEntry(dayData, entryIndex);
 
-    const optionKey = target.dataset.option; // "option1"..."option6"
+    const optionKey = target.dataset.option;
     if (optionKey) {
       const raw = target.value.trim();
       const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
       entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
     }
 
-    if (typeof saveToStorage === 'function') {
-      saveToStorage();
-    }
+    saveToStorage();
   }
 
-  // Kom.Nummer-Eingabe: in Store schreiben
+  // Kom.Nummer-Eingabe im Wochenplan: in Store schreiben
   if (target.classList.contains('kom-input')) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
@@ -406,21 +739,22 @@ document.addEventListener('input', (event) => {
     const entryIndex = Number(card.dataset.entryIndex || '0');
     const entry = getOrCreateEntry(dayData, entryIndex);
 
-    entry.komNr = target.value.trim();
+    const normalized = normalizeKomNr(target.value);
+    target.value = normalized;
+    entry.komNr = normalized;
 
-    if (typeof saveToStorage === 'function') {
-      saveToStorage();
-    }
+    saveToStorage();
   }
 });
 
-
-
-
-// When a flag checkbox changes, update the store
+// Tages-Flags speichern
 document.addEventListener('change', (event) => {
   const target = event.target;
-  if (!target || !target.classList || !target.classList.contains('day-flag')) {
+  if (
+    !target ||
+    !target.classList ||
+    !target.classList.contains('day-flag')
+  ) {
     return;
   }
 
@@ -429,33 +763,28 @@ document.addEventListener('change', (event) => {
   const flagKey = target.dataset.flag;
   dayData.flags[flagKey] = target.checked;
 
-     saveToStorage(); // NEW
-
+  saveToStorage();
 });
 
-
-
+// Add / remove Kom cards
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!target) return;
 
-  // + Kom.Nummer hinzufügen
   if (target.classList.contains('kom-add-btn')) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
     dayData.entries.push(createEmptyEntry());
-
-    if (typeof saveToStorage === 'function') {
-      saveToStorage();
-    }
-
+    saveToStorage();
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   }
 
-  // Kom-Karte entfernen (✕)
   if (target.classList.contains('kom-remove-btn')) {
+    // ignore clicks on Pikett remove buttons (handled above)
+    if (target.classList.contains('pikett-remove-btn')) return;
+
     const card = target.closest('.kom-card');
     if (!card) return;
 
@@ -464,27 +793,16 @@ document.addEventListener('click', (event) => {
     const index = Number(card.dataset.entryIndex || '0');
 
     if (dayData.entries && dayData.entries.length > 1) {
-      // remove this entry completely
       dayData.entries.splice(index, 1);
     } else {
-      // keep at least one entry: just reset it
       dayData.entries = [createEmptyEntry()];
     }
 
-    if (typeof saveToStorage === 'function') {
-      saveToStorage();
-    }
-
+    saveToStorage();
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   }
 });
-
-
-
-
-
-
 
 // --- Week navigation buttons --- //
 
@@ -529,16 +847,13 @@ dayButtons.forEach((btn) => {
     const day = btn.dataset.day;
     const title = btn.dataset.title;
 
-    currentDayId = day; // track active weekday
+    currentDayId = day;
 
-    // Switch active button
     dayButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
 
-    // Switch visible day section
     showDay(day, title);
 
-    // Apply per-day data
     applyFlagsForCurrentDay();
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
@@ -547,8 +862,10 @@ dayButtons.forEach((btn) => {
 
 // --- Initial render --- //
 
-loadFromStorage();  
+loadFromStorage();
 renderWeekInfo();
 applyFlagsForCurrentDay();
 applyKomForCurrentDay();
 updateDayTotalFromInputs();
+renderPikettList();
+updatePikettMonthTotal();

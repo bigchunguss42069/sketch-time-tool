@@ -536,3 +536,201 @@ body {
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.65);
   transform: translateY(-1px);
 }
+
+
+/* --- Pikett Tab --- */
+
+.pikett-wrapper {
+  margin-top: 8px;
+}
+
+/* Header card at the top of the Pikett view */
+.pikett-header-card {
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  padding: 10px 12px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
+  margin-bottom: 10px;
+}
+
+.pikett-title {
+  font-size: 1.05rem;
+  margin-bottom: 4px;
+}
+
+.pikett-subtitle {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Add button row */
+.pikett-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.pikett-add-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  color: #e0f2fe;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.9);
+  transition:
+    background 0.18s ease,
+    transform 0.12s ease,
+    box-shadow 0.18s ease;
+}
+
+.pikett-add-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
+}
+
+/* List of Pikett cards */
+.pikett-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* One Pikett-Einsatz card */
+.pikett-card {
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  padding: 10px 12px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
+}
+
+/* Header: date + kom + remove */
+.pikett-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pikett-field-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+
+/* Generic label+input for Pikett */
+.pikett-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  flex: 1 1 60px;
+}
+
+.pikett-label span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.pikett-label input {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.9);
+  padding: 6px 8px;
+  color: #e5e7eb;
+  font-size: 0.85rem;
+}
+
+/* Hours input a bit narrower on small screens */
+.pikett-label input.pikett-hours {
+  max-width: 120px;
+}
+
+/* Body: hours + note */
+.pikett-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Remove button */
+.pikett-remove-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: rgba(30, 64, 175, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.8);
+  color: #e5e7eb;
+  align-self: flex-start;
+  transition:
+    background 0.18s ease,
+    transform 0.12s ease,
+    box-shadow 0.18s ease;
+    margin-top: 18px;
+}
+
+.pikett-remove-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
+}
+
+/* Top row inside Pikett header: title + month selector */
+.pikett-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pikett-month-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+.pikett-month-label {
+  font-size: 0.8rem;
+  color: #e0f2fe;
+}
+
+.pikett-month-arrow {
+  border: none;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: transparent;
+  color: #e0f2fe;
+}
+
+/* Monthly summary row */
+.pikett-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.pikett-summary-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.pikett-summary-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+}

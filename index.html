@@ -879,16 +879,67 @@
           </div>
         </div>
 
-        <!-- View 2: Pikett -->
+                <!-- View 2: Pikett -->
         <div id="view-pikett" class="app-view">
-          <div class="placeholder-card">
-            <h1 class="placeholder-title">Pikett</h1>
-            <p class="placeholder-text">
-              Hier kannst du später deine Pikett-Einsätze oder
-              Bereitschaftszeiten verwalten.
-            </p>
+          <div class="pikett-wrapper">
+            <div class="pikett-header-card">
+              <div class="pikett-header-top">
+                <h1 class="pikett-title">Pikett-Einsätze</h1>
+
+                <div class="pikett-month-control">
+                  <button
+                    id="pikettMonthPrev"
+                    class="pikett-month-arrow"
+                    type="button"
+                  >
+                    ‹
+                  </button>
+                  <span
+                    id="pikettMonthLabel"
+                    class="pikett-month-label"
+                  >
+                    <!-- Wird per JS gesetzt, z.B. "November 2025" -->
+                  </span>
+                  <button
+                    id="pikettMonthNext"
+                    class="pikett-month-arrow"
+                    type="button"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+
+              <p class="pikett-subtitle">
+                Erfasse hier Einsätze, die während deiner Pikett-Wochen
+                stattfinden (Datum, Anlage / Kom.Nummer und Pikettstunden).
+              </p>
+
+              <div class="pikett-summary-row">
+                <span class="pikett-summary-label">
+                  Pikettstunden in diesem Monat
+                </span>
+                <span
+                  id="pikettMonthTotal"
+                  class="pikett-summary-value"
+                >
+                  0,0 h
+                </span>
+              </div>
+            </div>
+
+            <div class="pikett-actions">
+              <button id="pikettAddBtn" class="pikett-add-btn">
+                + Pikett-Einsatz hinzufügen
+              </button>
+            </div>
+
+            <div id="pikettList" class="pikett-list">
+              <!-- Pikett-Karten werden hier per JS eingefügt -->
+            </div>
           </div>
         </div>
+
 
         <!-- View 3: Dashboard -->
         <div id="view-dashboard" class="app-view">
