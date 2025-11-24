@@ -53,6 +53,16 @@ const DAY_OFFSETS = {
   donnerstag: 3,
   freitag: 4,
 };
+// mapping labels for option inputs
+const OPTION_LABELS = {
+  option1: 'Montage',
+  option2: 'Demontage',
+  option3: 'Transport',
+  option4: 'Inmebreibnahme',
+  option5: 'Reinigung',
+  option6: 'Abnahme',
+};
+
 
 // In-memory store: dateKey -> { flags: {...}, entries: [...] }
 const dayStore = {}; // e.g. { "2025-11-25": { flags: { sick: true, ... }, entries: [...] } }
@@ -387,11 +397,60 @@ document.addEventListener('input', (event) => {
 });
 
 // Remove a Pikett-Einsatz card
+// Remove a Pikett-Einsatz card (mit Bestätigung)
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!target) return;
 
+  // 1. Klick auf ✕ → Bestätigungszeile anzeigen
   if (target.classList.contains('pikett-remove-btn')) {
+    const card = target.closest('.pikett-card');
+    if (!card) return;
+
+    // Wenn Karte schon im Bestätigungsmodus ist, nichts tun
+    if (card.classList.contains('pikett-confirm-mode')) {
+      return;
+    }
+
+    card.classList.add('pikett-confirm-mode');
+
+    const row = document.createElement('div');
+    row.className = 'pikett-confirm-row';
+
+    const text = document.createElement('span');
+    text.className = 'pikett-confirm-text';
+    text.textContent = 'Pikett-Einsatz wirklich löschen?';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'pikett-confirm-cancel';
+    cancelBtn.textContent = 'Abbrechen';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'pikett-confirm-delete';
+    deleteBtn.textContent = 'Löschen';
+
+    row.appendChild(text);
+    row.appendChild(cancelBtn);
+    row.appendChild(deleteBtn);
+
+    card.appendChild(row);
+  }
+
+  // Abbrechen in der Bestätigungszeile
+  if (target.classList.contains('pikett-confirm-cancel')) {
+    const card = target.closest('.pikett-card');
+    if (!card) return;
+
+    const row = card.querySelector('.pikett-confirm-row');
+    if (row) row.remove();
+
+    card.classList.remove('pikett-confirm-mode');
+  }
+
+  // Löschen in der Bestätigungszeile
+  if (target.classList.contains('pikett-confirm-delete')) {
     const card = target.closest('.pikett-card');
     if (!card) return;
 
@@ -404,6 +463,7 @@ document.addEventListener('click', (event) => {
     updatePikettMonthTotal();
   }
 });
+
 
 // Pikett-Monat wechseln
 if (pikettMonthPrevBtn) {
@@ -681,7 +741,7 @@ function applyKomForCurrentDay() {
     label.className = 'kom-label';
 
     const labelSpan = document.createElement('span');
-    labelSpan.textContent = 'Kom.Nummer';
+    labelSpan.textContent = 'Kommissions Nummer';
 
     const komInput = document.createElement('input');
     komInput.type = 'text';
@@ -710,6 +770,10 @@ function applyKomForCurrentDay() {
       const optLabel = document.createElement('span');
       optLabel.className = 'kom-option-label';
       optLabel.textContent = `Option ${idx + 1}`;
+
+      const labelText = OPTION_LABELS[key] ?? `Option ${idx + 1}`;
+      optLabel.textContent = labelText;
+
 
       const input = document.createElement('input');
       input.type = 'number';
@@ -814,17 +878,66 @@ document.addEventListener('click', (event) => {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
+    // Neue leere Kom-Eintrag anhängen
     dayData.entries.push(createEmptyEntry());
     saveToStorage();
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   }
 
-  // Kom-Karte entfernen (✕) – nur für Wochenplan, nicht Pikett
+  // ✕ auf einer Kom-Karte: inline Bestätigung einblenden (nicht für Pikett)
   if (
     target.classList.contains('kom-remove-btn') &&
     !target.classList.contains('pikett-remove-btn')
   ) {
+    const card = target.closest('.kom-card');
+    if (!card) return;
+
+    // Wenn bereits im Bestätigungsmodus → nichts tun
+    if (card.classList.contains('kom-confirm-mode')) {
+      return;
+    }
+
+    card.classList.add('kom-confirm-mode');
+
+    // Bestätigungszeile bauen
+    const row = document.createElement('div');
+    row.className = 'kom-confirm-row';
+
+    const text = document.createElement('span');
+    text.className = 'kom-confirm-text';
+    text.textContent = 'Kommission wirklich löschen?';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'kom-confirm-cancel';
+    cancelBtn.textContent = 'Abbrechen';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'kom-confirm-delete';
+    deleteBtn.textContent = 'Löschen';
+
+    row.appendChild(text);
+    row.appendChild(cancelBtn);
+    row.appendChild(deleteBtn);
+
+    card.appendChild(row);
+  }
+
+  // Klick auf "Abbrechen" in der Bestätigungszeile
+  if (target.classList.contains('kom-confirm-cancel')) {
+    const card = target.closest('.kom-card');
+    if (!card) return;
+
+    const row = card.querySelector('.kom-confirm-row');
+    if (row) row.remove();
+
+    card.classList.remove('kom-confirm-mode');
+  }
+
+  // Klick auf "Löschen" in der Bestätigungszeile
+  if (target.classList.contains('kom-confirm-delete')) {
     const card = target.closest('.kom-card');
     if (!card) return;
 
@@ -835,6 +948,7 @@ document.addEventListener('click', (event) => {
     if (dayData.entries && dayData.entries.length > 1) {
       dayData.entries.splice(index, 1);
     } else {
+      // mindestens eine Karte behalten → leeren Eintrag zurücksetzen
       dayData.entries = [createEmptyEntry()];
     }
 
@@ -843,7 +957,7 @@ document.addEventListener('click', (event) => {
     updateDayTotalFromInputs();
   }
 
-  // NEW: Verpflegungspauschale-Pills (1, 2, 3)
+  // Verpflegungspauschale-Pills (1, 2, 3) toggeln
   if (target.classList.contains('meal-pill')) {
     const activeSection = target.closest('.day-content');
     if (!activeSection || !activeSection.classList.contains('active')) {
@@ -861,7 +975,6 @@ document.addEventListener('click', (event) => {
     const key = target.dataset.meal; // "1", "2", "3"
     if (!key) return;
 
-    // toggle this one
     const current = !!dayData.mealAllowance[key];
     dayData.mealAllowance[key] = !current;
 
@@ -869,13 +982,14 @@ document.addEventListener('click', (event) => {
     applyMealAllowanceForCurrentDay();
   }
 
-  // NEW: Info-Button für Verpflegungspauschale
+  // Info-Button für Verpflegungspauschale
   if (target.classList.contains('meal-info-btn')) {
     const section = target.closest('.meal-section');
     if (!section) return;
     section.classList.toggle('open-info');
   }
 });
+
 
 
 

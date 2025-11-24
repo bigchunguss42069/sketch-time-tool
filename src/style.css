@@ -859,3 +859,75 @@ body {
   color: #dee8ff;
   border-color: rgba(107, 130, 139, 0.9);
 }
+
+/*Inline Bestätigungszeile in der Kom-Karte */
+.kom-confirm-row {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.4);
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #e5e7eb;
+}
+
+.kom-confirm-text {
+  flex: 1;
+  opacity: 0.9;
+}
+
+/* Buttons in der Bestätigungszeile */
+.kom-confirm-cancel,
+.kom-confirm-delete {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+/* Delete-Button leicht hervorgehoben */
+.kom-confirm-delete {
+  border-color: rgba(248, 113, 113, 0.8);
+  color: #fecaca;
+}
+
+/* Inline Bestätigungszeile in der Pikett-Karte */
+.pikett-confirm-row {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.4);
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #e5e7eb;
+}
+
+.pikett-confirm-text {
+  flex: 1;
+  opacity: 0.9;
+}
+
+.pikett-confirm-cancel,
+.pikett-confirm-delete {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.pikett-confirm-delete {
+  border-color: rgba(248, 113, 113, 0.8);
+  color: #fecaca;
+}
