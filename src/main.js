@@ -493,11 +493,26 @@ function getOrCreateDayData(dateKey) {
         other: false,
       },
       entries: [],
+      // NEW: Verpflegungspauschale (1=Frühstück, 2=Mittag, 3=Abend)
+      mealAllowance: {
+        '1': false,
+        '2': false,
+        '3': false,
+      },
     };
   }
 
   if (!dayStore[dateKey].entries) {
     dayStore[dateKey].entries = [];
+  }
+
+  // In case we loaded old data from localStorage without mealAllowance
+  if (!dayStore[dateKey].mealAllowance) {
+    dayStore[dateKey].mealAllowance = {
+      '1': false,
+      '2': false,
+      '3': false,
+    };
   }
 
   return dayStore[dateKey];
@@ -594,6 +609,29 @@ function applyFlagsForCurrentDay() {
     input.checked = !!flags[key];
   });
 }
+
+// --- Helper function for Meal selection --- //
+function applyMealAllowanceForCurrentDay() {
+  const activeSection = document.querySelector('.day-content.active');
+  if (!activeSection) return;
+
+  const dateKey = getCurrentDateKey();
+  const dayData = getOrCreateDayData(dateKey);
+  const mealAllowance = dayData.mealAllowance || {
+    '1': false,
+    '2': false,
+    '3': false,
+  };
+
+  const pills = activeSection.querySelectorAll('.meal-pill');
+  pills.forEach((pill) => {
+    const key = pill.dataset.meal; // "1", "2", "3"
+    if (!key) return;
+    const isOn = !!mealAllowance[key];
+    pill.classList.toggle('active', isOn);
+  });
+}
+
 
 // --- Kom.Nummer + Stunden: apply per day --- //
 
@@ -766,11 +804,12 @@ document.addEventListener('change', (event) => {
   saveToStorage();
 });
 
-// Add / remove Kom cards
+// Add / remove Kom cards + Verpflegungspauschale + info
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!target) return;
 
+  // + Kom.Nummer hinzufügen
   if (target.classList.contains('kom-add-btn')) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
@@ -781,10 +820,11 @@ document.addEventListener('click', (event) => {
     updateDayTotalFromInputs();
   }
 
-  if (target.classList.contains('kom-remove-btn')) {
-    // ignore clicks on Pikett remove buttons (handled above)
-    if (target.classList.contains('pikett-remove-btn')) return;
-
+  // Kom-Karte entfernen (✕) – nur für Wochenplan, nicht Pikett
+  if (
+    target.classList.contains('kom-remove-btn') &&
+    !target.classList.contains('pikett-remove-btn')
+  ) {
     const card = target.closest('.kom-card');
     if (!card) return;
 
@@ -802,7 +842,43 @@ document.addEventListener('click', (event) => {
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   }
+
+  // NEW: Verpflegungspauschale-Pills (1, 2, 3)
+  if (target.classList.contains('meal-pill')) {
+    const activeSection = target.closest('.day-content');
+    if (!activeSection || !activeSection.classList.contains('active')) {
+      // nur aktuell aktiver Tag reagiert
+      return;
+    }
+
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
+
+    if (!dayData.mealAllowance) {
+      dayData.mealAllowance = { '1': false, '2': false, '3': false };
+    }
+
+    const key = target.dataset.meal; // "1", "2", "3"
+    if (!key) return;
+
+    // toggle this one
+    const current = !!dayData.mealAllowance[key];
+    dayData.mealAllowance[key] = !current;
+
+    saveToStorage();
+    applyMealAllowanceForCurrentDay();
+  }
+
+  // NEW: Info-Button für Verpflegungspauschale
+  if (target.classList.contains('meal-info-btn')) {
+    const section = target.closest('.meal-section');
+    if (!section) return;
+    section.classList.toggle('open-info');
+  }
 });
+
+
+
 
 // --- Week navigation buttons --- //
 
@@ -813,6 +889,7 @@ if (weekPrevBtn) {
     weekOffset -= 1;
     renderWeekInfo();
     applyFlagsForCurrentDay();
+    applyMealAllowanceForCurrentDay();  // NEW
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   });
@@ -825,6 +902,7 @@ if (weekNextBtn) {
     weekOffset += 1;
     renderWeekInfo();
     applyFlagsForCurrentDay();
+    applyMealAllowanceForCurrentDay();  // NEW
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   });
@@ -855,6 +933,7 @@ dayButtons.forEach((btn) => {
     showDay(day, title);
 
     applyFlagsForCurrentDay();
+    applyMealAllowanceForCurrentDay();   // NEW
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   });
@@ -865,6 +944,7 @@ dayButtons.forEach((btn) => {
 loadFromStorage();
 renderWeekInfo();
 applyFlagsForCurrentDay();
+applyMealAllowanceForCurrentDay();   // NEW
 applyKomForCurrentDay();
 updateDayTotalFromInputs();
 renderPikettList();

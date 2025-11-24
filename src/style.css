@@ -60,6 +60,11 @@ body {
   background: var(--panel-soft);
   border: 1px solid rgba(148, 163, 184, 0.5);
   overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.95),
+    rgba(30, 64, 175, 0.7)
+     );
 }
 
 /* Header row you click to open/close */
@@ -87,7 +92,7 @@ body {
 }
 
 .sidebar-title {
-  font-size: 1rem;
+  font-size: 1.2rem;
   font-weight: 600;
   align-items: center;
 }
@@ -117,6 +122,12 @@ body {
 .sidebar-body {
   padding: 8px 8px 10px;
   background: rgba(15, 23, 42, 0.98);
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.95),
+    rgba(13, 22, 51, 0.7)
+  );
+   
 }
 
 .day-button {
@@ -131,16 +142,22 @@ body {
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   transition:
-    background 0.18s ease,
+    background 0.18s ease,W
     transform 0.12s ease,
     box-shadow 0.18s ease,
     color 0.18s ease;
+    background: linear-gradient(
+    135deg,
+    rgba(19, 34, 70, 0.95),
+    rgb(12, 25, 82)
+  );
+  border: 1px solid rgba(148, 163, 184, 0.5);
 }
 
 .day-button .day-name {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .day-button .day-desc {
@@ -156,12 +173,13 @@ body {
 
 .day-button.active {
   background: var(--accent-soft);
-  color: #e0f2fe;
-  box-shadow: 0 10px 28px rgba(56, 189, 248, 0.35);
+  color: #ffffff;
+  box-shadow: 0 5px 10px rgba(8, 115, 165, 0.35);
+  border: 0.5px solid rgba(255, 255, 255, 0.5);
 }
 
 .day-button.active .day-desc {
-  color: #bae6fd;
+  color: #d0e1eb;
 }
 
 /* MAIN CONTENT */
@@ -227,7 +245,7 @@ body {
 }
 
 .day-date {
-  font-size: 0.75rem;
+  font-size: 0.90rem;
   color: var(--muted);
 }
 
@@ -237,19 +255,22 @@ body {
   align-items: center;  /* center KW + arrows in its own mini-row */
   gap: 4px;
 
+  /* NEW: make the whole thing a pill */
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #020617, #0f172a);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.7);
+
   /* make the whole block ~5% bigger */
-  transform: scale(1.30);
+  transform: scale(1.2);
   transform-origin: center;
 }
 
 /* KW badge itself */
 .week-label {
   font-size: 0.75rem;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.7);
-  color: #e0f2fe;
+ 
 
   line-height: 1;              /* NEW: keeps text vertically centered */
   display: inline-flex;        /* NEW: treat it like a flex item */
@@ -290,6 +311,7 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   margin-bottom: 6px;
+  color: #e0f2fe;
 }
 
 /* Flags (Tagesstatus) */
@@ -302,6 +324,7 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+  
 }
 
 .flag-item {
@@ -327,23 +350,27 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  
 }
 
 .kom-card {
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.5);
+  border: 1px solid rgba(127, 139, 156, 0.5);
   padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: linear-gradient(135deg, #05131b, #0f0e41);
+  color: #eeeff3;
 }
 
 .kom-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   justify-content: space-between;
+
 }
 
 .kom-label {
@@ -351,6 +378,7 @@ body {
   flex-direction: column;
   font-size: 0.8rem;
   flex: 1;
+  color: #eeeff3;
 }
 
 .kom-label span {
@@ -360,15 +388,17 @@ body {
 .kom-input {
   width: 100%;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.7);
+  border: 1px solid rgba(156, 171, 190, 0.7);
   background: rgba(15, 23, 42, 0.9);
   color: var(--text);
   padding: 4px 10px;
   font-size: 0.85rem;
+  
 }
 
+
 .kom-input::placeholder {
-  color: rgba(148, 163, 184, 0.7);
+  color: rgba(115, 127, 145, 0.7);
 }
 
 .kom-remove-btn {
@@ -380,7 +410,7 @@ body {
   align-items: center;
   justify-content: center;
   background: transparent;
-  color: rgba(156, 163, 175, 0.9);
+  color: rgba(206, 215, 231, 0.9);
   cursor: pointer;
   font-size: 0.85rem;
   position: relative;
@@ -400,15 +430,21 @@ body {
   gap: 8px;
 }
 
+
 .kom-option {
   display: flex;
   flex-direction: column;
   gap: 2px;
   font-size: 0.75rem;
 }
+ 
+
+
 
 .kom-option-label {
   color: var(--muted);
+  color: #eeeff3;
+
 }
 
 .hours-input {
@@ -457,7 +493,7 @@ body {
 
 /* remove extra gap now that the row handles spacing */
 #dayTitle {
-  font-size: 1.2rem;
+  font-size: 1.5rem;
   font-weight: 600;
   margin-bottom: 0;
 }
@@ -467,7 +503,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  font-size: 0.8rem;
+  font-size: 1rem;
 }
 
 .day-total-label {
@@ -552,6 +588,13 @@ body {
   padding: 10px 12px;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
   margin-bottom: 10px;
+  background: linear-gradient(135deg, #0b184e, #0f172a);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .pikett-title {
@@ -607,6 +650,14 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.5);
   padding: 10px 12px;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
+  background: linear-gradient(135deg, #040b29, #14254d);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+
+  box-shadow: 0 10px 25px rgba(2, 2, 22, 0.7);
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Header: date + kom + remove */
@@ -733,4 +784,78 @@ body {
 .pikett-summary-value {
   font-size: 0.9rem;
   font-weight: 600;
+}
+
+/* --- Verpflegungspauschale --- */
+
+.meal-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.4);
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.4);
+}
+
+.meal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.meal-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.meal-info-btn {
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.meal-info-box {
+  display: none; /* hidden by default */
+  font-size: 0.75rem;
+  color: #cbd5f5;
+  background: rgba(14, 26, 54, 0.9);
+    background: linear-gradient(135deg, #2f373b, #100f42);
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+/* when .meal-section has .open-info, show the box */
+.meal-section.open-info .meal-info-box {
+  display: block;
+}
+
+.meal-pill-row {
+  display: flex;
+  gap: 6px;
+}
+
+.meal-pill {
+  flex: 0 0 auto;
+  min-width: 32px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(167, 167, 170, 0.7);
+  background: rgba(9, 17, 34, 0.9);
+  color: #c0c0c0;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Active (selected) pill */
+.meal-pill.active {
+  background: linear-gradient(135deg, #6498b3, #171661);
+  color: #dee8ff;
+  border-color: rgba(107, 130, 139, 0.9);
 }
