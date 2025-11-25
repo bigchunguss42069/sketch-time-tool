@@ -97,11 +97,17 @@ function loadPikettStore() {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Ensure old entries also have isOvertime3
+    return parsed.map((entry) => ({
+      ...entry,
+      isOvertime3: !!entry.isOvertime3,
+    }));
   } catch {
     return [];
   }
 }
+
 
 function savePikettStore() {
   localStorage.setItem(PIKETT_STORAGE_KEY, JSON.stringify(pikettStore));
@@ -120,6 +126,7 @@ function createEmptyPikettEntry() {
     komNr: '',
     hours: 0,
     note: '',
+    isOvertime3: false,
   };
 }
 
@@ -313,6 +320,58 @@ function renderPikettList() {
     body.appendChild(hoursLabel);
     body.appendChild(noteLabel);
 
+        // --- NEW: Überzeit 3 (150%) toggle section ---
+    const overtimeSection = document.createElement('div');
+    overtimeSection.className = 'pikett-overtime3-section';
+
+    // Header with title + info button
+    const overtimeHeader = document.createElement('div');
+    overtimeHeader.className = 'pikett-overtime3-header';
+
+    const overtimeTitle = document.createElement('span');
+    overtimeTitle.className = 'pikett-overtime3-title';
+    overtimeTitle.textContent = 'Überzeit 3 (150%)';
+
+    const overtimeInfoBtn = document.createElement('button');
+    overtimeInfoBtn.type = 'button';
+    overtimeInfoBtn.className = 'pikett-overtime3-info-btn';
+    overtimeInfoBtn.setAttribute('aria-label', 'Info Überzeit 3');
+    overtimeInfoBtn.textContent = 'i';
+
+    overtimeHeader.appendChild(overtimeTitle);
+    overtimeHeader.appendChild(overtimeInfoBtn);
+
+    // Info box (collapsed by default, opened via CSS class on the card)
+    const overtimeInfoBox = document.createElement('div');
+    overtimeInfoBox.className = 'pikett-overtime3-info-box';
+    overtimeInfoBox.innerHTML = `
+      <p><strong>Wochenendarbeit ohne Pikett-Dienst:</strong></p>
+      <p>Aktiviere diese Option nur, wenn du am Wochenende gearbeitet hast, ohne offizielle Pikett-Woche.</p>
+    `;
+
+    // Checkbox toggle
+    const overtimeToggle = document.createElement('label');
+    overtimeToggle.className = 'pikett-overtime3-toggle';
+
+    const overtimeCheckbox = document.createElement('input');
+    overtimeCheckbox.type = 'checkbox';
+    overtimeCheckbox.className = 'pikett-overtime3-checkbox';
+    overtimeCheckbox.checked = !!entry.isOvertime3;
+
+    const overtimeText = document.createElement('span');
+    overtimeText.textContent =
+      'Dieser Einsatz ist Wochenendarbeit ohne Pikett (Überzeit 3 – 150%)';
+
+    overtimeToggle.appendChild(overtimeCheckbox);
+    overtimeToggle.appendChild(overtimeText);
+
+    overtimeSection.appendChild(overtimeHeader);
+    overtimeSection.appendChild(overtimeInfoBox);
+    overtimeSection.appendChild(overtimeToggle);
+
+    body.appendChild(overtimeSection);
+
+
     card.appendChild(header);
     card.appendChild(body);
 
@@ -396,13 +455,42 @@ document.addEventListener('input', (event) => {
   updatePikettMonthTotal(); // nur Summe aktualisieren
 });
 
-// Remove a Pikett-Einsatz card
+// --- NEW: handle Überzeit 3 checkbox on Pikett cards --- //
+document.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!target) return;
+
+  if (!target.classList || !target.classList.contains('pikett-overtime3-checkbox')) {
+    return;
+  }
+
+  const card = target.closest('.pikett-card');
+  if (!card) return;
+
+  const index = Number(card.dataset.index);
+  if (Number.isNaN(index) || !pikettStore[index]) return;
+
+  pikettStore[index].isOvertime3 = target.checked;
+  savePikettStore();
+  // no need to re-render; checkbox already shows current state
+});
+
+
 // Remove a Pikett-Einsatz card (mit Bestätigung)
+// + Info-Toggle für Überzeit 3
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!target) return;
 
-  // 1. Klick auf ✕ → Bestätigungszeile anzeigen
+  // 1) Info-Button "i" für Überzeit 3 toggeln
+  if (target.classList.contains('pikett-overtime3-info-btn')) {
+    const card = target.closest('.pikett-card');
+    if (!card) return;
+    card.classList.toggle('open-overtime3-info');
+    return; // fertig, nicht weiter runterlaufen
+  }
+
+  // 2) Klick auf ✕ → Bestätigungszeile anzeigen
   if (target.classList.contains('pikett-remove-btn')) {
     const card = target.closest('.pikett-card');
     if (!card) return;
@@ -436,9 +524,10 @@ document.addEventListener('click', (event) => {
     row.appendChild(deleteBtn);
 
     card.appendChild(row);
+    return;
   }
 
-  // Abbrechen in der Bestätigungszeile
+  // 3) Abbrechen in der Bestätigungszeile
   if (target.classList.contains('pikett-confirm-cancel')) {
     const card = target.closest('.pikett-card');
     if (!card) return;
@@ -447,9 +536,10 @@ document.addEventListener('click', (event) => {
     if (row) row.remove();
 
     card.classList.remove('pikett-confirm-mode');
+    return;
   }
 
-  // Löschen in der Bestätigungszeile
+  // 4) Löschen in der Bestätigungszeile
   if (target.classList.contains('pikett-confirm-delete')) {
     const card = target.closest('.pikett-card');
     if (!card) return;
@@ -463,6 +553,7 @@ document.addEventListener('click', (event) => {
     updatePikettMonthTotal();
   }
 });
+
 
 
 // Pikett-Monat wechseln
@@ -542,40 +633,58 @@ function getCurrentDateKey() {
 }
 
 function getOrCreateDayData(dateKey) {
-  if (!dayStore[dateKey]) {
-    dayStore[dateKey] = {
-      flags: {
-        sick: false,
-        vacation: false,
-        training: false,
-        homeOffice: false,
-        travelDay: false,
-        other: false,
-      },
-      entries: [],
-      // NEW: Verpflegungspauschale (1=Frühstück, 2=Mittag, 3=Abend)
-      mealAllowance: {
-        '1': false,
-        '2': false,
-        '3': false,
-      },
+  let data = dayStore[dateKey];
+
+  if (!data) {
+    data = {};
+    dayStore[dateKey] = data;
+  }
+
+  // Flags: nur noch Ferien + Schmutzzulage
+  if (!data.flags) {
+    data.flags = {};
+  }
+  if (typeof data.flags.ferien !== 'boolean') {
+    data.flags.ferien = false;
+  }
+  if (typeof data.flags.schmutzzulage !== 'boolean') {
+    data.flags.schmutzzulage = false;
+  }
+
+  // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
+  if (!data.dayHours) {
+    data.dayHours = {
+      schulung: 0,
+      sitzungKurs: 0,
+      arztKrank: 0,
     };
+  } else {
+    if (typeof data.dayHours.schulung !== 'number') {
+      data.dayHours.schulung = 0;
+    }
+    if (typeof data.dayHours.sitzungKurs !== 'number') {
+      data.dayHours.sitzungKurs = 0;
+    }
+    if (typeof data.dayHours.arztKrank !== 'number') {
+      data.dayHours.arztKrank = 0;
+    }
   }
 
-  if (!dayStore[dateKey].entries) {
-    dayStore[dateKey].entries = [];
+  // Kom-Einträge
+  if (!data.entries) {
+    data.entries = [];
   }
 
-  // In case we loaded old data from localStorage without mealAllowance
-  if (!dayStore[dateKey].mealAllowance) {
-    dayStore[dateKey].mealAllowance = {
+  // Verpflegungspauschale (1=Frühstück, 2=Mittag, 3=Abend)
+  if (!data.mealAllowance) {
+    data.mealAllowance = {
       '1': false,
       '2': false,
       '3': false,
     };
   }
 
-  return dayStore[dateKey];
+  return data;
 }
 
 function createEmptyEntry() {
@@ -638,8 +747,21 @@ function updateDayTotalFromInputs() {
 
   let total = 0;
 
+  // 1) Kommissions-Stunden
   const inputs = activeSection.querySelectorAll('.hours-input');
   inputs.forEach((input) => {
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const asNumber = parseFloat(raw.replace(',', '.'));
+    if (!Number.isNaN(asNumber)) {
+      total += asNumber;
+    }
+  });
+
+  // 2) Tagesbezogene Stunden (Schulung / Sitzung / Arzt)
+  const dayHourInputs = activeSection.querySelectorAll('.day-hours-input');
+  dayHourInputs.forEach((input) => {
     const raw = input.value.trim();
     if (!raw) return;
 
@@ -669,6 +791,34 @@ function applyFlagsForCurrentDay() {
     input.checked = !!flags[key];
   });
 }
+
+// --- Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank) --- //
+function applyDayHoursForCurrentDay() {
+  const activeSection = document.querySelector('.day-content.active');
+  if (!activeSection) return;
+
+  const dateKey = getCurrentDateKey();
+  const dayData = getOrCreateDayData(dateKey);
+  const dayHours = dayData.dayHours || {
+    schulung: 0,
+    sitzungKurs: 0,
+    arztKrank: 0,
+  };
+
+  const inputs = activeSection.querySelectorAll('.day-hours-input');
+  inputs.forEach((input) => {
+    const key = input.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
+    if (!key) return;
+
+    const val = dayHours[key];
+    if (typeof val === 'number' && !Number.isNaN(val) && val !== 0) {
+      input.value = val.toString().replace('.', ',');
+    } else {
+      input.value = '';
+    }
+  });
+}
+
 
 // --- Helper function for Meal selection --- //
 function applyMealAllowanceForCurrentDay() {
@@ -847,6 +997,23 @@ document.addEventListener('input', (event) => {
 
     saveToStorage();
   }
+
+    // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
+  if (target.classList.contains('day-hours-input')) {
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
+
+    const key = target.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
+    if (!key) return;
+
+    const raw = target.value.trim();
+    const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+    dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
+
+    saveToStorage();
+    updateDayTotalFromInputs();
+  }
+
 });
 
 // Tages-Flags speichern
@@ -1002,7 +1169,8 @@ if (weekPrevBtn) {
     event.stopPropagation();
     weekOffset -= 1;
     renderWeekInfo();
-    applyFlagsForCurrentDay();
+    applyFlagsForCurrentDay(); 
+    applyDayHoursForCurrentDay(); 
     applyMealAllowanceForCurrentDay();  // NEW
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
@@ -1047,6 +1215,7 @@ dayButtons.forEach((btn) => {
     showDay(day, title);
 
     applyFlagsForCurrentDay();
+    applyDayHoursForCurrentDay();
     applyMealAllowanceForCurrentDay();   // NEW
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
@@ -1058,6 +1227,7 @@ dayButtons.forEach((btn) => {
 loadFromStorage();
 renderWeekInfo();
 applyFlagsForCurrentDay();
+applyDayHoursForCurrentDay(); 
 applyMealAllowanceForCurrentDay();   // NEW
 applyKomForCurrentDay();
 updateDayTotalFromInputs();

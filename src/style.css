@@ -931,3 +931,101 @@ body {
   border-color: rgba(248, 113, 113, 0.8);
   color: #fecaca;
 }
+
+.day-hours-section {
+  margin-top: 12px;
+}
+
+.day-hours-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.day-hours-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #ffffff;
+}
+
+.day-hours-item span {
+  opacity: 0.8;
+}
+
+.day-hours-item input {
+  width: 80px;
+  text-align:left;
+  padding-left: 8px;
+  background: rgba(4, 18, 49, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  border-radius: 800px;
+}
+
+/* --- Überzeit 3 section inside Pikett cards --- */
+
+.pikett-overtime3-section {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.pikett-overtime3-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pikett-overtime3-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.pikett-overtime3-info-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: transparent;
+  font-size: 0.75rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e5e7eb;
+}
+
+.pikett-overtime3-info-box {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  background: rgba(15, 23, 42, 0.9);
+  border-radius: 10px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.2s ease, opacity 0.2s ease;
+}
+
+/* Show info box when the card has this class */
+.pikett-card.open-overtime3-info .pikett-overtime3-info-box {
+  max-height: 200px;
+  opacity: 1;
+}
+
+.pikett-overtime3-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #e5e7eb;
+}
+
+.pikett-overtime3-checkbox {
+  accent-color: #38bdf8;
+}
