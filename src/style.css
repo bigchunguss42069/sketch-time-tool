@@ -961,6 +961,7 @@ body {
   background: rgba(4, 18, 49, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.7);
   border-radius: 800px;
+  color: #ffffff;
 }
 
 /* --- Überzeit 3 section inside Pikett cards --- */
@@ -1001,7 +1002,7 @@ body {
 
 .pikett-overtime3-info-box {
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: #d4d9e4;
   background: rgba(15, 23, 42, 0.9);
   border-radius: 10px;
   padding: 6px 8px;
@@ -1016,6 +1017,11 @@ body {
 .pikett-card.open-overtime3-info .pikett-overtime3-info-box {
   max-height: 200px;
   opacity: 1;
+  background: linear-gradient(
+    135deg,
+    rgba(24, 38, 71, 0.95),
+    rgba(21, 47, 134, 0.7)
+     );
 }
 
 .pikett-overtime3-toggle {
@@ -1023,9 +1029,9 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 0.8rem;
-  color: #e5e7eb;
+  color: #7e8594;
 }
 
 .pikett-overtime3-checkbox {
-  accent-color: #38bdf8;
+  accent-color: #dd2222;
 }
