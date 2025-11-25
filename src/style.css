@@ -673,7 +673,8 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Generic label+input for Pikett */
@@ -682,7 +683,7 @@ body {
   flex-direction: column;
   gap: 2px;
   font-size: 0.8rem;
-  flex: 1 1 60px;
+  flex:1 1 60px;
 }
 
 .pikett-label span {
@@ -709,8 +710,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1px;
+ 
 }
 
+.pikett-card .pikett-label {
+  pointer-events: none;
+}
+
+.pikett-card .pikett-label span {
+  pointer-events: none;
+}
+
+.pikett-card .pikett-label input {
+  pointer-events: auto;
+}
 /* Remove button */
 .pikett-remove-btn {
   border: none;
