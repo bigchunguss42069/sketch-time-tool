@@ -663,15 +663,14 @@ body {
 /* Header: date + kom + remove */
 .pikett-card-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: flex-end;
   gap: 8px;
   margin-bottom: 8px;
 }
 
 .pikett-field-group {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
@@ -683,7 +682,8 @@ body {
   flex-direction: column;
   gap: 2px;
   font-size: 0.8rem;
-  flex:1 1 60px;
+  flex:1 1 0px;
+  min-width: 0;
 }
 
 .pikett-label span {
@@ -712,7 +712,7 @@ body {
   gap: 1px;
  
 }
-
+/* Clean click area */
 .pikett-card .pikett-label {
   pointer-events: none;
 }
@@ -734,13 +734,25 @@ body {
   background: rgba(30, 64, 175, 0.15);
   border: 1px solid rgba(148, 163, 184, 0.8);
   color: #e5e7eb;
+  margin-top: 18px;
   align-self: flex-start;
+  flex: 0 0 auto;
   transition:
     background 0.18s ease,
     transform 0.12s ease,
     box-shadow 0.18s ease;
-    margin-top: 18px;
+    
 }
+
+.pikett-date {
+  max-width: 140px;           /* With control*/
+  width: 100%;
+}
+
+.pikett-kom {
+  width: 100%;                /* takes remaining space */
+}
+
 
 .pikett-remove-btn:active {
   transform: translateY(1px);
