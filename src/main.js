@@ -23,6 +23,16 @@ const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
 const pikettMonthNextBtn = document.getElementById('pikettMonthNext');
 const pikettMonthTotalEl = document.getElementById('pikettMonthTotal');
 
+const dashboardMonthLabelEl = document.getElementById('dashboardMonthLabel');
+const dashboardMonthPrevBtn = document.getElementById('dashboardMonthPrev');
+const dashboardMonthNextBtn = document.getElementById('dashboardMonthNext');
+
+const dashTotalKomEl = document.getElementById('dashTotalKom');
+const dashTotalDayhoursEl = document.getElementById('dashTotalDayhours');
+const dashTotalPikettEl = document.getElementById('dashTotalPikett');
+const dashTotalOvertime3El = document.getElementById('dashTotalOvertime3');
+const dashTotalHoursEl = document.getElementById('dashTotalHours');
+
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
 topNavTabs.forEach((tab) => {
@@ -37,6 +47,12 @@ topNavTabs.forEach((tab) => {
     appViews.forEach((v) => {
       v.classList.toggle('active', v.id === `view-${view}`);
     });
+
+    // Wenn Dashboard aktiv wird: Monatswerte neu berechnen
+    if (view === 'dashboard') {
+      updateDashboardForCurrentMonth();
+    }
+
   });
 });
 
@@ -101,7 +117,7 @@ function loadPikettStore() {
     // Ensure old entries also have isOvertime3
     return parsed.map((entry) => ({
       ...entry,
-      isOvertime3: !!entry.isOvertime3,
+      isOvertime3: !!(entry.isOvertime3 ?? entry.overtime3),
     }));
   } catch {
     return [];
@@ -135,6 +151,11 @@ let pikettStore = loadPikettStore();
 
 // 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat
 let pikettMonthOffset = 0;
+
+// 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat (Dashboard)
+let dashboardMonthOffset = 0;
+
+
 
 // Info über den aktuell ausgewählten Pikett-Monat
 function getCurrentPikettMonthInfo() {
@@ -573,6 +594,134 @@ if (pikettMonthNextBtn) {
   });
 }
 
+// --- Dashboard month info + aggregation --- //
+function getCurrentDashboardMonthInfo() {
+  const today = new Date();
+  const base = new Date(today.getFullYear(), today.getMonth(), 1);
+  base.setMonth(base.getMonth() + dashboardMonthOffset);
+
+  const year = base.getFullYear();
+  const monthIndex = base.getMonth(); // 0–11
+
+  const label = base.toLocaleString('de-DE', {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return { year, monthIndex, label };
+}
+
+function updateDashboardForCurrentMonth() {
+  const info = getCurrentDashboardMonthInfo();
+
+  // Monatstitel aktualisieren
+  if (dashboardMonthLabelEl) {
+    const text =
+      info.label.charAt(0).toUpperCase() + info.label.slice(1);
+    dashboardMonthLabelEl.textContent = text;
+  }
+
+  let totalKom = 0;
+  let totalDayHours = 0;
+  let totalPikett = 0;
+  let totalOvertime3 = 0;
+
+  // 1) Wochenplan-Daten (dayStore) aggregieren
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey);
+    if (Number.isNaN(d.getTime())) return;
+
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    if (y !== info.year || m !== info.monthIndex) return;
+
+    // Kommissionsstunden: Summe aller option1..6
+    if (Array.isArray(dayData.entries)) {
+      dayData.entries.forEach((entry) => {
+        if (!entry || !entry.hours) return;
+        Object.values(entry.hours).forEach((val) => {
+          if (typeof val === 'number' && !Number.isNaN(val)) {
+            totalKom += val;
+          }
+        });
+      });
+    }
+
+    // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
+    if (dayData.dayHours) {
+      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
+      [schulung, sitzungKurs, arztKrank].forEach((val) => {
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          totalDayHours += val;
+        }
+      });
+    }
+  });
+
+  // 2) Pikett-Daten (Überzeit 2 + 3) aggregieren
+  pikettStore.forEach((entry) => {
+    if (!entry.date) return;
+
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return;
+
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    if (y !== info.year || m !== info.monthIndex) return;
+
+    const hours =
+      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
+        ? entry.hours
+        : 0;
+
+    if (entry.isOvertime3) {
+      totalOvertime3 += hours;
+    } else {
+      totalPikett += hours;
+    }
+  });
+
+  const totalAll = totalKom + totalDayHours + totalPikett + totalOvertime3;
+
+  // 3) Werte formatiert ins Dashboard schreiben
+  if (dashTotalKomEl) {
+    dashTotalKomEl.textContent =
+      totalKom.toFixed(1).replace('.', ',') + ' h';
+  }
+  if (dashTotalDayhoursEl) {
+    dashTotalDayhoursEl.textContent =
+      totalDayHours.toFixed(1).replace('.', ',') + ' h';
+  }
+  if (dashTotalPikettEl) {
+    dashTotalPikettEl.textContent =
+      totalPikett.toFixed(1).replace('.', ',') + ' h';
+  }
+  if (dashTotalOvertime3El) {
+    dashTotalOvertime3El.textContent =
+      totalOvertime3.toFixed(1).replace('.', ',') + ' h';
+  }
+  if (dashTotalHoursEl) {
+    dashTotalHoursEl.textContent =
+      totalAll.toFixed(1).replace('.', ',') + ' h';
+  }
+}
+
+// Dashboard-Monat wechseln
+if (dashboardMonthPrevBtn) {
+  dashboardMonthPrevBtn.addEventListener('click', () => {
+    dashboardMonthOffset -= 1;
+    updateDashboardForCurrentMonth();
+  });
+}
+
+if (dashboardMonthNextBtn) {
+  dashboardMonthNextBtn.addEventListener('click', () => {
+    dashboardMonthOffset += 1;
+    updateDashboardForCurrentMonth();
+  });
+}
+
+
 // --- Helpers --- //
 
 // Normalize Kom.Nummer: remove all whitespace (spaces, tabs, line breaks)
@@ -649,6 +798,9 @@ function getOrCreateDayData(dateKey) {
   }
   if (typeof data.flags.schmutzzulage !== 'boolean') {
     data.flags.schmutzzulage = false;
+  }
+   if (typeof data.flags.nebenauslagen !== 'boolean') {
+    data.flags.nebenauslagen = false;
   }
 
   // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
@@ -1184,7 +1336,7 @@ if (weekNextBtn) {
     weekOffset += 1;
     renderWeekInfo();
     applyFlagsForCurrentDay();
-    applyMealAllowanceForCurrentDay();  // NEW
+    applyMealAllowanceForCurrentDay();  
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   });
@@ -1216,7 +1368,7 @@ dayButtons.forEach((btn) => {
 
     applyFlagsForCurrentDay();
     applyDayHoursForCurrentDay();
-    applyMealAllowanceForCurrentDay();   // NEW
+    applyMealAllowanceForCurrentDay();   
     applyKomForCurrentDay();
     updateDayTotalFromInputs();
   });
@@ -1228,8 +1380,9 @@ loadFromStorage();
 renderWeekInfo();
 applyFlagsForCurrentDay();
 applyDayHoursForCurrentDay(); 
-applyMealAllowanceForCurrentDay();   // NEW
+applyMealAllowanceForCurrentDay();   
 applyKomForCurrentDay();
 updateDayTotalFromInputs();
 renderPikettList();
 updatePikettMonthTotal();
+updateDashboardForCurrentMonth(); 

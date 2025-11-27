@@ -109,6 +109,12 @@
                   <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
                   <span>Schmutzzulage</span>
                 </label>
+              
+
+              <label class="flag-item">
+                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
+                  <span>Nebenauslagen</span>
+                </label>
               </div>
 
               <!-- NEW: Tagesbezogene Stunden -->
@@ -231,7 +237,12 @@
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
                 <span>Schmutzzulage</span>
               </label>
-            </div>
+            
+              <label class="flag-item">
+                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
+                  <span>Nebenauslagen</span>
+                </label>
+              </div>
 
             <!-- NEW: Tagesbezogene Stunden -->
             <div class="day-hours-section">
@@ -353,6 +364,11 @@
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
                 <span>Schmutzzulage</span>
               </label>
+            
+              <label class="flag-item">
+                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
+                  <span>Nebenauslagen</span>
+                </label>
             </div>
 
             <!-- NEW: Tagesbezogene Stunden -->
@@ -474,7 +490,12 @@
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
                 <span>Schmutzzulage</span>
               </label>
-            </div>
+            
+              <label class="flag-item">
+                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
+                  <span>Nebenauslagen</span>
+                </label>
+              </div>
 
             <!-- NEW: Tagesbezogene Stunden -->
             <div class="day-hours-section">
@@ -594,7 +615,12 @@
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
                 <span>Schmutzzulage</span>
               </label>
-            </div>
+            
+              <label class="flag-item">
+                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
+                  <span>Nebenauslagen</span>
+                </label>
+              </div>
 
             <!-- NEW: Tagesbezogene Stunden -->
             <div class="day-hours-section">
@@ -726,8 +752,7 @@
           </div>
 
           <p class="pikett-subtitle">
-            Erfasse hier Einsätze, die während deiner Pikett-Wochen
-            stattfinden (Datum, Option 1 / Kommissions Nummer und Pikettstunden).
+            Erfasse hier Pikett Einsätze, und auch Wochenend Einsätze.
           </p>
 
           <div class="pikett-summary-row">
@@ -754,15 +779,81 @@
 
 
     <!-- View 3: Dashboard -->
-    <div id="view-dashboard" class="app-view">
-      <div class="placeholder-card">
-        <h1 class="placeholder-title">Dashboard</h1>
-        <p class="placeholder-text">
-          Hier kommt später dein Überblick über Stunden, Kommissions Nummern und
-          Statistiken hin.
-        </p>
+   <!-- View 3: Dashboard -->
+<div id="view-dashboard" class="app-view">
+  <div class="dashboard-wrapper">
+    <!-- Header card -->
+    <div class="dashboard-header-card">
+      <div class="dashboard-header-top">
+        <h1 class="dashboard-title">Monatsüberblick</h1>
+
+        <div class="dashboard-month-control">
+          <button
+            id="dashboardMonthPrev"
+            class="dashboard-month-arrow"
+            type="button"
+          >
+            ‹
+          </button>
+          <span
+            id="dashboardMonthLabel"
+            class="dashboard-month-label"
+          >
+            Aktueller Monat
+          </span>
+          <button
+            id="dashboardMonthNext"
+            class="dashboard-month-arrow"
+            type="button"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <p class="dashboard-subtitle">
+        Hier siehst du eine Zusammenfassung deiner Zeiten und Pauschalen pro Monat.
+        Die Werte werden später automatisch aus deinem Wochenplan und Pikett
+        berechnet.
+      </p>
+    </div>
+
+    <!-- Main dashboard card -->
+    <div class="dashboard-card">
+      <h2 class="dashboard-card-title">Arbeitszeit von diesem Monat</h2>
+
+      <div class="dashboard-metric-row">
+        <span class="metric-label">Kommissions Stunden Überzeit 1</span>
+        <span id="dashTotalKom" class="metric-value">0,0 h</span>
+      </div>
+
+      <div class="dashboard-metric-row">
+        <span class="metric-label">Pikett Stunden Überzeit 2</span>
+        <span id="dashTotalPikett" class="metric-value">0,0 h</span>
+      </div>
+
+      <div class="dashboard-metric-row">
+        <span class="metric-label">Stunden Überzeit 3</span>
+        <span id="dashTotalOvertime3" class="metric-value">0,0 h</span>
+      </div>
+
+      <div class="dashboard-metric-row">
+        <span class="metric-label">Tagesbezogene Stunden (Überzeit 1)</span>
+        <span id="dashTotalDayhours" class="metric-value">0,0 h</span>
+      </div>
+
+        <div class="dashboard-metric-separator"></div>
+
+      <div class="dashboard-metric-row total-row">
+        <span class="metric-label-total">Total Stunden Monat</span>
+        <span id="dashTotalHours" class="metric-value metric-value-total">0,0 h</span>
       </div>
     </div>
+
+    <!-- Later we can add more cards: Pauschalen, Abwesenheiten, etc. -->
+  </div>
+</div>
+
 
     <!-- View 4: Dokumente -->
     <div id="view-dokumente" class="app-view">

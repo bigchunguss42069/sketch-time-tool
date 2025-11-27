@@ -503,7 +503,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .day-total-label {
@@ -776,6 +776,9 @@ body {
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.6);
+  /* make the whole block ~5% bigger */
+  transform: scale(1);
+  transform-origin: center;
 }
 
 .pikett-month-label {
@@ -791,6 +794,7 @@ body {
   cursor: pointer;
   background: transparent;
   color: #e0f2fe;
+  
 }
 
 /* Monthly summary row */
@@ -799,11 +803,12 @@ body {
   align-items: baseline;
   justify-content: space-between;
   margin-top: 6px;
+  
 }
 
 .pikett-summary-label {
-  font-size: 0.75rem;
-  color: var(--muted);
+  font-size: 0.9rem;
+  color:rgb(231, 250, 250)
 }
 
 .pikett-summary-value {
@@ -1059,4 +1064,160 @@ body {
 
 .pikett-overtime3-checkbox {
   accent-color: #dd2222;
+}
+
+/* ==== Dashboard view ==== */
+
+.dashboard-wrapper {
+  width: 100%;
+  max-width: 600px;
+  margin: 12px auto 24px;
+  padding: 0 1px;
+}
+
+/* Header card similar to Pikett header */
+.dashboard-header-card {
+  border-radius: 18px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: radial-gradient(
+      circle at top left,
+      rgba(59, 130, 246, 0.3),
+      transparent 60%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(59, 130, 246, 0.2),
+      transparent 60%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.95),
+      rgba(15, 23, 42, 0.98)
+    );
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
+}
+
+.dashboard-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.dashboard-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* Month selector pill (similar to KW / Pikett) */
+.dashboard-month-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+
+.dashboard-month-label {
+  font-size: 0.8rem;
+  color: #e0f2fe;
+}
+
+.dashboard-month-arrow {
+  border: none;
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  background: transparent;
+  color: #e0f2fe;
+}
+
+.dashboard-month-arrow:active {
+  transform: translateY(1px);
+}
+
+/* Small subtitle text */
+.dashboard-subtitle {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+/* Main dashboard card */
+.dashboard-card {
+  margin-top: 12px;
+  border-radius: 18px;
+  padding: 12px 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.98),
+    rgba(15, 23, 42, 0.95)
+  );
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.85);
+}
+
+.dashboard-card-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #ffffff;
+}
+
+/* Each metric row: label + value right aligned */
+.dashboard-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-top: 1px solid rgba(27, 28, 31, 0.18);
+}
+
+.dashboard-metric-row:first-of-type {
+  border-top: none;
+}
+
+.metric-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding-right: 8px;
+  color: #bdbfc5;
+}
+
+.metric-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #bac2c7;
+}
+
+/* thin separator between detail rows and total */
+.dashboard-metric-separator {
+  margin: 6px 0;
+  border-top: 1px solid rgba(77, 81, 94, 0.836);
+}
+
+/* total row a bit more prominent */
+.dashboard-metric-row.total-row {
+  padding-top: 6px;
+}
+
+.metric-value-total {
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+
+.metric-label-total {
+  font-size: 1rem;
+  color: var(--muted);
+  padding-right: 8px;
+  color: #ffffff;
 }
