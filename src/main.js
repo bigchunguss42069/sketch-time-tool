@@ -33,6 +33,13 @@ const dashTotalPikettEl = document.getElementById('dashTotalPikett');
 const dashTotalOvertime3El = document.getElementById('dashTotalOvertime3');
 const dashTotalHoursEl = document.getElementById('dashTotalHours');
 
+// Dashboard: Überzeit & Vorarbeit (Jahr)
+const overtimeYearUeZ1El = document.getElementById('overtimeYearUeZ1');
+const overtimeYearUeZ2El = document.getElementById('overtimeYearUeZ2');
+const overtimeYearUeZ3El = document.getElementById('overtimeYearUeZ3');
+const overtimeYearVorarbeitEl = document.getElementById('overtimeYearVorarbeit');
+
+
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
 topNavTabs.forEach((tab) => {
@@ -51,8 +58,8 @@ topNavTabs.forEach((tab) => {
     // Wenn Dashboard aktiv wird: Monatswerte neu berechnen
     if (view === 'dashboard') {
       updateDashboardForCurrentMonth();
+      updateOvertimeYearCard();
     }
-
   });
 });
 
@@ -154,6 +161,42 @@ let pikettMonthOffset = 0;
 
 // 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat (Dashboard)
 let dashboardMonthOffset = 0;
+
+// --- Jahres-Konfiguration für Vorarbeit & (später) Startsaldi --- //
+
+// Hier kannst du später pro Jahr einstellen, wie viel Vorarbeit nötig ist,
+// und optional Startsaldi aus dem Vorjahr eintragen.
+const OVERTIME_YEAR_CONFIG = {
+  // Beispiel: für 2026 brauchen wir 39h Vorarbeit
+  2026: {
+    vorarbeitRequired: 39,
+    ueZ1CarryIn: 0, // später: Überzeit 1-Startsaldo aus Vorjahr
+    ueZ2CarryIn: 0,
+    ueZ3CarryIn: 0,
+  },
+
+  2025: {
+    vorarbeitRequired: 39,
+    ueZ1CarryIn: 0, 
+    ueZ2CarryIn: 0,
+    ueZ3CarryIn: 0,
+  },
+  // weitere Jahre kannst du einfach ergänzen:
+  // 2027: { vorarbeitRequired: 42, ueZ1CarryIn: 0, ueZ2CarryIn: 0, ueZ3CarryIn: 0 },
+};
+
+function getYearConfig(year) {
+  const cfg = OVERTIME_YEAR_CONFIG[year];
+  if (cfg) return cfg;
+  // Default: keine Vorarbeit, keine Startsaldi
+  return {
+    vorarbeitRequired: 0,
+    ueZ1CarryIn: 0,
+    ueZ2CarryIn: 0,
+    ueZ3CarryIn: 0,
+  };
+}
+
 
 
 
@@ -658,6 +701,8 @@ function updateDashboardForCurrentMonth() {
     }
   });
 
+
+
   // 2) Pikett-Daten (pikettStore) aggregieren
   pikettStore.forEach((entry) => {
     if (!entry.date) return;
@@ -679,6 +724,8 @@ function updateDashboardForCurrentMonth() {
       totalPikett += hours;
     }
   });
+
+
 
   const totalAll = totalKom + totalDayHours + totalPikett + totalOvertime3;
 
@@ -707,6 +754,144 @@ function updateDashboardForCurrentMonth() {
   // 4) Wochenstatus für diesen Monat aktualisieren
   updateDashboardWeekListForCurrentMonth();
 }
+
+function updateOvertimeYearCard() {
+  if (
+    !overtimeYearUeZ1El ||
+    !overtimeYearUeZ2El ||
+    !overtimeYearUeZ3El ||
+    !overtimeYearVorarbeitEl
+  ) {
+    return;
+  }
+
+  const info = getCurrentDashboardMonthInfo();
+  const { year, monthIndex } = info;
+
+  const yearCfg = getYearConfig(year);
+  const vorarbeitRequired = yearCfg.vorarbeitRequired || 0;
+  const ueZ1CarryIn = yearCfg.ueZ1CarryIn || 0;
+  const ueZ2CarryIn = yearCfg.ueZ2CarryIn || 0;
+  const ueZ3CarryIn = yearCfg.ueZ3CarryIn || 0;
+
+  // Zeitraum: 1.1. bis Ende des aktuell ausgewählten Monats
+  const yearStart = new Date(year, 0, 1);              // inkl.
+  const periodEnd = new Date(year, monthIndex + 1, 1); // exkl.
+
+  // Wichtiger Punkt: Soll pro Tag ist 8,0 h
+  const DAILY_SOLL = 8.0;
+
+  let ueZ1Positive = 0; // Stunden über 8,0 h
+  let ueZ1Negative = 0; // Stunden unter 8,0 h (negativ)
+  let ueZ2RawYear = 0;  // Pikett (ÜZ2)
+  let ueZ3RawYear = 0;  // Pikett (ÜZ3)
+
+  // --- 1) ÜZ1 aus dayStore: Kommissionsstunden + Tagesbezogene Stunden --- //
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey);
+    if (Number.isNaN(d.getTime())) return;
+    if (d < yearStart || d >= periodEnd) return;
+
+    // Tages-Total für ÜZ1: Kommission + Tagesstunden
+    let dayTotalUeZ1 = 0;
+
+    // Kommissionsstunden
+    if (Array.isArray(dayData.entries)) {
+      dayData.entries.forEach((entry) => {
+        if (!entry || !entry.hours) return;
+        Object.values(entry.hours).forEach((val) => {
+          if (typeof val === 'number' && !Number.isNaN(val)) {
+            dayTotalUeZ1 += val;
+          }
+        });
+      });
+    }
+
+    // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
+    if (dayData.dayHours) {
+      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
+      [schulung, sitzungKurs, arztKrank].forEach((val) => {
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          dayTotalUeZ1 += val;
+        }
+      });
+    }
+
+    // Wenn für diesen Tag überhaupt keine Stunden erfasst sind,
+    // ignorieren wir ihn für die Jahres-Überzeit.
+    if (dayTotalUeZ1 === 0) {
+      return; // "continue" für diese Schleifen-Iteration
+    }
+
+    // Abweichung vom Soll 8,0 h
+    const diff = dayTotalUeZ1 - DAILY_SOLL;
+
+    if (diff > 0) {
+      // z.B. 10,0 h → +2,0 h ÜZ1
+      ueZ1Positive += diff;
+    } else if (diff < 0) {
+      // z.B. 7,5 h → -0,5 h ÜZ1
+      ueZ1Negative += diff;
+    }
+    // diff == 0 → genau 8,0 h → nichts
+  });
+
+  // --- 2) ÜZ2 & ÜZ3 aus pikettStore --- //
+  pikettStore.forEach((entry) => {
+    if (!entry.date) return;
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return;
+    if (d < yearStart || d >= periodEnd) return;
+
+    const hours =
+      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
+        ? entry.hours
+        : 0;
+
+    if (entry.isOvertime3) {
+      ueZ3RawYear += hours;
+    } else {
+      ueZ2RawYear += hours;
+    }
+  });
+
+  // --- 3) Saldi & Vorarbeit --- //
+
+  // Netto-Abweichung vom 8h-Soll im Jahr (kann negativ sein)
+  const ueZ1Net = ueZ1Positive + ueZ1Negative;
+
+  // Vorarbeit-Erfüllung: nur positive Stunden zählen, gedeckelt auf vorarbeitRequired
+  const vorarbeitFilled = Math.min(
+    Math.max(ueZ1Positive, 0),
+    vorarbeitRequired
+  );
+
+  // WICHTIG:
+  // Positive Stunden werden zuerst für Vorarbeit "verbraucht".
+  // Erst darüber hinaus entsteht ein echter ÜZ1-Saldo.
+  //
+  // -> ÜZ1-Saldo = Startsaldo + Nettoabweichung - Vorarbeit, die gefüllt wurde
+  // Beispiel:
+  //   ueZ1Positive = 10, ueZ1Negative = 0, vorarbeitRequired = 39
+  //   ueZ1Net = 10, vorarbeitFilled = 10 → ÜZ1Saldo = 10 - 10 = 0
+  //
+  const ueZ1Saldo = ueZ1CarryIn + ueZ1Net - vorarbeitFilled;
+
+  // ÜZ2/ÜZ3-Saldi
+  const ueZ2Saldo = ueZ2CarryIn + ueZ2RawYear;
+  const ueZ3Saldo = ueZ3CarryIn + ueZ3RawYear;
+
+  // --- 4) Anzeige --- //
+  overtimeYearUeZ1El.textContent = formatHoursSigned(ueZ1Saldo);
+  overtimeYearUeZ2El.textContent = formatHours(ueZ2Saldo);
+  overtimeYearUeZ3El.textContent = formatHours(ueZ3Saldo);
+
+  const vorarbeitFilledText = formatHours(vorarbeitFilled);
+  const vorarbeitRequiredText = formatHours(vorarbeitRequired);
+  overtimeYearVorarbeitEl.textContent =
+    `${vorarbeitFilledText} / ${vorarbeitRequiredText}`;
+}
+
 
 /**
  * Baut die KW-Übersicht für den aktuell gewählten Dashboard-Monat.
@@ -928,6 +1113,7 @@ if (dashboardMonthPrevBtn) {
   dashboardMonthPrevBtn.addEventListener('click', () => {
     dashboardMonthOffset -= 1;
     updateDashboardForCurrentMonth();
+    updateOvertimeYearCard();
   });
 }
 
@@ -935,6 +1121,7 @@ if (dashboardMonthNextBtn) {
   dashboardMonthNextBtn.addEventListener('click', () => {
     dashboardMonthOffset += 1;
     updateDashboardForCurrentMonth();
+    updateOvertimeYearCard();
   });
 }
 
@@ -983,6 +1170,22 @@ function formatDateKey(date) {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatHours(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return rounded.toFixed(1).replace('.', ',') + ' h';
+}
+
+function formatHoursSigned(value) {
+  const rounded = Math.round(value * 10) / 10;
+  if (rounded > 0) {
+    return '+' + rounded.toFixed(1).replace('.', ',') + ' h';
+  }
+  if (rounded < 0) {
+    return '-' + Math.abs(rounded).toFixed(1).replace('.', ',') + ' h';
+  }
+  return '0,0 h';
 }
 
 
@@ -1610,4 +1813,6 @@ applyKomForCurrentDay();
 updateDayTotalFromInputs();
 renderPikettList();
 updatePikettMonthTotal();
-updateDashboardForCurrentMonth(); 
+updateDashboardForCurrentMonth();
+updateOvertimeYearCard();
+
