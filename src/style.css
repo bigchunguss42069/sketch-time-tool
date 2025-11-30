@@ -1221,3 +1221,52 @@ body {
   padding-right: 8px;
   color: #ffffff;
 }
+
+/* --- Wochenstatus im Dashboard --- */
+
+.dashboard-week-list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+/* One row per KW */
+.dashboard-week-row {
+  display: grid;
+  grid-template-columns: 2fr auto auto;
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-top: 1px solid rgba(27, 28, 31, 0.18);
+}
+
+.dashboard-week-row:first-child {
+  border-top: none;
+}
+
+.dashboard-week-label {
+  color: #e5e7eb;
+}
+
+.dashboard-week-status {
+  font-size: 0.75rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+.dashboard-week-total {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: right;
+  color: #d1d5db;
+}
+
+.dashboard-week-status.status-ok {
+  color: #4ade80; /* grün */
+}
+
+.dashboard-week-status.status-missing {
+  color: #f97373; /* rötlich */
+}

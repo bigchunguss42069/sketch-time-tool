@@ -647,7 +647,7 @@ function updateDashboardForCurrentMonth() {
       });
     }
 
-    // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
+    // Tagesbezogene Stunden (Schulung / Sitzung / Arzt)
     if (dayData.dayHours) {
       const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
       [schulung, sitzungKurs, arztKrank].forEach((val) => {
@@ -658,10 +658,9 @@ function updateDashboardForCurrentMonth() {
     }
   });
 
-  // 2) Pikett-Daten (Überzeit 2 + 3) aggregieren
+  // 2) Pikett-Daten (pikettStore) aggregieren
   pikettStore.forEach((entry) => {
     if (!entry.date) return;
-
     const d = new Date(entry.date);
     if (Number.isNaN(d.getTime())) return;
 
@@ -683,7 +682,7 @@ function updateDashboardForCurrentMonth() {
 
   const totalAll = totalKom + totalDayHours + totalPikett + totalOvertime3;
 
-  // 3) Werte formatiert ins Dashboard schreiben
+  // 3) Werte in das Dashboard schreiben
   if (dashTotalKomEl) {
     dashTotalKomEl.textContent =
       totalKom.toFixed(1).replace('.', ',') + ' h';
@@ -704,7 +703,225 @@ function updateDashboardForCurrentMonth() {
     dashTotalHoursEl.textContent =
       totalAll.toFixed(1).replace('.', ',') + ' h';
   }
+
+  // 4) Wochenstatus für diesen Monat aktualisieren
+  updateDashboardWeekListForCurrentMonth();
 }
+
+/**
+ * Baut die KW-Übersicht für den aktuell gewählten Dashboard-Monat.
+ * Zeigt pro KW:
+ *  - Datumsbereich, Anzahl Arbeitstage im Monat
+ *  - ob alle Mo–Fr im Monat erfasst sind
+ *  - Total Stunden (Kom + Tagesstunden + Pikett) in diesem Monat
+ */
+function updateDashboardWeekListForCurrentMonth() {
+  const weekListEl = document.getElementById('dashboardWeekList');
+  if (!weekListEl) return;
+
+  const info = getCurrentDashboardMonthInfo();
+  const { year, monthIndex } = info;
+
+  // weekKey -> { year, week, minDate, maxDate, totalHours, days: { dateKey -> { weekday, hasData, hours } } }
+  const weekMap = {};
+
+  // 1) Skeleton für alle Kalendertage in diesem Monat bauen
+  let cursor = new Date(year, monthIndex, 1);
+  while (cursor.getMonth() === monthIndex) {
+    const d = new Date(cursor);
+    const { week, year: weekYear } = getISOWeekInfo(d);
+    const weekKey = `${weekYear}-W${week}`;
+
+    if (!weekMap[weekKey]) {
+      weekMap[weekKey] = {
+        year: weekYear,
+        week,
+        minDate: null,
+        maxDate: null,
+        totalHours: 0,
+        days: {}, // dateKey -> { weekday, hasData, hours }
+      };
+    }
+
+    const w = weekMap[weekKey];
+
+    if (!w.minDate || d < w.minDate) w.minDate = new Date(d);
+    if (!w.maxDate || d > w.maxDate) w.maxDate = new Date(d);
+
+    const dateKey = formatDateKey(d);
+    const weekday = d.getDay(); // 0=So .. 6=Sa
+
+    if (!w.days[dateKey]) {
+      w.days[dateKey] = {
+        weekday,
+        hasData: false,
+        hours: 0,
+      };
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // 2) Wochenplan (dayStore) drüberlegen
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey);
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) return;
+
+    const { week, year: weekYear } = getISOWeekInfo(d);
+    const weekKey = `${weekYear}-W${week}`;
+    const w = weekMap[weekKey];
+    if (!w) return;
+
+    let nonPikettHours = 0;
+
+    // Kommissionsstunden
+    if (Array.isArray(dayData.entries)) {
+      dayData.entries.forEach((entry) => {
+        if (!entry || !entry.hours) return;
+        Object.values(entry.hours).forEach((val) => {
+          if (typeof val === 'number' && !Number.isNaN(val)) {
+            nonPikettHours += val;
+          }
+        });
+      });
+    }
+
+    // Tagesbezogene Stunden
+    if (dayData.dayHours) {
+      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
+      [schulung, sitzungKurs, arztKrank].forEach((val) => {
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          nonPikettHours += val;
+        }
+      });
+    }
+
+      const flags = dayData.flags || {};
+      const isFerien = !!flags.ferien;
+
+      // "Erfasst" = es gibt Stunden (Kommission + Tagesstunden)
+      // oder der Tag ist als Ferien markiert.
+      // Schmutzzulage, Nebenauslagen, Verpflegung allein zählen NICHT
+      // als "erfasst" für die Lückenanzeige.
+      const hasDayData = nonPikettHours > 0 || isFerien;
+
+      const dayInfo = w.days[dateKey];
+      if (!dayInfo) return;
+
+      dayInfo.hours += nonPikettHours;
+      if (hasDayData) {
+        dayInfo.hasData = true;
+      }
+
+      w.totalHours += nonPikettHours;
+
+  });
+
+  // 3) Pikett (pikettStore) drüberlegen
+  pikettStore.forEach((entry) => {
+    if (!entry.date) return;
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) return;
+
+    const { week, year: weekYear } = getISOWeekInfo(d);
+    const weekKey = `${weekYear}-W${week}`;
+    const w = weekMap[weekKey];
+    if (!w) return;
+
+    const hours =
+      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
+        ? entry.hours
+        : 0;
+
+    const dateKey = entry.date;
+    const dayInfo = w.days[dateKey];
+    if (dayInfo) {
+      dayInfo.hours += hours;
+      if (hours > 0) {
+        dayInfo.hasData = true;
+      }
+    }
+
+    w.totalHours += hours;
+  });
+
+  // 4) Rendern
+  weekListEl.innerHTML = '';
+
+  const weeks = Object.values(weekMap).sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    return a.week - b.week;
+  });
+
+  if (weeks.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'dashboard-week-row';
+    empty.textContent = 'Keine Einträge in diesem Monat.';
+    weekListEl.appendChild(empty);
+    return;
+  }
+
+  weeks.forEach((w) => {
+    const row = document.createElement('div');
+    row.className = 'dashboard-week-row';
+
+    // Label: KW xx · 01.11.–05.11. (X Tage)
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'dashboard-week-label';
+
+    const fromStr = w.minDate ? formatShortDate(w.minDate) : '';
+    const toStr = w.maxDate ? formatShortDate(w.maxDate) : '';
+
+    const workDaysInMonth = Object.values(w.days).filter(
+      (di) => di.weekday >= 1 && di.weekday <= 5
+    ).length;
+
+    labelSpan.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${workDaysInMonth} Tage)`;
+
+    // Status: Vollständig / fehlende Einträge (nur Mo–Fr in diesem Monat)
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'dashboard-week-status';
+
+    const expectedDates = Object.entries(w.days)
+      .filter(([, di]) => di.weekday >= 1 && di.weekday <= 5)
+      .map(([dateKey]) => dateKey);
+
+    let missingCount = 0;
+    expectedDates.forEach((dateKey) => {
+      const di = w.days[dateKey];
+      if (!di || !di.hasData) {
+        missingCount += 1;
+      }
+    });
+
+    if (expectedDates.length === 0) {
+      statusSpan.textContent = 'Nur Wochenende im Monat';
+    } else if (missingCount === 0) {
+      statusSpan.textContent = 'Alle Tage erfasst';
+      statusSpan.classList.add('status-ok');
+    } else {
+      statusSpan.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
+      statusSpan.classList.add('status-missing');
+    }
+
+    // Total Stunden (Kom + Tagesstunden + Pikett) nur für diesen Monat
+    const totalSpan = document.createElement('span');
+    totalSpan.className = 'dashboard-week-total';
+    totalSpan.textContent =
+      w.totalHours.toFixed(1).replace('.', ',') + ' h';
+
+    row.appendChild(labelSpan);
+    row.appendChild(statusSpan);
+    row.appendChild(totalSpan);
+
+    weekListEl.appendChild(row);
+  });
+}
+
+    
+  
 
 // Dashboard-Monat wechseln
 if (dashboardMonthPrevBtn) {
@@ -760,6 +977,14 @@ function formatShortDate(date) {
   const yy = String(date.getFullYear()).slice(-2);
   return `${dd}.${mm}.${yy}`;
 }
+
+function formatDateKey(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 
 function getMondayForCurrentWeek() {
   const today = new Date();

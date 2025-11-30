@@ -107,7 +107,7 @@
 
                 <label class="flag-item">
                   <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                  <span>Schmutzzulage</span>
+                  <span>Schmutzzulagen</span>
                 </label>
               
 
@@ -235,7 +235,7 @@
 
               <label class="flag-item">
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulage</span>
+                <span>Schmutzzulagen</span>
               </label>
             
               <label class="flag-item">
@@ -362,7 +362,7 @@
 
               <label class="flag-item">
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulage</span>
+                <span>Schmutzzulagen</span>
               </label>
             
               <label class="flag-item">
@@ -488,7 +488,7 @@
 
               <label class="flag-item">
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulage</span>
+                <span>Schmutzzulagen</span>
               </label>
             
               <label class="flag-item">
@@ -613,7 +613,7 @@
 
               <label class="flag-item">
                 <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulage</span>
+                <span>Schmutzzulagen</span>
               </label>
             
               <label class="flag-item">
@@ -818,6 +818,9 @@
       </p>
     </div>
 
+
+
+
     <!-- Main dashboard card -->
     <div class="dashboard-card">
       <h2 class="dashboard-card-title">Arbeitszeit von diesem Monat</h2>
@@ -849,6 +852,16 @@
         <span id="dashTotalHours" class="metric-value metric-value-total">0,0 h</span>
       </div>
     </div>
+
+        <!-- Wochenstatus card -->
+    <div class="dashboard-card">
+      <h2 class="dashboard-card-title">Wochenstatus in diesem Monat</h2>
+
+      <div id="dashboardWeekList" class="dashboard-week-list">
+        <!-- Zeilen werden per JS eingefügt -->
+      </div>
+    </div>
+
 
     <!-- Later we can add more cards: Pauschalen, Abwesenheiten, etc. -->
   </div>
