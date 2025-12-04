@@ -82,8 +82,8 @@ const OPTION_LABELS = {
   option2: 'Demontage',
   option3: 'Transport',
   option4: 'Inmebreibnahme',
-  option5: 'Reinigung',
-  option6: 'Abnahme',
+  option5: 'Abnahme',
+  option6: 'Werk',
 };
 
 
@@ -765,34 +765,26 @@ function updateOvertimeYearCard() {
     return;
   }
 
-  const info = getCurrentDashboardMonthInfo();
-  const { year, monthIndex } = info;
+  const { year: selectedYear } = getCurrentDashboardMonthInfo();
 
-  const yearCfg = getYearConfig(year);
-  const vorarbeitRequired = yearCfg.vorarbeitRequired || 0;
-  const ueZ1CarryIn = yearCfg.ueZ1CarryIn || 0;
-  const ueZ2CarryIn = yearCfg.ueZ2CarryIn || 0;
-  const ueZ3CarryIn = yearCfg.ueZ3CarryIn || 0;
-
-  // Zeitraum: 1.1. bis Ende des aktuell ausgewählten Monats
-  const yearStart = new Date(year, 0, 1);              // inkl.
-  const periodEnd = new Date(year, monthIndex + 1, 1); // exkl.
-
-  // Wichtiger Punkt: Soll pro Tag ist 8,0 h
+  // Soll-Arbeitszeit pro ERFASSTEM Tag
   const DAILY_SOLL = 8.0;
 
-  let ueZ1Positive = 0; // Stunden über 8,0 h
-  let ueZ1Negative = 0; // Stunden unter 8,0 h (negativ)
-  let ueZ2RawYear = 0;  // Pikett (ÜZ2)
-  let ueZ3RawYear = 0;  // Pikett (ÜZ3)
+  // pro Jahr:
+  //  - net  = Summe aller (Tagesstunden - 8,0 h)
+  //  - positive = nur die positiven Anteile (für Vorarbeit)
+  const perYear = {}; // year -> { net, positive }
 
   // --- 1) ÜZ1 aus dayStore: Kommissionsstunden + Tagesbezogene Stunden --- //
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
     const d = new Date(dateKey);
     if (Number.isNaN(d.getTime())) return;
-    if (d < yearStart || d >= periodEnd) return;
 
-    // Tages-Total für ÜZ1: Kommission + Tagesstunden
+    const y = d.getFullYear();
+    if (!perYear[y]) {
+      perYear[y] = { net: 0, positive: 0 };
+    }
+
     let dayTotalUeZ1 = 0;
 
     // Kommissionsstunden
@@ -817,80 +809,103 @@ function updateOvertimeYearCard() {
       });
     }
 
-    // Wenn für diesen Tag überhaupt keine Stunden erfasst sind,
-    // ignorieren wir ihn für die Jahres-Überzeit.
-    if (dayTotalUeZ1 === 0) {
-      return; // "continue" für diese Schleifen-Iteration
+    const flags = dayData.flags || {};
+    const hasAnyFlag = Object.values(flags).some(Boolean);
+    const hasAnyHours = dayTotalUeZ1 > 0;
+
+    // Komplett leerer Tag (keine Stunden, keine Flags) → ignorieren
+    if (!hasAnyHours && !hasAnyFlag) {
+      return;
     }
 
-    // Abweichung vom Soll 8,0 h
-    const diff = dayTotalUeZ1 - DAILY_SOLL;
+    // Nur wenn Stunden erfasst wurden, mit 8,0h vergleichen.
+    // Reine Ferien-Tage ohne Stunden → diff = 0.
+    let diff = 0;
+    if (hasAnyHours) {
+      diff = dayTotalUeZ1 - DAILY_SOLL;
+    }
 
+    perYear[y].net += diff;
     if (diff > 0) {
-      // z.B. 10,0 h → +2,0 h ÜZ1
-      ueZ1Positive += diff;
-    } else if (diff < 0) {
-      // z.B. 7,5 h → -0,5 h ÜZ1
-      ueZ1Negative += diff;
+      perYear[y].positive += diff;
     }
-    // diff == 0 → genau 8,0 h → nichts
   });
 
-  // --- 2) ÜZ2 & ÜZ3 aus pikettStore --- //
+  // --- 2) Gesamt-ÜZ1 über alle Jahre + tatsächlich erfüllte Vorarbeit --- //
+  let ueZ1NetAllYears = 0;
+  let vorarbeitFilledAllYears = 0;
+
+  Object.keys(perYear).forEach((yearStr) => {
+    const y = Number(yearStr);
+    if (Number.isNaN(y)) return;
+
+    const data = perYear[y];
+    if (!data) return;
+
+    ueZ1NetAllYears += data.net;
+
+    const cfg = getYearConfig(y) || {};
+    const req = cfg.vorarbeitRequired || 0;
+    const filledYear = Math.min(Math.max(data.positive, 0), req);
+    vorarbeitFilledAllYears += filledYear;
+  });
+
+  // Config für das aktuell ausgewählte Jahr:
+  const cfgSelected = getYearConfig(selectedYear) || {};
+  const vorarbeitRequiredSelected = cfgSelected.vorarbeitRequired || 0;
+  const ueZ1CarryIn = cfgSelected.ueZ1CarryIn || 0;
+  const ueZ2CarryIn = cfgSelected.ueZ2CarryIn || 0;
+  const ueZ3CarryIn = cfgSelected.ueZ3CarryIn || 0;
+
+  // ÜZ1-Lebenszeit-Saldo:
+  // Startsaldo + Netto-Überzeit ALLER Jahre - tatsächlich gefüllte Vorarbeit (ALLER Jahre)
+  const ueZ1Saldo =
+    ueZ1CarryIn + ueZ1NetAllYears - vorarbeitFilledAllYears;
+
+  // --- 3) ÜZ2 & ÜZ3 aus pikettStore (lebenszeit) --- //
+  let ueZ2RawAllYears = 0;
+  let ueZ3RawAllYears = 0;
+
   pikettStore.forEach((entry) => {
     if (!entry.date) return;
     const d = new Date(entry.date);
     if (Number.isNaN(d.getTime())) return;
-    if (d < yearStart || d >= periodEnd) return;
 
     const hours =
       typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
         ? entry.hours
         : 0;
+    if (hours <= 0) return;
 
     if (entry.isOvertime3) {
-      ueZ3RawYear += hours;
+      ueZ3RawAllYears += hours;
     } else {
-      ueZ2RawYear += hours;
+      ueZ2RawAllYears += hours;
     }
   });
 
-  // --- 3) Saldi & Vorarbeit --- //
+  const ueZ2Saldo = ueZ2CarryIn + ueZ2RawAllYears;
+  const ueZ3Saldo = ueZ3CarryIn + ueZ3RawAllYears;
 
-  // Netto-Abweichung vom 8h-Soll im Jahr (kann negativ sein)
-  const ueZ1Net = ueZ1Positive + ueZ1Negative;
-
-  // Vorarbeit-Erfüllung: nur positive Stunden zählen, gedeckelt auf vorarbeitRequired
-  const vorarbeitFilled = Math.min(
-    Math.max(ueZ1Positive, 0),
-    vorarbeitRequired
+  // --- 4) Vorarbeit-Fortschritt nur für das aktuell ausgewählte Jahr --- //
+  const selectedYearData = perYear[selectedYear] || { positive: 0 };
+  const posSelected = selectedYearData.positive || 0;
+  const vorarbeitFilledSelected = Math.min(
+    Math.max(posSelected, 0),
+    vorarbeitRequiredSelected
   );
 
-  // WICHTIG:
-  // Positive Stunden werden zuerst für Vorarbeit "verbraucht".
-  // Erst darüber hinaus entsteht ein echter ÜZ1-Saldo.
-  //
-  // -> ÜZ1-Saldo = Startsaldo + Nettoabweichung - Vorarbeit, die gefüllt wurde
-  // Beispiel:
-  //   ueZ1Positive = 10, ueZ1Negative = 0, vorarbeitRequired = 39
-  //   ueZ1Net = 10, vorarbeitFilled = 10 → ÜZ1Saldo = 10 - 10 = 0
-  //
-  const ueZ1Saldo = ueZ1CarryIn + ueZ1Net - vorarbeitFilled;
-
-  // ÜZ2/ÜZ3-Saldi
-  const ueZ2Saldo = ueZ2CarryIn + ueZ2RawYear;
-  const ueZ3Saldo = ueZ3CarryIn + ueZ3RawYear;
-
-  // --- 4) Anzeige --- //
+  // --- 5) Anzeige im Dashboard --- //
   overtimeYearUeZ1El.textContent = formatHoursSigned(ueZ1Saldo);
   overtimeYearUeZ2El.textContent = formatHours(ueZ2Saldo);
   overtimeYearUeZ3El.textContent = formatHours(ueZ3Saldo);
 
-  const vorarbeitFilledText = formatHours(vorarbeitFilled);
-  const vorarbeitRequiredText = formatHours(vorarbeitRequired);
+  const vorarbeitFilledText = formatHours(vorarbeitFilledSelected);
+  const vorarbeitRequiredText = formatHours(vorarbeitRequiredSelected);
   overtimeYearVorarbeitEl.textContent =
     `${vorarbeitFilledText} / ${vorarbeitRequiredText}`;
 }
+
 
 
 /**
