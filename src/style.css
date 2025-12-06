@@ -415,6 +415,7 @@ body {
   font-size: 0.85rem;
   position: relative;
   top: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.8);
 }
 
 .kom-remove-btn:hover {
@@ -469,7 +470,7 @@ body {
 .kom-add-btn {
   width: 100%;
   border-radius: 999px;
-  border: 1px dashed rgba(148, 163, 184, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.7);
   background: transparent;
   color: var(--text);
   padding: 6px 10px;
@@ -733,10 +734,11 @@ body {
   cursor: pointer;
   background: rgba(30, 64, 175, 0.15);
   border: 1px solid rgba(148, 163, 184, 0.8);
-  color: #e5e7eb;
+  color: #f4f4f5;
   margin-top: 18px;
   align-self: flex-start;
   flex: 0 0 auto;
+  top: -9000px;
   transition:
     background 0.18s ease,
     transform 0.12s ease,
@@ -822,8 +824,8 @@ body {
   margin-top: 10px;
   padding-top: 8px;
   padding-bottom: 8px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.4);
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.4);
+  border-top: 1px solid rgba(148, 163, 184, 0.4);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
 }
 
 .meal-header {
@@ -894,7 +896,7 @@ body {
 .kom-confirm-row {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.4);
+  border-top: 1px solid rgba(148, 163, 184, 0.4);
 
   display: flex;
   align-items: center;
@@ -931,8 +933,7 @@ body {
 .pikett-confirm-row {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px dashed rgba(148, 163, 184, 0.4);
-
+  border-top: 1px solid rgba(148, 163, 184, 0.4);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1279,3 +1280,160 @@ color: #dee8ff;
 .dashboard-week-status.status-missing {
   color: #f97373; /* rötlich */
 }
+
+/* --- Spezialbuchungen (Regie / Fehler) --- */
+
+.special-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.special-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.special-empty-text {
+  font-size: 0.78rem;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+/* Eine Spezialbuchung-Zeile / -Karte */
+.special-row {
+  border-radius: 12px;
+  background: linear-gradient(135deg, #10173b, #0b1120);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.special-row-top {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.special-row-middle,
+.special-row-bottom {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.special-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.special-field span {
+  color: var(--muted);
+}
+
+.special-field input,
+.special-field select {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(17, 27, 51, 0.9);
+  color: #e5e7eb;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+
+.special-field.small {
+  max-width: 110px;
+}
+
+/* Typ-Auswahl */
+.special-type-select {
+  width: 100%;
+}
+
+/* Stundenfeld */
+.special-hours-input {
+  text-align: left;
+}
+
+/* Remove-Button für Spezialbuchung */
+.special-remove-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: rgba(30, 64, 175, 0.15);
+  border: 1px solid rgba(168, 183, 202, 0.8);
+  color: #f1f1f1;
+  margin-top: 17px;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  
+  transition:
+    background 0.18s ease,
+    transform 0.12s ease,
+    box-shadow 0.18s ease;
+  
+}
+
+.special-remove-btn:active {
+  transform: translateY(1px);
+}
+
+/* Add-Button */
+.special-add-btn {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 161, 190, 0.7);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.special-add-btn:hover {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.special-confirm-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.special-confirm-text {
+  margin-right: auto;
+  font-size: 0.7rem;
+  color:#e5e7eb;
+}
+
+.special-confirm-cancel,
+.special-confirm-delete {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  cursor: pointer;
+
+}
+
+.special-confirm-delete {
+  border-color: rgba(248, 113, 113, 0.8);
+  color: #fecaca;
+}
+

@@ -128,7 +128,7 @@
                   </label>
 
                   <label class="day-hours-item">
-                    <span>Sitzung/Kurs/Werk</span>
+                    <span>Sitzung/Kurs/Schulung</span>
                     <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
                       placeholder="0,0" />
                   </label>
@@ -220,6 +220,21 @@
                   </div>
                 </div>
               </div>
+              <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
+              <div class="special-section">
+                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
+
+                <div class="special-list">
+                  <!-- Wird per JS gefüllt -->
+                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
+                </div>
+
+                <button type="button" class="special-add-btn">
+                  + Spezialbuchung hinzufügen
+                </button>
+              </div>
+
+
         
         </section>
 
@@ -255,7 +270,7 @@
                 </label>
 
                 <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Werk</span>
+                  <span>Sitzung/Kurs/Schulung</span>
                   <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
                     placeholder="0,0" />
                 </label>
@@ -382,7 +397,7 @@
                 </label>
 
                 <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Werk</span>
+                  <span>Sitzung/Kurs/Schulung</span>
                   <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
                     placeholder="0,0" />
                 </label>
@@ -508,7 +523,7 @@
                 </label>
 
                 <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Werk</span>
+                  <span>Sitzung/Kurs/Schulung</span>
                   <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
                     placeholder="0,0" />
                 </label>
@@ -633,7 +648,7 @@
                 </label>
 
                 <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Werk</span>
+                  <span>Sitzung/Kurs/Schulung</span>
                   <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
                     placeholder="0,0" />
                 </label>
@@ -885,6 +900,14 @@
         <span id="overtimeYearVorarbeit" class="metric-value">0,0 h / 0,0 h</span>
       </div>
     </div>
+
+    <div class="dashboard-card">
+  <h3>Ferien (Jahr)</h3>
+  <div class="overtime-year-row">
+    <span>Ferien Tage:</span>
+    <span id="vacationYearSummary">0,0 / 21,0 Tage</span>
+  </div>
+</div>
 
     <!-- Later we can add more cards: Pauschalen, Abwesenheiten, etc. -->
   </div>

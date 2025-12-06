@@ -39,6 +39,9 @@ const overtimeYearUeZ2El = document.getElementById('overtimeYearUeZ2');
 const overtimeYearUeZ3El = document.getElementById('overtimeYearUeZ3');
 const overtimeYearVorarbeitEl = document.getElementById('overtimeYearVorarbeit');
 
+// Ferien-Card (Jahr)
+const vacationYearSummaryEl = document.getElementById('vacationYearSummary');
+
 
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
@@ -173,6 +176,8 @@ const OVERTIME_YEAR_CONFIG = {
     ueZ1CarryIn: 0, // später: Überzeit 1-Startsaldo aus Vorjahr
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
+    vacationDaysPerYear: 21,
+    vacationCarryInDays: 0,
   },
 
   2025: {
@@ -180,6 +185,8 @@ const OVERTIME_YEAR_CONFIG = {
     ueZ1CarryIn: 0, 
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
+    vacationDaysPerYear: 21,
+    vacationCarryInDays: 0,
   },
   // weitere Jahre kannst du einfach ergänzen:
   // 2027: { vorarbeitRequired: 42, ueZ1CarryIn: 0, ueZ2CarryIn: 0, ueZ3CarryIn: 0 },
@@ -194,6 +201,8 @@ function getYearConfig(year) {
     ueZ1CarryIn: 0,
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
+    vacationDaysPerYear: 21,
+    vacationCarryInDays: 0,
   };
 }
 
@@ -506,10 +515,17 @@ document.addEventListener('input', (event) => {
     target.value = normalized;
     entry.komNr = normalized;
   } else if (target.classList.contains('pikett-hours')) {
-    const raw = target.value.trim();
-    const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-    entry.hours = Number.isNaN(num) ? 0 : num;
-  } else if (target.classList.contains('pikett-note')) {
+  const raw = target.value.trim();
+  let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+  if (!Number.isNaN(num)) {
+    num = roundToQuarter(num);
+  }
+  entry.hours = Number.isNaN(num) ? 0 : num;
+
+  
+  }
+
+   else if (target.classList.contains('pikett-note')) {
     entry.note = target.value;
   } else {
     return;
@@ -699,6 +715,18 @@ function updateDashboardForCurrentMonth() {
         }
       });
     }
+
+        // Spezialbuchungen (Regie / Fehler) zählen als ÜZ1 / Kommissionsstunden
+    if (Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries.forEach((special) => {
+        if (!special) return;
+        const val = special.hours;
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          totalKom += val;
+        }
+      });
+    }
+
   });
 
 
@@ -767,15 +795,16 @@ function updateOvertimeYearCard() {
 
   const { year: selectedYear } = getCurrentDashboardMonthInfo();
 
-  // Soll-Arbeitszeit pro ERFASSTEM Tag
+  // Soll-Arbeitszeit pro Tag
   const DAILY_SOLL = 8.0;
 
   // pro Jahr:
-  //  - net  = Summe aller (Tagesstunden - 8,0 h)
-  //  - positive = nur die positiven Anteile (für Vorarbeit)
-  const perYear = {}; // year -> { net, positive }
+  // - net       = Summe aller (Über-/Unterstunden nach Ferienregel)
+  // - positive  = nur positive Anteile (für Vorarbeit)
+  const perYear = {};        // year -> { net, positive }
+  const vacationPerYear = {}; // year -> verwendete Ferienstunden
 
-  // --- 1) ÜZ1 aus dayStore: Kommissionsstunden + Tagesbezogene Stunden --- //
+  // --- 1) ÜZ1 + Ferien aus dayStore berechnen --- //
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
     const d = new Date(dateKey);
     if (Number.isNaN(d.getTime())) return;
@@ -784,8 +813,22 @@ function updateOvertimeYearCard() {
     if (!perYear[y]) {
       perYear[y] = { net: 0, positive: 0 };
     }
+    if (typeof vacationPerYear[y] !== 'number') {
+      vacationPerYear[y] = 0;
+    }
 
     let dayTotalUeZ1 = 0;
+
+    // Spezialbuchungen (Regie/Fehler)
+    if (Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries.forEach((special) => {
+        if (!special) return;
+        const val = special.hours;
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          dayTotalUeZ1 += val;
+        }
+      });
+    }
 
     // Kommissionsstunden
     if (Array.isArray(dayData.entries)) {
@@ -810,19 +853,40 @@ function updateOvertimeYearCard() {
     }
 
     const flags = dayData.flags || {};
-    const hasAnyFlag = Object.values(flags).some(Boolean);
+    const isFerien = !!flags.ferien;
+
     const hasAnyHours = dayTotalUeZ1 > 0;
+    const hasAnyFlag = Object.values(flags).some(Boolean);
 
     // Komplett leerer Tag (keine Stunden, keine Flags) → ignorieren
     if (!hasAnyHours && !hasAnyFlag) {
       return;
     }
 
-    // Nur wenn Stunden erfasst wurden, mit 8,0h vergleichen.
-    // Reine Ferien-Tage ohne Stunden → diff = 0.
     let diff = 0;
-    if (hasAnyHours) {
-      diff = dayTotalUeZ1 - DAILY_SOLL;
+
+    if (isFerien) {
+      if (!hasAnyHours) {
+        // Reiner Ferientag → 8h Ferien, keine Über-/Unterzeit
+        vacationPerYear[y] += DAILY_SOLL;
+        diff = 0;
+      } else if (dayTotalUeZ1 < DAILY_SOLL) {
+        // Teil gearbeitet, Rest Ferien
+        const vacHours = DAILY_SOLL - dayTotalUeZ1;
+        vacationPerYear[y] += vacHours;
+        diff = 0; // keine Minusstunden, keine Plusstunden
+      } else {
+        // Mehr als 8h gearbeitet trotz Ferien → Überzeit 1
+        diff = dayTotalUeZ1 - DAILY_SOLL;
+      }
+    } else {
+      if (hasAnyHours) {
+        // normale Tage ohne Ferien: echte Über-/Unterzeit
+        diff = dayTotalUeZ1 - DAILY_SOLL;
+      } else {
+        // z.B. nur Schmutzzulage/Nebenauslagen → keine Abweichung
+        diff = 0;
+      }
     }
 
     perYear[y].net += diff;
@@ -831,7 +895,7 @@ function updateOvertimeYearCard() {
     }
   });
 
-  // --- 2) Gesamt-ÜZ1 über alle Jahre + tatsächlich erfüllte Vorarbeit --- //
+  // --- 2) Gesamt-ÜZ1 über alle Jahre + gefüllte Vorarbeit --- //
   let ueZ1NetAllYears = 0;
   let vorarbeitFilledAllYears = 0;
 
@@ -850,19 +914,17 @@ function updateOvertimeYearCard() {
     vorarbeitFilledAllYears += filledYear;
   });
 
-  // Config für das aktuell ausgewählte Jahr:
   const cfgSelected = getYearConfig(selectedYear) || {};
   const vorarbeitRequiredSelected = cfgSelected.vorarbeitRequired || 0;
   const ueZ1CarryIn = cfgSelected.ueZ1CarryIn || 0;
   const ueZ2CarryIn = cfgSelected.ueZ2CarryIn || 0;
   const ueZ3CarryIn = cfgSelected.ueZ3CarryIn || 0;
 
-  // ÜZ1-Lebenszeit-Saldo:
-  // Startsaldo + Netto-Überzeit ALLER Jahre - tatsächlich gefüllte Vorarbeit (ALLER Jahre)
+  // ÜZ1-Lebenszeit-Saldo
   const ueZ1Saldo =
     ueZ1CarryIn + ueZ1NetAllYears - vorarbeitFilledAllYears;
 
-  // --- 3) ÜZ2 & ÜZ3 aus pikettStore (lebenszeit) --- //
+  // --- 3) ÜZ2 & ÜZ3 (lebenszeit) aus pikettStore --- //
   let ueZ2RawAllYears = 0;
   let ueZ3RawAllYears = 0;
 
@@ -895,7 +957,7 @@ function updateOvertimeYearCard() {
     vorarbeitRequiredSelected
   );
 
-  // --- 5) Anzeige im Dashboard --- //
+  // --- 5) Anzeige ÜZ-Salden --- //
   overtimeYearUeZ1El.textContent = formatHoursSigned(ueZ1Saldo);
   overtimeYearUeZ2El.textContent = formatHours(ueZ2Saldo);
   overtimeYearUeZ3El.textContent = formatHours(ueZ3Saldo);
@@ -904,7 +966,31 @@ function updateOvertimeYearCard() {
   const vorarbeitRequiredText = formatHours(vorarbeitRequiredSelected);
   overtimeYearVorarbeitEl.textContent =
     `${vorarbeitFilledText} / ${vorarbeitRequiredText}`;
+
+  // --- 6) Ferien-Card für das aktuell ausgewählte Jahr --- //
+  if (vacationYearSummaryEl) {
+    const usedVacationHoursSelected =
+      vacationPerYear[selectedYear] || 0;
+
+    const vacationDaysPerYear =
+      cfgSelected.vacationDaysPerYear || 21;
+    const vacationCarryInDays =
+      cfgSelected.vacationCarryInDays || 0;
+
+    const totalEntitlementDays =
+      vacationDaysPerYear + vacationCarryInDays;
+
+    const usedDaysSelected = usedVacationHoursSelected / DAILY_SOLL;
+    const remainingDays = totalEntitlementDays - usedDaysSelected;
+
+    const remainingStr = formatDays(remainingDays);
+    const totalStr = formatDays(totalEntitlementDays);
+
+    vacationYearSummaryEl.textContent =
+      `${remainingStr} / ${totalStr} Tage`;
+  }
 }
+
 
 
 
@@ -997,25 +1083,32 @@ function updateDashboardWeekListForCurrentMonth() {
       });
     }
 
-      const flags = dayData.flags || {};
-      const isFerien = !!flags.ferien;
+    // Spezialbuchungen ebenfalls im Tages-Total berücksichtigen
+    if (Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries.forEach((special) => {
+        if (!special) return;
+        const val = special.hours;
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          nonPikettHours += val;
+        }
+      });
+    }
 
-      // "Erfasst" = es gibt Stunden (Kommission + Tagesstunden)
-      // oder der Tag ist als Ferien markiert.
-      // Schmutzzulage, Nebenauslagen, Verpflegung allein zählen NICHT
-      // als "erfasst" für die Lückenanzeige.
-      const hasDayData = nonPikettHours > 0 || isFerien;
+    const flags = dayData.flags || {};
+    const isFerien = !!flags.ferien;
 
-      const dayInfo = w.days[dateKey];
-      if (!dayInfo) return;
+    // "Erfasst" = Stunden (inkl. Spezial) oder Ferien
+    const hasDayData = nonPikettHours > 0 || isFerien;
 
-      dayInfo.hours += nonPikettHours;
-      if (hasDayData) {
-        dayInfo.hasData = true;
-      }
+    const dayInfo = w.days[dateKey];
+    if (!dayInfo) return;
 
-      w.totalHours += nonPikettHours;
+    dayInfo.hours += nonPikettHours;
+    if (hasDayData) {
+      dayInfo.hasData = true;
+    }
 
+    w.totalHours += nonPikettHours;
   });
 
   // 3) Pikett (pikettStore) drüberlegen
@@ -1067,7 +1160,6 @@ function updateDashboardWeekListForCurrentMonth() {
     const row = document.createElement('div');
     row.className = 'dashboard-week-row';
 
-    // Label: KW xx · 01.11.–05.11. (X Tage)
     const labelSpan = document.createElement('span');
     labelSpan.className = 'dashboard-week-label';
 
@@ -1080,7 +1172,6 @@ function updateDashboardWeekListForCurrentMonth() {
 
     labelSpan.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${workDaysInMonth} Tage)`;
 
-    // Status: Vollständig / fehlende Einträge (nur Mo–Fr in diesem Monat)
     const statusSpan = document.createElement('span');
     statusSpan.className = 'dashboard-week-status';
 
@@ -1106,7 +1197,6 @@ function updateDashboardWeekListForCurrentMonth() {
       statusSpan.classList.add('status-missing');
     }
 
-    // Total Stunden (Kom + Tagesstunden + Pikett) nur für diesen Monat
     const totalSpan = document.createElement('span');
     totalSpan.className = 'dashboard-week-total';
     totalSpan.textContent =
@@ -1203,6 +1293,23 @@ function formatHoursSigned(value) {
   return '0,0 h';
 }
 
+function roundToQuarter(num) {
+  // round to nearest 0.25
+  return Math.round(num * 4) / 4;
+}
+
+function formatHoursForInput(num) {
+  let s = num.toFixed(2);    // e.g. "2.25"
+  s = s.replace('.', ',');   // -> "2,25"
+  s = s.replace(/,00$/, ''); // "2,00" -> "2"
+  return s;
+}
+
+function formatDays(value) {
+  const rounded = Math.round(value * 10) / 10; // 1 Nachkommastelle
+  return rounded.toFixed(1).replace('.', ','); // "12.5" -> "12,5"
+}
+
 
 function getMondayForCurrentWeek() {
   const today = new Date();
@@ -1279,6 +1386,12 @@ function getOrCreateDayData(dateKey) {
     };
   }
 
+    // Spezialbuchungen (Regie / Fehler)
+  if (!Array.isArray(data.specialEntries)) {
+    data.specialEntries = [];
+  }
+
+
   return data;
 }
 
@@ -1293,6 +1406,17 @@ function createEmptyEntry() {
       option5: 0,
       option6: 0,
     },
+  };
+
+}
+
+function createEmptySpecialEntry() {
+  return {
+    type: 'regie',     // "regie" oder "fehler"
+    komNr: '',
+    hours: 0,
+    rapportNr: '',
+    description: '',
   };
 }
 
@@ -1366,9 +1490,22 @@ function updateDayTotalFromInputs() {
     }
   });
 
+  // 3) Spezialbuchungen-Stunden
+  const specialInputs = activeSection.querySelectorAll('.special-hours-input');
+  specialInputs.forEach((input) => {
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const asNumber = parseFloat(raw.replace(',', '.'));
+    if (!Number.isNaN(asNumber)) {
+      total += asNumber;
+    }
+  });
+
   const formatted = total.toFixed(1).replace('.', ',') + ' h';
   dayTotalEl.textContent = formatted;
 }
+
 
 // --- Flags: apply + save per day --- //
 
@@ -1545,6 +1682,150 @@ function applyKomForCurrentDay() {
   });
 }
 
+function applySpecialEntriesForCurrentDay() {
+  const activeSection = document.querySelector('.day-content.active');
+  if (!activeSection) return;
+
+  const section = activeSection.querySelector('.special-section');
+  if (!section) return;
+
+  const listEl = section.querySelector('.special-list');
+  if (!listEl) return;
+
+  const dateKey = getCurrentDateKey();
+  const dayData = getOrCreateDayData(dateKey);
+
+  if (!Array.isArray(dayData.specialEntries)) {
+    dayData.specialEntries = [];
+  }
+
+  listEl.innerHTML = '';
+
+  if (dayData.specialEntries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'special-empty-text';
+    empty.textContent = 'Keine Spezialbuchungen erfasst.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  dayData.specialEntries.forEach((entry, index) => {
+    const row = document.createElement('div');
+    row.className = 'special-row';
+    row.dataset.specialIndex = String(index);
+
+    // --- Top: Art + Stunden + Entfernen ---
+    const top = document.createElement('div');
+    top.className = 'special-row-top';
+
+    // Art (Regie / Fehler)
+    const typeField = document.createElement('label');
+    typeField.className = 'special-field';
+    const typeLabel = document.createElement('span');
+    typeLabel.textContent = 'Art';
+
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'special-type-select';
+
+    const optRegie = document.createElement('option');
+    optRegie.value = 'regie';
+    optRegie.textContent = 'Regiearbeit';
+
+    const optFehler = document.createElement('option');
+    optFehler.value = 'fehler';
+    optFehler.textContent = 'Fehler';
+
+    typeSelect.appendChild(optRegie);
+    typeSelect.appendChild(optFehler);
+    typeSelect.value = entry.type === 'fehler' ? 'fehler' : 'regie';
+
+    typeField.appendChild(typeLabel);
+    typeField.appendChild(typeSelect);
+
+    // Stunden
+    const hoursField = document.createElement('label');
+    hoursField.className = 'special-field small';
+    const hoursLabel = document.createElement('span');
+    hoursLabel.textContent = 'Stunden';
+
+    const hoursInput = document.createElement('input');
+    hoursInput.type = 'number';
+    hoursInput.min = '0';
+    hoursInput.step = '0.25';
+    hoursInput.placeholder = '0,0';
+    hoursInput.className = 'special-hours-input';
+
+    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours) && entry.hours !== 0) {
+      hoursInput.value = entry.hours.toString().replace('.', ',');
+    }
+
+    hoursField.appendChild(hoursLabel);
+    hoursField.appendChild(hoursInput);
+
+    // Remove
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'special-remove-btn';
+    removeBtn.textContent = '✕';
+
+    top.appendChild(typeField);
+    top.appendChild(hoursField);
+    top.appendChild(removeBtn);
+
+    // --- Mitte: Kom.Nummer ---
+    const middle = document.createElement('div');
+    middle.className = 'special-row-middle';
+
+    const komField = document.createElement('label');
+    komField.className = 'special-field';
+    const komLabel = document.createElement('span');
+    komLabel.textContent = 'Kom.Nummer';
+    const komInput = document.createElement('input');
+    komInput.type = 'text';
+    komInput.className = 'special-kom-input';
+    komInput.placeholder = 'z.B. 123456';
+    komInput.value = entry.komNr || '';
+
+    komField.appendChild(komLabel);
+    komField.appendChild(komInput);
+    middle.appendChild(komField);
+
+    // --- Unten: Rapport-Nr. oder Fehlerbeschreibung ---
+    const bottom = document.createElement('div');
+    bottom.className = 'special-row-bottom';
+
+    const detailField = document.createElement('label');
+    detailField.className = 'special-field';
+    const detailLabel = document.createElement('span');
+    detailLabel.className = 'special-detail-label';
+
+    const detailInput = document.createElement('input');
+    detailInput.type = 'text';
+    detailInput.className = 'special-detail-input';
+
+    if (entry.type === 'fehler') {
+      detailLabel.textContent = 'Fehlerbeschreibung';
+      detailInput.placeholder = 'kurze Beschreibung';
+      detailInput.value = entry.description || '';
+    } else {
+      detailLabel.textContent = 'Rapport-Nr.';
+      detailInput.placeholder = 'z.B. R-2025-001';
+      detailInput.value = entry.rapportNr || '';
+    }
+
+    detailField.appendChild(detailLabel);
+    detailField.appendChild(detailInput);
+    bottom.appendChild(detailField);
+
+    row.appendChild(top);
+    row.appendChild(middle);
+    row.appendChild(bottom);
+
+    listEl.appendChild(row);
+  });
+}
+
+
 // --- Global input listener: Stunden + Kom.Nummer im Wochenplan --- //
 
 document.addEventListener('input', (event) => {
@@ -1552,29 +1833,32 @@ document.addEventListener('input', (event) => {
   if (!target || !target.classList) return;
 
   // Stunden-Felder: Gesamt aktualisieren + in Store schreiben
-  if (target.classList.contains('hours-input')) {
-    // ignore if it's a Pikett hours field (we handle those in the other listener)
-    if (target.classList.contains('pikett-hours')) return;
+if (target.classList.contains('hours-input')) {
+  // ignore if it's a Pikett hours field (we handle those in the other listener)
+  if (target.classList.contains('pikett-hours')) return;
 
-    updateDayTotalFromInputs();
+  const dateKey = getCurrentDateKey();
+  const dayData = getOrCreateDayData(dateKey);
 
-    const dateKey = getCurrentDateKey();
-    const dayData = getOrCreateDayData(dateKey);
+  const card = target.closest('.kom-card');
+  if (!card) return;
+  const entryIndex = Number(card.dataset.entryIndex || '0');
+  const entry = getOrCreateEntry(dayData, entryIndex);
 
-    const card = target.closest('.kom-card');
-    if (!card) return;
-    const entryIndex = Number(card.dataset.entryIndex || '0');
-    const entry = getOrCreateEntry(dayData, entryIndex);
-
-    const optionKey = target.dataset.option;
-    if (optionKey) {
-      const raw = target.value.trim();
-      const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-      entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
+  const optionKey = target.dataset.option;
+  if (optionKey) {
+    const raw = target.value.trim();
+    let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+    if (!Number.isNaN(num)) {
+      num = roundToQuarter(num);
     }
-
-    saveToStorage();
+    entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
   }
+
+  saveToStorage();
+  updateDayTotalFromInputs();
+}
+
 
   // Kom.Nummer-Eingabe im Wochenplan: in Store schreiben
   if (target.classList.contains('kom-input')) {
@@ -1595,19 +1879,83 @@ document.addEventListener('input', (event) => {
 
     // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
   if (target.classList.contains('day-hours-input')) {
+  const dateKey = getCurrentDateKey();
+  const dayData = getOrCreateDayData(dateKey);
+
+  const key = target.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
+  if (!key) return;
+
+  const raw = target.value.trim();
+  let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+  if (!Number.isNaN(num)) {
+    num = roundToQuarter(num);
+  }
+  dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
+
+
+  saveToStorage();
+  updateDayTotalFromInputs();
+  }
+
+
+    // Spezialbuchungen-Felder
+  if (
+    target.classList.contains('special-type-select') ||
+    target.classList.contains('special-kom-input') ||
+    target.classList.contains('special-hours-input') ||
+    target.classList.contains('special-detail-input')
+  ) {
+    const row = target.closest('.special-row');
+    if (!row) return;
+
+    const index = Number(row.dataset.specialIndex || '0');
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
-    const key = target.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
-    if (!key) return;
+    if (!Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries = [];
+    }
+    while (dayData.specialEntries.length <= index) {
+      dayData.specialEntries.push(createEmptySpecialEntry());
+    }
 
-    const raw = target.value.trim();
-    const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-    dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
+    const special = dayData.specialEntries[index];
+
+    if (target.classList.contains('special-type-select')) {
+      special.type = target.value === 'fehler' ? 'fehler' : 'regie';
+      saveToStorage();
+      applySpecialEntriesForCurrentDay(); // Label/Placeholder aktualisieren
+      updateDayTotalFromInputs();
+      return;
+    }
+
+    if (target.classList.contains('special-kom-input')) {
+      const normalized = normalizeKomNr(target.value);
+      target.value = normalized;
+      special.komNr = normalized;
+      } else if (target.classList.contains('special-hours-input')) {
+      const raw = target.value.trim();
+      let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+      if (!Number.isNaN(num)) {
+        num = roundToQuarter(num);
+      }
+      special.hours = Number.isNaN(num) ? 0 : num;
+
+   
+      }
+
+    else if (target.classList.contains('special-detail-input')) {
+      if (special.type === 'fehler') {
+        special.description = target.value;
+      } else {
+        special.rapportNr = target.value;
+      }
+    }
 
     saveToStorage();
     updateDayTotalFromInputs();
   }
+
 
 });
 
@@ -1750,6 +2098,88 @@ document.addEventListener('click', (event) => {
     if (!section) return;
     section.classList.toggle('open-info');
   }
+
+    // + Spezialbuchung hinzufügen
+  if (target.classList.contains('special-add-btn')) {
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
+
+    if (!Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries = [];
+    }
+
+    dayData.specialEntries.push(createEmptySpecialEntry());
+    saveToStorage();
+    applySpecialEntriesForCurrentDay();
+    updateDayTotalFromInputs();
+  }
+
+      // Spezialbuchung entfernen – mit Bestätigung
+  if (target.classList.contains('special-remove-btn')) {
+    const row = target.closest('.special-row');
+    if (!row) return;
+
+    // Schon im Bestätigungsmodus? Dann nichts tun.
+    if (row.classList.contains('special-confirm-mode')) {
+      return;
+    }
+
+    row.classList.add('special-confirm-mode');
+
+    const confirmRow = document.createElement('div');
+    confirmRow.className = 'special-confirm-row';
+
+    const text = document.createElement('span');
+    text.className = 'special-confirm-text';
+    text.textContent = 'Spezialbuchung wirklich löschen?';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'special-confirm-cancel';
+    cancelBtn.textContent = 'Abbrechen';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'special-confirm-delete';
+    deleteBtn.textContent = 'Löschen';
+
+    confirmRow.appendChild(text);
+    confirmRow.appendChild(cancelBtn);
+    confirmRow.appendChild(deleteBtn);
+
+    row.appendChild(confirmRow);
+  }
+
+  // Bestätigung abbrechen
+  if (target.classList.contains('special-confirm-cancel')) {
+    const row = target.closest('.special-row');
+    if (!row) return;
+
+    const confirmRow = row.querySelector('.special-confirm-row');
+    if (confirmRow) confirmRow.remove();
+
+    row.classList.remove('special-confirm-mode');
+  }
+
+  // Endgültig löschen
+  if (target.classList.contains('special-confirm-delete')) {
+    const row = target.closest('.special-row');
+    if (!row) return;
+
+    const index = Number(row.dataset.specialIndex || '0');
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
+
+    if (Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries.splice(index, 1);
+    }
+
+    saveToStorage();
+    applySpecialEntriesForCurrentDay();
+    updateDayTotalFromInputs();
+  }
+
+
 });
 
 
@@ -1766,8 +2196,9 @@ if (weekPrevBtn) {
     renderWeekInfo();
     applyFlagsForCurrentDay(); 
     applyDayHoursForCurrentDay(); 
-    applyMealAllowanceForCurrentDay();  // NEW
+    applyMealAllowanceForCurrentDay();  
     applyKomForCurrentDay();
+    applySpecialEntriesForCurrentDay(); 
     updateDayTotalFromInputs();
   });
 }
@@ -1781,6 +2212,7 @@ if (weekNextBtn) {
     applyFlagsForCurrentDay();
     applyMealAllowanceForCurrentDay();  
     applyKomForCurrentDay();
+    applySpecialEntriesForCurrentDay(); 
     updateDayTotalFromInputs();
   });
 }
@@ -1813,6 +2245,7 @@ dayButtons.forEach((btn) => {
     applyDayHoursForCurrentDay();
     applyMealAllowanceForCurrentDay();   
     applyKomForCurrentDay();
+    applySpecialEntriesForCurrentDay(); 
     updateDayTotalFromInputs();
   });
 });
@@ -1825,6 +2258,7 @@ applyFlagsForCurrentDay();
 applyDayHoursForCurrentDay(); 
 applyMealAllowanceForCurrentDay();   
 applyKomForCurrentDay();
+applySpecialEntriesForCurrentDay();
 updateDayTotalFromInputs();
 renderPikettList();
 updatePikettMonthTotal();
