@@ -51,7 +51,7 @@ const absenceDaysEl = document.getElementById('absenceDays');
 const absenceCommentEl = document.getElementById('absenceComment');
 const absenceSaveBtn = document.getElementById('absenceSaveBtn');
 
-
+const dashboardTransmitBtn = document.getElementById('dashboardTransmitBtn');
 
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
@@ -847,25 +847,77 @@ document.addEventListener('click', (event) => {
   }
 });
 
-// Abwesenheits-Antrag löschen
+// Abwesenheits-Antrag löschen – mit Bestätigungszeile
 document.addEventListener('click', (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
-  if (!target.classList.contains('absence-delete-btn')) {
+  // 1) Klick auf "Löschen" → Bestätigungszeile einblenden
+  if (target.classList.contains('absence-delete-btn')) {
+    const item = target.closest('.absence-item');
+    if (!item) return;
+
+    // Wenn schon im Bestätigungsmodus, nichts tun
+    if (item.classList.contains('absence-confirm-mode')) {
+      return;
+    }
+
+    item.classList.add('absence-confirm-mode');
+
+    const row = document.createElement('div');
+    row.className = 'absence-confirm-row';
+
+    const text = document.createElement('span');
+    text.className = 'absence-confirm-text';
+    text.textContent = 'Abwesenheit wirklich löschen?';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'absence-confirm-cancel';
+    cancelBtn.textContent = 'Abbrechen';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'absence-confirm-delete';
+    deleteBtn.textContent = 'Löschen';
+
+    row.appendChild(text);
+    row.appendChild(cancelBtn);
+    row.appendChild(deleteBtn);
+
+    item.appendChild(row);
     return;
   }
 
-  const id = target.dataset.absenceId;
-  if (!id) return;
+  // 2) "Abbrechen" in der Bestätigungszeile
+  if (target.classList.contains('absence-confirm-cancel')) {
+    const item = target.closest('.absence-item');
+    if (!item) return;
 
-  const index = absenceRequests.findIndex((r) => r.id === id);
-  if (index === -1) return;
+    const row = item.querySelector('.absence-confirm-row');
+    if (row) row.remove();
 
-  absenceRequests.splice(index, 1);
-  saveAbsenceRequests();
-  updateOvertimeYearCard();
+    item.classList.remove('absence-confirm-mode');
+    return;
+  }
+
+  // 3) Endgültig löschen
+  if (target.classList.contains('absence-confirm-delete')) {
+    const item = target.closest('.absence-item');
+    if (!item) return;
+
+    const id = item.dataset.absenceId;
+    if (!id) return;
+
+    const index = absenceRequests.findIndex((r) => r.id === id);
+    if (index === -1) return;
+
+    absenceRequests.splice(index, 1);
+    saveAbsenceRequests();
+    updateOvertimeYearCard(); // rendert Liste neu + Ferienstand
+  }
 });
+
 
 
 
@@ -886,6 +938,37 @@ if (pikettMonthNextBtn) {
   });
 }
 
+if (dashboardTransmitBtn) {
+  dashboardTransmitBtn.addEventListener('click', () => {
+    const payload = buildPayloadForCurrentDashboardMonth();
+
+    // Jetzt: nur lokales "Senden" – später durch API-Call ersetzen
+    console.log('Transmit payload for current month:', payload);
+    alert(`Daten für ${payload.monthLabel} vorbereitet (siehe Konsole).`);
+
+    //  Später mit Backend:
+    // fetch('/api/transmit-month', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify(payload),
+    // })
+    //   .then((res) => {
+    //     if (!res.ok) throw new Error('Server-Fehler');
+    //     return res.json();
+    //   })
+    //   .then(() => {
+    //     alert(`Daten für ${payload.monthLabel} erfolgreich übertragen.`);
+    //   })
+    //   .catch((err) => {
+    //     console.error(err);
+    //     alert('Übertragung fehlgeschlagen. Bitte später erneut versuchen.');
+    //   });
+  });
+}
+
+
+
+
 // --- Dashboard month info + aggregation --- //
 function getCurrentDashboardMonthInfo() {
   const today = new Date();
@@ -902,6 +985,56 @@ function getCurrentDashboardMonthInfo() {
 
   return { year, monthIndex, label };
 }
+
+function buildPayloadForCurrentDashboardMonth() {
+  const info = getCurrentDashboardMonthInfo();
+  const { year, monthIndex, label } = info;
+
+  // 1) Alle Tage dieses Monats aus dayStore
+  const monthDays = {};
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey);
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) return;
+
+    monthDays[dateKey] = dayData;
+  });
+
+  // 2) Pikett-Einsätze dieses Monats
+  const monthPikett = pikettStore.filter((entry) => {
+    if (!entry.date) return false;
+    const d = new Date(entry.date);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.getFullYear() === year && d.getMonth() === monthIndex;
+  });
+
+  // 3) Abwesenheiten, die diesen Monat berühren (optional)
+  const monthAbsences = absenceRequests.filter((req) => {
+    if (!req.from || !req.to) return false;
+
+    const fromDate = new Date(req.from);
+    const toDate = new Date(req.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return false;
+    }
+
+    const monthStart = new Date(year, monthIndex, 1);
+    const monthEnd = new Date(year, monthIndex + 1, 0);
+
+    // Überschneidung mit Monat?
+    return !(toDate < monthStart || fromDate > monthEnd);
+  });
+
+  return {
+    year,
+    monthIndex,        // 0–11
+    monthLabel: label, // z.B. "März 2025"
+    days: monthDays,
+    pikett: monthPikett,
+    absences: monthAbsences,
+  };
+}
+
 
 // --- Abwesenheiten-Helper: Tage pro Jahr berechnen & Liste rendern --- //
 
@@ -1723,6 +1856,59 @@ function updateDashboardWeekListForCurrentMonth() {
     }
 
     w.totalHours += hours;
+  });
+
+    // 3b) Akzeptierte Abwesenheiten (alle Typen) als "erfasst" markieren
+  absenceRequests.forEach((req) => {
+    // nur akzeptierte Anträge berücksichtigen
+    if (!req.from || !req.to || req.status !== 'accepted') return;
+
+    let fromDate = new Date(req.from);
+    let toDate = new Date(req.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return;
+
+    // Reihenfolge korrigieren
+    if (toDate < fromDate) {
+      const tmp = fromDate;
+      fromDate = toDate;
+      toDate = tmp;
+    }
+
+    const cursor = new Date(fromDate);
+    while (cursor <= toDate) {
+      // nur Tage im aktuell angezeigten Monat
+      if (cursor.getFullYear() !== year || cursor.getMonth() !== monthIndex) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
+
+      const weekday = cursor.getDay(); // 0=So..6=Sa
+      // nur Mo–Fr
+      if (weekday < 1 || weekday > 5) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
+
+      const { week, year: weekYear } = getISOWeekInfo(cursor);
+      const weekKey = `${weekYear}-W${week}`;
+      const w = weekMap[weekKey];
+      if (!w) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
+
+      const dateKey = formatDateKey(cursor);
+      const di = w.days[dateKey];
+      if (!di) {
+        cursor.setDate(cursor.getDate() + 1);
+        continue;
+      }
+
+      // Tag gilt als erfasst, auch wenn 0 Stunden
+      di.hasData = true;
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
   });
 
   // 4) Rendern
@@ -2643,6 +2829,8 @@ document.addEventListener('change', (event) => {
 
   // Ferien-Stand aktualisieren
   updateOvertimeYearCard();
+  // Wochenstatus (Fehlende Einträge) direkt aktualisieren
+  updateDashboardWeekListForCurrentMonth();
 });
 
 
