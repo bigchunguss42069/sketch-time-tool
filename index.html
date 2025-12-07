@@ -17,7 +17,7 @@
         </button>
         <button class="top-nav-tab" data-view="pikett">Pikett</button>
         <button class="top-nav-tab" data-view="dashboard">Dashboard</button>
-        <button class="top-nav-tab" data-view="dokumente">Dokumente</button>
+        
       </header>
 
       <!-- View 1: Wochenplan (your existing app) -->
@@ -901,29 +901,99 @@
       </div>
     </div>
 
-    <div class="dashboard-card">
-  <h3>Ferien (Jahr)</h3>
-  <div class="overtime-year-row">
-    <span>Ferien Tage:</span>
-    <span id="vacationYearSummary">0,0 / 21,0 Tage</span>
-  </div>
-</div>
+        <!-- Ferien + Abwesenheiten -->
+     <div class="dashboard-card">
+      <h3 class="dashboard-card-title">Ferien (Jahr)</h3>
 
-    <!-- Later we can add more cards: Pauschalen, Abwesenheiten, etc. -->
+      <!-- Saldo-Zeile (wird per JS gesetzt) -->
+      <div class="overtime-year-row">
+        <span>Ferien Tage:</span>
+        <span id="vacationYearSummary">0,0 / 21,0 Tage</span>
+      </div>
+
+      <div class="dashboard-metric-separator"></div>
+
+      <!-- Abwesenheits-Anträge: Eingabe -->
+      <div class="absence-section">
+        <h4 class="absence-section-title">Abwesenheits-Anträge</h4>
+
+       <form id="absenceForm" class="absence-form" autocomplete="off">
+  <div class="absence-form-row">
+    <label class="absence-label">
+      <span>Art</span>
+      <select id="absenceType" class="absence-input">
+        <option value="ferien">Ferien</option>
+        <option value="unfall">Unfall</option>
+        <option value="militaer">Militär</option>
+        <option value="bezahlteAbwesenheit">Bezahlte Abwesenheit</option>
+        <option value="vaterschaft">Vaterschaftsurlaub</option>
+        <option value="sonstiges">Sonstiges</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="absence-form-row absence-form-row--two">
+    <label class="absence-label">
+      <span>Von</span>
+      <input type="date" id="absenceFrom" class="absence-input" />
+    </label>
+    <label class="absence-label">
+      <span>Bis</span>
+      <input type="date" id="absenceTo" class="absence-input" />
+    </label>
+  </div>
+
+  <div class="absence-form-row">
+    <label class="absence-label">
+      <span>Tage (optional)</span>
+      <input
+        type="number"
+        id="absenceDays"
+        min="0"
+        step="0.25"
+        placeholder="auto"
+        class="absence-input"
+      />
+    </label>
+  </div>
+
+  <div class="absence-form-row">
+    <label class="absence-label">
+      <span>Notiz (optional)</span>
+      <input
+        type="text"
+        id="absenceComment"
+        placeholder="z.B. Ferien mit Familie"
+        class="absence-input"
+      />
+    </label>
+  </div>
+
+  <div class="absence-form-actions">
+    <button type="button" id="absenceSaveBtn" class="absence-save-btn">
+      Antrag speichern
+    </button>
+  </div>
+</form>
+
+
+      <!-- Abwesenheits-Liste für das ausgewählte Jahr -->
+      <div class="absence-list-wrapper">
+        <h4 class="absence-section-title">Abwesenheiten im Jahr</h4>
+        <div id="absenceList" class="absence-list">
+          <!-- Einträge werden per JS eingefügt -->
+        </div>
+      </div>
+    </div>
+
+
+
   </div>
 </div>
 
 
     <!-- View 4: Dokumente -->
-    <div id="view-dokumente" class="app-view">
-      <div class="placeholder-card">
-        <h1 class="placeholder-title">Dokumente</h1>
-        <p class="placeholder-text">
-          Hier kannst du später wichtige Dokumente, Notizen oder
-          Anleitungen ablegen.
-        </p>
-      </div>
-    </div>
+   
   </div>
   </div>
 

@@ -18,6 +18,7 @@ const appViews = document.querySelectorAll('.app-view');
 
 const pikettAddBtn = document.getElementById('pikettAddBtn');
 const PIKETT_STORAGE_KEY = 'pikett-v1';
+const ABSENCE_STORAGE_KEY = 'absenceRequests-v1';
 const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
 const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
 const pikettMonthNextBtn = document.getElementById('pikettMonthNext');
@@ -41,6 +42,15 @@ const overtimeYearVorarbeitEl = document.getElementById('overtimeYearVorarbeit')
 
 // Ferien-Card (Jahr)
 const vacationYearSummaryEl = document.getElementById('vacationYearSummary');
+// Abwesenheiten (Ferien-Card & Formular)
+const absenceListEl = document.getElementById('absenceList');
+const absenceTypeEl = document.getElementById('absenceType');
+const absenceFromEl = document.getElementById('absenceFrom');
+const absenceToEl = document.getElementById('absenceTo');
+const absenceDaysEl = document.getElementById('absenceDays');
+const absenceCommentEl = document.getElementById('absenceComment');
+const absenceSaveBtn = document.getElementById('absenceSaveBtn');
+
 
 
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
@@ -139,6 +149,52 @@ function savePikettStore() {
   localStorage.setItem(PIKETT_STORAGE_KEY, JSON.stringify(pikettStore));
 }
 
+function loadAbsenceRequests() {
+  const raw = localStorage.getItem(ABSENCE_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => ({
+      id:
+        item.id ||
+        'abs-' +
+          Date.now().toString(36) +
+          Math.random().toString(36).slice(2, 8),
+      type: (item.type || '').toLowerCase(),
+      from: item.from || '',
+      to: item.to || '',
+      days:
+        typeof item.days === 'number' && !Number.isNaN(item.days)
+          ? item.days
+          : undefined,
+      comment: item.comment || '',
+      status:
+        item.status === 'accepted' ||
+        item.status === 'rejected' ||
+        item.status === 'pending'
+          ? item.status
+          : 'pending',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveAbsenceRequests() {
+  localStorage.setItem(ABSENCE_STORAGE_KEY, JSON.stringify(absenceRequests));
+}
+
+function createAbsenceId() {
+  return (
+    'abs-' +
+    Date.now().toString(36) +
+    '-' +
+    Math.random().toString(36).slice(2, 8)
+  );
+}
+
+
 // Create a new empty Pikett-Einsatz entry (default date = today)
 function createEmptyPikettEntry() {
   const d = new Date();
@@ -158,6 +214,9 @@ function createEmptyPikettEntry() {
 
 // Global store for Pikett entries
 let pikettStore = loadPikettStore();
+
+// Global store for Abwesenheits-Anträge
+let absenceRequests = loadAbsenceRequests();
 
 // 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat
 let pikettMonthOffset = 0;
@@ -207,7 +266,91 @@ function getYearConfig(year) {
 }
 
 
+// --- Feiertage Kanton Bern (für Ferien-Berechnung) --- //
 
+const BERN_HOLIDAYS = {
+  2025: new Set([
+    '2025-01-01', // Neujahr
+    '2025-01-02', // Berchtoldstag
+    '2025-04-18', // Karfreitag
+    '2025-04-20', // Ostersonntag
+    '2025-04-21', // Ostermontag
+    '2025-05-29', // Auffahrt
+    '2025-06-09', // Pfingstmontag
+    '2025-08-01', // Bundesfeier
+    '2025-09-21', // Bettag
+    '2025-12-25', // Weihnachten
+    '2025-12-26', // Stephanstag
+  ]),
+
+  2026: new Set([
+    '2026-01-01', // Neujahr
+    '2026-01-02', // Berchtoldstag
+    '2026-04-03', // Karfreitag
+    '2026-04-05', // Ostersonntag
+    '2026-04-06', // Ostermontag
+    '2026-05-14', // Auffahrt
+    '2026-05-25', // Pfingstmontag
+    '2026-08-01', // Bundesfeier
+    '2026-09-20', // Bettag
+    '2026-12-25', // Weihnachten
+    '2026-12-26', // Stephanstag
+  ]),
+
+  2027: new Set([
+    '2027-01-01', // Neujahr
+    '2027-01-02', // Berchtoldstag
+    '2027-03-26', // Karfreitag
+    '2027-03-28', // Ostersonntag
+    '2027-03-29', // Ostermontag
+    '2027-05-06', // Auffahrt
+    '2027-05-17', // Pfingstmontag
+    '2027-08-01', // Bundesfeier
+    '2027-09-19', // Bettag
+    '2027-12-25', // Weihnachten
+    '2027-12-26', // Stephanstag
+  ]),
+};
+
+// Prüft, ob ein Datum im Kanton Bern ein Feiertag ist
+function isBernHoliday(date) {
+  const year = date.getFullYear();
+  const set = BERN_HOLIDAYS[year];
+  if (!set) return false;
+
+  const key = formatDateKey(date); // z.B. "2025-08-01"
+  return set.has(key);
+}
+
+// Zählt Ferientage in einem Bereich anhand der Ferien-Flags im Wochenplan,
+// berücksichtigt nur Mo–Fr und zieht Feiertage ab.
+function computeVacationDaysFromFlagsInRange(rangeStart, rangeEnd, year) {
+  let days = 0;
+  const cursor = new Date(rangeStart);
+
+  while (cursor <= rangeEnd) {
+    if (cursor.getFullYear() === year) {
+      const weekday = cursor.getDay(); // 0=So, 6=Sa
+
+      // nur Arbeitstage
+      if (weekday >= 1 && weekday <= 5) {
+        // Feiertage nicht als Ferien zählen
+        if (!isBernHoliday(cursor)) {
+          const key = formatDateKey(cursor);
+          const data = dayStore[key];
+
+          if (data && data.flags && data.flags.ferien) {
+            days += 1;
+          }
+        }
+      }
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days;
+}
 
 // Info über den aktuell ausgewählten Pikett-Monat
 function getCurrentPikettMonthInfo() {
@@ -494,6 +637,76 @@ if (pikettAddBtn) {
   });
 }
 
+// Abwesenheits-Antrag speichern
+if (absenceSaveBtn) {
+  absenceSaveBtn.addEventListener('click', () => {
+    if (!absenceTypeEl || !absenceFromEl || !absenceToEl) return;
+
+    const type = absenceTypeEl.value.trim().toLowerCase();
+    const from = absenceFromEl.value;
+    const to = absenceToEl.value;
+    const daysRaw = absenceDaysEl ? absenceDaysEl.value.trim() : '';
+    const comment = absenceCommentEl
+      ? absenceCommentEl.value.trim()
+      : '';
+
+    // Minimale Validierung: ohne Typ/Von/Bis kein Eintrag
+    if (!type || !from || !to) {
+      return;
+    }
+
+    let fromDate = new Date(from);
+    let toDate = new Date(to);
+    if (
+      Number.isNaN(fromDate.getTime()) ||
+      Number.isNaN(toDate.getTime())
+    ) {
+      return;
+    }
+
+    // Falls "Bis" vor "Von" liegt, still tauschen
+    if (toDate < fromDate) {
+      const tmp = fromDate;
+      fromDate = toDate;
+      toDate = tmp;
+    }
+
+    let daysValue;
+    if (daysRaw) {
+      let num = parseFloat(daysRaw.replace(',', '.'));
+      if (!Number.isNaN(num) && num > 0) {
+        // auf 0.25 runden
+        num = Math.round(num * 4) / 4;
+        daysValue = num;
+      }
+    }
+
+    const request = {
+      id: createAbsenceId(),
+      type,
+      from: fromDate.toISOString().slice(0, 10),
+      to: toDate.toISOString().slice(0, 10),
+      days: daysValue,
+      comment,
+      status: 'pending',
+    };
+
+    absenceRequests.push(request);
+    saveAbsenceRequests();
+
+    // Formular leeren
+    absenceTypeEl.value = '';
+    absenceFromEl.value = '';
+    absenceToEl.value = '';
+    if (absenceDaysEl) absenceDaysEl.value = '';
+    if (absenceCommentEl) absenceCommentEl.value = '';
+
+    // Dashboard-Karten aktualisieren
+    updateOvertimeYearCard();
+  });
+}
+
+
 // Update Pikett entries when the user edits fields
 document.addEventListener('input', (event) => {
   const target = event.target;
@@ -634,6 +847,26 @@ document.addEventListener('click', (event) => {
   }
 });
 
+// Abwesenheits-Antrag löschen
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!target || !target.classList) return;
+
+  if (!target.classList.contains('absence-delete-btn')) {
+    return;
+  }
+
+  const id = target.dataset.absenceId;
+  if (!id) return;
+
+  const index = absenceRequests.findIndex((r) => r.id === id);
+  if (index === -1) return;
+
+  absenceRequests.splice(index, 1);
+  saveAbsenceRequests();
+  updateOvertimeYearCard();
+});
+
 
 
 // Pikett-Monat wechseln
@@ -669,6 +902,362 @@ function getCurrentDashboardMonthInfo() {
 
   return { year, monthIndex, label };
 }
+
+// --- Abwesenheiten-Helper: Tage pro Jahr berechnen & Liste rendern --- //
+
+function datesOverlapYear(fromDate, toDate, year) {
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year, 11, 31);
+
+  const start = fromDate > yearStart ? fromDate : yearStart;
+  const end = toDate < yearEnd ? toDate : yearEnd;
+
+  return start <= end;
+}
+
+// Berechnet, wie viele Tage eines Abwesenheits-Antrags in ein bestimmtes Jahr fallen.
+// Speziell für "Ferien":
+//   → zählt nur Tage, an denen im Wochenplan das Ferien-Flag gesetzt ist,
+//   → nur Mo–Fr,
+//   → Feiertage werden NICHT als Ferientag gezählt.
+function computeAbsenceDaysForYear(request, year) {
+  if (!request.from || !request.to) return 0;
+
+  const fromDate = new Date(request.from);
+  const toDate = new Date(request.to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return 0;
+  }
+
+  let start = fromDate;
+  let end = toDate;
+  if (end < start) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+
+  if (!datesOverlapYear(start, end, year)) {
+    return 0;
+  }
+
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year, 11, 31);
+
+  const rangeStart = start < yearStart ? yearStart : start;
+  const rangeEnd = end > yearEnd ? yearEnd : end;
+
+  // Explizite Tage nur verwenden, wenn der Antrag komplett in diesem Jahr liegt.
+  if (
+    typeof request.days === 'number' &&
+    !Number.isNaN(request.days) &&
+    request.days > 0 &&
+    start.getFullYear() === end.getFullYear() &&
+    start.getFullYear() === year
+  ) {
+    return request.days;
+  }
+
+  let days = 0;
+  const cursor = new Date(rangeStart);
+  while (cursor <= rangeEnd) {
+    const day = cursor.getDay(); // 0=So, 6=Sa
+    if (day >= 1 && day <= 5) {
+      days += 1;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days;
+}
+
+function calculateUsedVacationDaysFromFlags(year) {
+  const DAILY_SOLL = 8.0;
+  let totalDays = 0;
+
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey);
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== year) return;
+
+    const weekday = d.getDay(); // 0=So, 6=Sa
+    // Nur Mo–Fr
+    if (weekday < 1 || weekday > 5) return;
+
+    // Nur Tage mit Ferien-Flag
+    if (!dayData.flags || !dayData.flags.ferien) return;
+
+    // Feiertage zählen nicht als Ferienverbrauch
+    if (isBernHoliday(d)) return;
+
+    // --- Gearbeitete Stunden an diesem Tag (alles außer Pikett) --- //
+    let hoursWorked = 0;
+
+    // 1) Kommissionsstunden
+    if (Array.isArray(dayData.entries)) {
+      dayData.entries.forEach((entry) => {
+        if (!entry || !entry.hours) return;
+        Object.values(entry.hours).forEach((val) => {
+          if (typeof val === 'number' && !Number.isNaN(val)) {
+            hoursWorked += val;
+          }
+        });
+      });
+    }
+
+    // 2) Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
+    if (dayData.dayHours) {
+      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
+      [schulung, sitzungKurs, arztKrank].forEach((val) => {
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          hoursWorked += val;
+        }
+      });
+    }
+
+    // 3) Spezialbuchungen (Regie / Fehler)
+    if (Array.isArray(dayData.specialEntries)) {
+      dayData.specialEntries.forEach((special) => {
+        if (!special) return;
+        const val = special.hours;
+        if (typeof val === 'number' && !Number.isNaN(val)) {
+          hoursWorked += val;
+        }
+      });
+    }
+
+    // --- Aus Stunden -> Ferien-Tagesanteil --- //
+    let dayFraction = 0;
+
+    if (hoursWorked <= 0) {
+      // 0 h Arbeit → ganzer Ferientag
+      dayFraction = 1;
+    } else if (hoursWorked < DAILY_SOLL) {
+      // z.B. 4h Arbeit + Rest Ferien → halber Ferientag
+      dayFraction = 0.5;
+    } else {
+      // 8h oder mehr gearbeitet → kein Ferienverbrauch
+      dayFraction = 0;
+    }
+
+    totalDays += dayFraction;
+  });
+
+  return totalDays;
+}
+
+
+
+// Gibt alle Abwesenheiten zurück, die irgendeinen Anteil im angegebenen Jahr haben
+function getAbsencesForYear(year) {
+  return absenceRequests.filter((req) => {
+    if (!req.from || !req.to) return false;
+
+    const fromDate = new Date(req.from);
+    const toDate = new Date(req.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return false;
+    }
+
+    let start = fromDate;
+    let end = toDate;
+    if (end < start) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+
+    return datesOverlapYear(start, end, year);
+  });
+}
+
+
+// Baut die Abwesenheits-Liste im Dashboard für das aktuell ausgewählte Jahr
+function renderAbsenceListForCurrentYear() {
+  if (!absenceListEl) return;
+
+  const { year } = getCurrentDashboardMonthInfo();
+
+  const items = getAbsencesForYear(year).slice();
+  absenceListEl.innerHTML = '';
+
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'special-empty-text';
+    empty.textContent = 'Keine Abwesenheiten für dieses Jahr erfasst.';
+    absenceListEl.appendChild(empty);
+    return;
+  }
+
+  // Nach Startdatum sortieren
+  items.sort((a, b) => {
+    const da = new Date(a.from);
+    const db = new Date(b.from);
+    return da - db;
+  });
+
+  items.forEach((req) => {
+    const container = document.createElement('div');
+    container.className = 'absence-item';
+    container.dataset.absenceId = req.id;
+
+    const header = document.createElement('div');
+    header.className = 'absence-item-header';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'absence-title';
+
+    const fromDate = new Date(req.from);
+    const toDate = new Date(req.to);
+    const fromStr = Number.isNaN(fromDate.getTime())
+      ? req.from
+      : formatShortDate(fromDate);
+    const toStr = Number.isNaN(toDate.getTime())
+      ? req.to
+      : formatShortDate(toDate);
+
+    const daysForYear = computeAbsenceDaysForYear(req, year);
+    const daysText = formatDays(daysForYear);
+
+    titleSpan.textContent = `${
+      req.type || 'Abwesenheit'
+    } · ${fromStr} – ${toStr} (${daysText} Tage)`;
+
+    const meta = document.createElement('div');
+    meta.className = 'absence-meta';
+    meta.textContent = req.comment
+      ? `Kommentar: ${req.comment}`
+      : 'Kein Kommentar';
+
+    header.appendChild(titleSpan);
+
+    const statusRow = document.createElement('div');
+    statusRow.className = 'absence-status-row';
+
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'absence-status-select';
+    statusSelect.dataset.absenceId = req.id;
+
+    const optPending = document.createElement('option');
+    optPending.value = 'pending';
+    optPending.textContent = 'Offen';
+
+    const optAccepted = document.createElement('option');
+    optAccepted.value = 'accepted';
+    optAccepted.textContent = 'Akzeptiert';
+
+    const optRejected = document.createElement('option');
+    optRejected.value = 'rejected';
+    optRejected.textContent = 'Abgelehnt';
+
+    statusSelect.appendChild(optPending);
+    statusSelect.appendChild(optAccepted);
+    statusSelect.appendChild(optRejected);
+    statusSelect.value =
+      req.status === 'accepted' || req.status === 'rejected'
+        ? req.status
+        : 'pending';
+
+    const badge = document.createElement('span');
+    badge.className = 'absence-status-badge';
+    if (statusSelect.value === 'pending') {
+      badge.classList.add('pending');
+      badge.textContent = 'Offen';
+    } else if (statusSelect.value === 'accepted') {
+      badge.classList.add('accepted');
+      badge.textContent = 'Akzeptiert';
+    } else {
+      badge.classList.add('rejected');
+      badge.textContent = 'Abgelehnt';
+    }
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'absence-delete-btn';
+    deleteBtn.dataset.absenceId = req.id;
+    deleteBtn.textContent = 'Löschen';
+
+    statusRow.appendChild(statusSelect);
+    statusRow.appendChild(badge);
+    statusRow.appendChild(deleteBtn);
+
+    container.appendChild(header);
+    container.appendChild(meta);
+    container.appendChild(statusRow);
+
+    absenceListEl.appendChild(container);
+  });
+}
+
+// Geht alle Absenzen durch und setzt Ferien-Flags aus akzeptierten Ferien-Anträgen.
+// Entfernt dabei vorher alle "von Absenzen" gesetzten Ferien-Flags.
+function syncVacationFlagsFromAbsences() {
+  // 1) Alle "ferienFromAbsences" zurücksetzen
+  Object.values(dayStore).forEach((dayData) => {
+    if (!dayData.flags) {
+      dayData.flags = {};
+    }
+    if (typeof dayData.flags.ferienManual !== 'boolean') {
+      dayData.flags.ferienManual = !!dayData.flags.ferien;
+    }
+    dayData.flags.ferienFromAbsences = false;
+  });
+
+  // 2) Für jede akzeptierte Ferien-Absenz die passenden Tage markieren
+  absenceRequests.forEach((request) => {
+    const type = (request.type || '').toLowerCase();
+    if (type !== 'ferien') return;
+    if (request.status !== 'accepted') return;
+    if (!request.from || !request.to) return;
+
+    let fromDate = new Date(request.from);
+    let toDate = new Date(request.to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return;
+    }
+
+    if (toDate < fromDate) {
+      const tmp = fromDate;
+      fromDate = toDate;
+      toDate = tmp;
+    }
+
+    const cursor = new Date(fromDate);
+    while (cursor <= toDate) {
+      const weekday = cursor.getDay(); // 0=So, 6=Sa
+
+      // Nur Arbeitstage und keine Feiertage
+      if (weekday >= 1 && weekday <= 5 && !isBernHoliday(cursor)) {
+        const key = formatDateKey(cursor);
+        const dayData = getOrCreateDayData(key);
+        if (!dayData.flags) {
+          dayData.flags = {};
+        }
+        if (typeof dayData.flags.ferienManual !== 'boolean') {
+          dayData.flags.ferienManual = !!dayData.flags.ferien;
+        }
+        dayData.flags.ferienFromAbsences = true;
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+
+  // 3) Sichtbares Ferien-Flag neu berechnen (Manual OR Absenz)
+  Object.values(dayStore).forEach((dayData) => {
+    if (!dayData.flags) {
+      dayData.flags = {};
+    }
+    const manual = !!dayData.flags.ferienManual;
+    const fromAbs = !!dayData.flags.ferienFromAbsences;
+    dayData.flags.ferien = manual || fromAbs;
+  });
+
+  saveToStorage();
+}
+
+
+
 
 function updateDashboardForCurrentMonth() {
   const info = getCurrentDashboardMonthInfo();
@@ -792,6 +1381,8 @@ function updateOvertimeYearCard() {
   ) {
     return;
   }
+  // Ferien-Flags mit akzeptierten Ferien-Anträgen synchronisieren
+  syncVacationFlagsFromAbsences();
 
   const { year: selectedYear } = getCurrentDashboardMonthInfo();
 
@@ -801,10 +1392,9 @@ function updateOvertimeYearCard() {
   // pro Jahr:
   // - net       = Summe aller (Über-/Unterstunden nach Ferienregel)
   // - positive  = nur positive Anteile (für Vorarbeit)
-  const perYear = {};        // year -> { net, positive }
-  const vacationPerYear = {}; // year -> verwendete Ferienstunden
+  const perYear = {}; // year -> { net, positive }
 
-  // --- 1) ÜZ1 + Ferien aus dayStore berechnen --- //
+  // --- 1) ÜZ1 + Ferien-Effekt aus dayStore berechnen (für Vorarbeit & Saldo ÜZ1) --- //
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
     const d = new Date(dateKey);
     if (Number.isNaN(d.getTime())) return;
@@ -812,9 +1402,6 @@ function updateOvertimeYearCard() {
     const y = d.getFullYear();
     if (!perYear[y]) {
       perYear[y] = { net: 0, positive: 0 };
-    }
-    if (typeof vacationPerYear[y] !== 'number') {
-      vacationPerYear[y] = 0;
     }
 
     let dayTotalUeZ1 = 0;
@@ -867,14 +1454,11 @@ function updateOvertimeYearCard() {
 
     if (isFerien) {
       if (!hasAnyHours) {
-        // Reiner Ferientag → 8h Ferien, keine Über-/Unterzeit
-        vacationPerYear[y] += DAILY_SOLL;
+        // Reiner Ferientag → 8h Ferien, keine Über-/Unterzeit (nur für Vorarbeit/Saldo relevant)
         diff = 0;
       } else if (dayTotalUeZ1 < DAILY_SOLL) {
-        // Teil gearbeitet, Rest Ferien
-        const vacHours = DAILY_SOLL - dayTotalUeZ1;
-        vacationPerYear[y] += vacHours;
-        diff = 0; // keine Minusstunden, keine Plusstunden
+        // Teil gearbeitet, Rest Ferien → keine Minusstunden
+        diff = 0;
       } else {
         // Mehr als 8h gearbeitet trotz Ferien → Überzeit 1
         diff = dayTotalUeZ1 - DAILY_SOLL;
@@ -884,7 +1468,6 @@ function updateOvertimeYearCard() {
         // normale Tage ohne Ferien: echte Über-/Unterzeit
         diff = dayTotalUeZ1 - DAILY_SOLL;
       } else {
-        // z.B. nur Schmutzzulage/Nebenauslagen → keine Abweichung
         diff = 0;
       }
     }
@@ -967,10 +1550,11 @@ function updateOvertimeYearCard() {
   overtimeYearVorarbeitEl.textContent =
     `${vorarbeitFilledText} / ${vorarbeitRequiredText}`;
 
-  // --- 6) Ferien-Card für das aktuell ausgewählte Jahr --- //
+    // --- 6) Ferien-Card für das aktuell ausgewählte Jahr (Zählung über Ferien-Flags) --- //
   if (vacationYearSummaryEl) {
-    const usedVacationHoursSelected =
-      vacationPerYear[selectedYear] || 0;
+    // Verbrauch nur anhand der Ferien-Flags im Wochenplan (inkl. Feiertagslogik)
+    const usedVacationDaysSelected =
+      calculateUsedVacationDaysFromFlags(selectedYear);
 
     const vacationDaysPerYear =
       cfgSelected.vacationDaysPerYear || 21;
@@ -980,8 +1564,8 @@ function updateOvertimeYearCard() {
     const totalEntitlementDays =
       vacationDaysPerYear + vacationCarryInDays;
 
-    const usedDaysSelected = usedVacationHoursSelected / DAILY_SOLL;
-    const remainingDays = totalEntitlementDays - usedDaysSelected;
+    const remainingDays =
+      totalEntitlementDays - usedVacationDaysSelected;
 
     const remainingStr = formatDays(remainingDays);
     const totalStr = formatDays(totalEntitlementDays);
@@ -989,10 +1573,11 @@ function updateOvertimeYearCard() {
     vacationYearSummaryEl.textContent =
       `${remainingStr} / ${totalStr} Tage`;
   }
+
+
+  // --- 7) Abwesenheiten-Liste aktualisieren --- //
+  renderAbsenceListForCurrentYear();
 }
-
-
-
 
 /**
  * Baut die KW-Übersicht für den aktuell gewählten Dashboard-Monat.
@@ -1340,18 +1925,31 @@ function getOrCreateDayData(dateKey) {
   }
 
   // Flags: nur noch Ferien + Schmutzzulage
+    // Flags: Ferien (mit Unterscheidung Manual / Absenz), Schmutzzulage, Nebenauslagen
   if (!data.flags) {
     data.flags = {};
   }
-  if (typeof data.flags.ferien !== 'boolean') {
-    data.flags.ferien = false;
+
+  // Migration / Defaults:
+  // - Alte Daten: flags.ferien -> als "manual" interpretieren
+  if (typeof data.flags.ferienManual !== 'boolean') {
+    data.flags.ferienManual = !!data.flags.ferien;
   }
+  if (typeof data.flags.ferienFromAbsences !== 'boolean') {
+    data.flags.ferienFromAbsences = false;
+  }
+
+  // Sichtbares Ferien-Flag: OR aus beiden Quellen
+  data.flags.ferien =
+    !!data.flags.ferienManual || !!data.flags.ferienFromAbsences;
+
   if (typeof data.flags.schmutzzulage !== 'boolean') {
     data.flags.schmutzzulage = false;
   }
-   if (typeof data.flags.nebenauslagen !== 'boolean') {
+  if (typeof data.flags.nebenauslagen !== 'boolean') {
     data.flags.nebenauslagen = false;
   }
+
 
   // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
   if (!data.dayHours) {
@@ -1973,10 +2571,80 @@ document.addEventListener('change', (event) => {
   const dateKey = getCurrentDateKey();
   const dayData = getOrCreateDayData(dateKey);
   const flagKey = target.dataset.flag;
-  dayData.flags[flagKey] = target.checked;
+
+  if (!dayData.flags) {
+    dayData.flags = {};
+  }
+
+  if (flagKey === 'ferien') {
+    // Benutzer setzt/entfernt manuelles Ferien-Flag
+    if (typeof dayData.flags.ferienFromAbsences !== 'boolean') {
+      dayData.flags.ferienFromAbsences = false;
+    }
+    dayData.flags.ferienManual = target.checked;
+    dayData.flags.ferien =
+      !!dayData.flags.ferienManual || !!dayData.flags.ferienFromAbsences;
+  } else {
+    // andere Flags wie bisher
+    dayData.flags[flagKey] = target.checked;
+  }
 
   saveToStorage();
 });
+
+
+// Status eines Abwesenheits-Antrags ändern (Offen / Akzeptiert / Abgelehnt)
+document.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!target || !target.classList) return;
+
+  if (!target.classList.contains('absence-status-select')) {
+    return;
+  }
+
+  const select = target;
+  const id = select.dataset.absenceId;
+  if (!id) return;
+
+  const req = absenceRequests.find((r) => r.id === id);
+  if (!req) return;
+
+  const value = select.value;
+  if (
+    value !== 'pending' &&
+    value !== 'accepted' &&
+    value !== 'rejected'
+  ) {
+    return;
+  }
+
+  req.status = value;
+  saveAbsenceRequests();
+
+  // Badge im gleichen Item updaten
+  const container = select.closest('.absence-item');
+  if (!container) return;
+
+  const badge = container.querySelector('.absence-status-badge');
+  if (!badge) return;
+
+  badge.classList.remove('pending', 'accepted', 'rejected');
+
+  if (value === 'pending') {
+    badge.classList.add('pending');
+    badge.textContent = 'Offen';
+  } else if (value === 'accepted') {
+    badge.classList.add('accepted');
+    badge.textContent = 'Akzeptiert';
+  } else {
+    badge.classList.add('rejected');
+    badge.textContent = 'Abgelehnt';
+  }
+
+  // Ferien-Stand aktualisieren
+  updateOvertimeYearCard();
+});
+
 
 // Add / remove Kom cards + Verpflegungspauschale + info
 document.addEventListener('click', (event) => {
