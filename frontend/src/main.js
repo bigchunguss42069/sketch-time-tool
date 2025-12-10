@@ -53,6 +53,16 @@ const absenceSaveBtn = document.getElementById('absenceSaveBtn');
 
 const dashboardTransmitBtn = document.getElementById('dashboardTransmitBtn');
 
+const loginView = document.getElementById('loginView');
+const mainApp = document.getElementById('mainApp');
+const loginForm = document.getElementById('loginForm');
+const loginUsernameInput = document.getElementById('loginUsername');
+const loginPasswordInput = document.getElementById('loginPassword');
+const loginErrorEl = document.getElementById('loginError');
+const userDisplayEl = document.getElementById('userDisplay');
+const logoutBtn = document.getElementById('logoutBtn');
+
+
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
 topNavTabs.forEach((tab) => {
@@ -125,6 +135,40 @@ function saveToStorage() {
     console.error('Failed to save to storage', err);
   }
 }
+
+// --- Auth helper --- //
+const BACKEND_BASE_URL = 'http://localhost:3000';
+const AUTH_TOKEN_KEY = 'authToken';
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY) || '';
+}
+
+function setAuthToken(token) {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+// Wrapper for fetch that automatically adds Authorization header
+function authFetch(path, options = {}) {
+  const token = getAuthToken();
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return fetch(`${BACKEND_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+}
+
 
 // --- Pikett localStorage helpers --- //
 
@@ -939,28 +983,33 @@ if (pikettMonthNextBtn) {
 }
 
 if (dashboardTransmitBtn) {
-  dashboardTransmitBtn.addEventListener('click', async () => {
+  dashboardTransmitBtn.addEventListener('click', () => {
     const payload = buildPayloadForCurrentDashboardMonth();
 
-    try {
-      const response = await fetch('http://localhost:3000/api/transmit-month', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+    authFetch('/api/transmit-month', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error('Server error');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!data.ok) {
+          alert(`Übertragung fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`);
+          return;
+        }
+        alert(`Daten für ${payload.monthLabel} erfolgreich übertragen.\nServer: ${data.message}`);
+      })
+      .catch((err) => {
+        console.error(err);
+        alert('Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).');
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('Server response:', data);
-
-      alert(`Daten für ${payload.monthLabel} erfolgreich an den Server gesendet.`);
-    } catch (err) {
-      console.error('Transmit error:', err);
-      alert('Übertragung fehlgeschlagen. Bitte später erneut versuchen.');
-    }
   });
 }
 
@@ -2132,6 +2181,17 @@ function updateDayTitleWithDate() {
   `;
 }
 
+function showLogin() {
+  if (loginView) loginView.classList.remove('hidden');
+  if (mainApp) mainApp.classList.add('hidden');
+}
+
+function showApp() {
+  if (loginView) loginView.classList.add('hidden');
+  if (mainApp) mainApp.classList.remove('hidden');
+}
+
+
 
 function getOrCreateDayData(dateKey) {
   let data = dayStore[dateKey];
@@ -2320,6 +2380,105 @@ function updateDayTotalFromInputs() {
   const formatted = total.toFixed(1).replace('.', ',') + ' h';
   dayTotalEl.textContent = formatted;
 }
+
+
+if (loginForm) {
+  loginForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+
+    const username = loginUsernameInput.value.trim();
+    const password = loginPasswordInput.value;
+
+    if (!username || !password) {
+      if (loginErrorEl) {
+        loginErrorEl.textContent = 'Bitte Benutzername und Passwort eingeben.';
+        loginErrorEl.style.display = 'block';
+      }
+      return;
+    }
+
+    // Call backend
+    fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.ok || !data.token) {
+          throw new Error(data.error || 'Login fehlgeschlagen');
+        }
+
+        setAuthToken(data.token);
+
+        if (userDisplayEl) {
+          userDisplayEl.textContent =
+            (data.user && data.user.username) || username;
+        }
+
+        if (loginErrorEl) {
+          loginErrorEl.textContent = '';
+          loginErrorEl.style.display = 'none';
+        }
+
+        loginPasswordInput.value = '';
+        showApp();
+      })
+      .catch((err) => {
+        console.error('Login error', err);
+        if (loginErrorEl) {
+          loginErrorEl.textContent =
+            err.message || 'Login fehlgeschlagen. Bitte erneut versuchen.';
+          loginErrorEl.style.display = 'block';
+        }
+      });
+  });
+}
+
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', () => {
+    setAuthToken('');
+    if (userDisplayEl) {
+      userDisplayEl.textContent = '–';
+    }
+    showLogin();
+  });
+}
+
+function initAuthView() {
+  const token = getAuthToken();
+  if (!token) {
+    showLogin();
+    return;
+  }
+
+  // Validate token and fetch user info
+  authFetch('/api/auth/me')
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error('Unauthorized');
+      }
+      return res.json();
+    })
+    .then((data) => {
+      if (!data.ok || !data.user) {
+        throw new Error('Invalid session');
+      }
+      if (userDisplayEl) {
+        userDisplayEl.textContent = data.user.username || 'Unbekannt';
+      }
+      showApp();
+    })
+    .catch((err) => {
+      console.error('Auth check failed', err);
+      setAuthToken('');
+      showLogin();
+    });
+}
+
+// Call after other init
+initAuthView();
+
 
 
 // --- Flags: apply + save per day --- //

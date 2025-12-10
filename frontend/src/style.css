@@ -1648,4 +1648,132 @@ color: #dee8ff;
   border-color: rgba(248, 113, 113, 0.8);
 }
 
+.hidden {
+  display: none !important;
+}
+
+/* Fullscreen center for login */
+.login-view {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at top, #0f172a, #020617);
+  padding: 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: rgba(15, 23, 42, 0.95);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 24px 20px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.7);
+}
+
+.login-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #e5f2ff;
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #e5e7eb;
+}
+
+.login-label input {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 42, 0.9);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  color: #f9fafb;
+}
+
+.login-label input:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+}
+
+.login-error {
+  font-size: 0.8rem;
+  color: #fecaca;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.login-button {
+  margin-top: 4px;
+  width: 100%;
+  border-radius: 999px;
+  border: none;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+  background: linear-gradient(to right, #38bdf8, #22c55e);
+  cursor: pointer;
+}
+
+.login-button:hover {
+  filter: brightness(1.05);
+}
+
+/* Header bar for logged-in app */
+.app-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.98);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.app-user-info {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.user-pill {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.15);
+  color: #e0f2fe;
+}
+
+.logout-button {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: transparent;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
 
