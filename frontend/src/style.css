@@ -1600,6 +1600,8 @@ color: #dee8ff;
   margin-bottom: 12px;
   display: flex;
   justify-content: flex-start;  
+  align-items: center;
+  gap: 8px;
 }
 
 .dashboard-transmit-btn {
@@ -1608,7 +1610,7 @@ color: #dee8ff;
   background: linear-gradient(
     135deg,
     rgba(14, 27, 48, 0.9),
-    rgba(25, 143, 240, 0.144)
+    rgb(16, 139, 240)
   );
   color: #ffffff;
   font-size: 0.78rem;
@@ -1746,17 +1748,17 @@ color: #dee8ff;
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: rgba(15, 23, 42, 0.98);
+  background: rgba(11, 20, 44, 0.98);
   border-bottom: 1px solid rgba(148, 163, 184, 0.4);
 }
 
 .app-user-info {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: #9ca3af;
 }
 
 .user-pill {
-  margin-left: 4px;
+  margin-left: -5px;
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(56, 189, 248, 0.15);
@@ -1774,6 +1776,62 @@ color: #dee8ff;
 }
 
 .logout-button:hover {
-  background: rgba(148, 163, 184, 0.15);
+  background: rgba(8, 111, 255, 0.15);
+}
+
+.sync-chip {
+  display: inline-flex;
+  align-items:center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  border: 1px solid transparent;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Default / unknown */
+.sync-age-unknown {
+  background: #ffffff;
+  border-color: #e0e0e0;
+  color: #555;
+}
+.sync-age-unknown .sync-dot {
+  background: #9e9e9e;
+}
+
+/* OK (<= 24h) */
+.sync-age-ok {
+  background: #e3f7e5;
+  border-color: #b9e2be;
+  color: #216c2e;
+}
+.sync-age-ok .sync-dot {
+  background: #2e7d32;
+}
+
+/* Warn (<= 7 Tage) */
+.sync-age-warn {
+  background: #fff5d6;
+  border-color: #ffe4a3;
+  color: #8a6500;
+}
+.sync-age-warn .sync-dot {
+  background: #ffb300;
+}
+
+/* Bad (> 7 Tage) */
+.sync-age-bad {
+  background: #fde0e0;
+  border-color: #f6b0b0;
+  color: #8a1f1f;
+}
+.sync-age-bad .sync-dot {
+  background: #d32f2f;
 }
 

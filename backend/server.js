@@ -7,178 +7,142 @@ const crypto = require('crypto');
 const app = express();
 const PORT = 3000;
 
-// Middleware
+// ---- Middleware ----
 app.use(cors());
 app.use(express.json());
 
-// Base data directory
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// ---- "Database": users + sessions (in memory for now) ----
+
+// Adjust these users.
+// Usernames / passwords you can log in with from the frontend:
+const USERS = [
+  { id: 'u1', username: 'demo',  password: 'demo123',  role: 'user' },
+  { id: 'u2', username: 'chef',  password: 'chef123',  role: 'admin' },
+];
+
+const sessions = new Map(); // token -> userId
+
+function findUserByCredentials(username, password) {
+  return USERS.find(
+    (u) => u.username === username && u.password === password
+  );
 }
 
-// === User storage (very simple, file-based) ====================== //
-
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-
-// Create users.json with some demo users if it doesn't exist
-function ensureUsersFile() {
-  if (!fs.existsSync(USERS_FILE)) {
-    const defaultUsers = [
-      {
-        id: 'u1',
-        username: 'user1',
-        name: 'Mitarbeiter 1',
-        password: 'pass1', // PLAIN TEXT – for dev only!
-        role: 'user',
-      },
-      {
-        id: 'admin',
-        username: 'boss',
-        name: 'Teamleiter',
-        password: 'boss', // PLAIN TEXT – for dev only!
-        role: 'admin',
-      },
-    ];
-
-    fs.writeFileSync(
-      USERS_FILE,
-      JSON.stringify(defaultUsers, null, 2),
-      'utf8'
-    );
-    console.log('Created default users.json with demo users.');
-  }
+function findUserById(id) {
+  return USERS.find((u) => u.id === id);
 }
 
-// Load all users from file
-function loadUsers() {
-  ensureUsersFile();
-  try {
-    const raw = fs.readFileSync(USERS_FILE, 'utf8');
-    const users = JSON.parse(raw);
-    return Array.isArray(users) ? users : [];
-  } catch (err) {
-    console.error('Failed to read users.json:', err);
-    return [];
-  }
+function createToken() {
+  return crypto.randomBytes(32).toString('hex');
 }
 
-// Optionally used later if you implement register / admin
-function saveUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), 'utf8');
-}
+// ---- Auth routes ----
 
-function findUserByUsername(username) {
-  const users = loadUsers();
-  return users.find((u) => u.username === username);
-}
-
-// === Very simple in-memory sessions (token -> user) ============== //
-
-// On restart, sessions are lost and users need to log in again – fine for now.
-const sessions = new Map();
-
-function createSession(user) {
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, {
-    id: user.id,
-    username: user.username,
-    name: user.name,
-    role: user.role,
-    createdAt: new Date().toISOString(),
-  });
-  return token;
-}
-
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const [scheme, token] = authHeader.split(' ');
-
-  if (scheme !== 'Bearer' || !token) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Missing or malformed Authorization header' });
-  }
-
-  const session = sessions.get(token);
-  if (!session || !session.user) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Invalid or expired token' });
-  }
-
-  // Attach user to request so routes can use it
-  req.user = session.user;
-  next();
-}
-
-// === Health check ================================================ //
-
-app.get('/health', (req, res) => {
-  res.json({ ok: true, message: 'Backend is running 🚀' });
-});
-
-// === Auth endpoints ============================================= //
-
-// Login: username + password -> token + user info
+// Login: POST /api/auth/login
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
 
   if (!username || !password) {
     return res
       .status(400)
-      .json({ ok: false, error: 'username and password are required' });
+      .json({ ok: false, error: 'Username and password are required' });
   }
 
-  const user = findUserByUsername(username);
+  const user = findUserByCredentials(username, password);
   if (!user) {
-    return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+    return res
+      .status(401)
+      .json({ ok: false, error: 'Invalid username or password' });
   }
 
-  // For now: plain text compare (DEV ONLY – later use hashes / bcrypt)
-  if (user.password !== password) {
-    return res.status(401).json({ ok: false, error: 'Invalid credentials' });
-  }
+  const token = createToken();
+  sessions.set(token, user.id);
 
-  const token = createSession(user);
-
-  res.json({
+  return res.json({
     ok: true,
     token,
     user: {
       id: user.id,
       username: user.username,
-      name: user.name,
       role: user.role,
     },
   });
 });
 
-// Who am I? (for testing the token)
-app.get('/api/auth/me', authMiddleware, (req, res) => {
+// Auth middleware: checks Bearer token, attaches req.user
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return res
+      .status(401)
+      .json({ ok: false, error: 'Missing or invalid Authorization header' });
+  }
+
+  const userId = sessions.get(token);
+  if (!userId) {
+    return res
+      .status(401)
+      .json({ ok: false, error: 'Invalid or expired token' });
+  }
+
+  const user = findUserById(userId);
+  if (!user) {
+    return res
+      .status(401)
+      .json({ ok: false, error: 'User not found for this token' });
+  }
+
+  req.user = user;
+  req.token = token;
+  next();
+}
+
+// Current user: GET /api/auth/me
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  const user = req.user;
   res.json({
     ok: true,
-    user: req.user,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    },
   });
 });
 
-// === Monthly transmission ======================================== //
+// ---- Health check ----
+app.get('/health', (req, res) => {
+  res.json({ ok: true, message: 'Backend is running 🚀' });
+});
 
-// We store submissions here as JSON files
-const SUBMISSIONS_DIR = path.join(DATA_DIR, 'submissions');
-if (!fs.existsSync(SUBMISSIONS_DIR)) {
-  fs.mkdirSync(SUBMISSIONS_DIR, { recursive: true });
+// Base folder for all users
+const BASE_DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(BASE_DATA_DIR)) {
+  fs.mkdirSync(BASE_DATA_DIR, { recursive: true });
 }
 
-// Receive monthly transmission
-// NOTE: currently still open (no authMiddleware) so your existing frontend keeps working.
-// Later: app.post('/api/transmit-month', authMiddleware, (req, res) => { ... })
-app.post('/api/transmit-month', authMiddleware, (req, res) => {
+// Helper: get (and create) the folder for a given user
+function getUserDir(userId) {
+  // ensure no weird characters in folder name
+  const safeId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dir = path.join(BASE_DATA_DIR, safeId);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+
+// Receive monthly transmission (protected)
+app.post('/api/transmit-month', requireAuth, (req, res) => {
   const payload = req.body;
 
-  console.log('Received monthly transmission from user:', req.user);
+  console.log('Received monthly transmission from', req.user.username);
   console.log(JSON.stringify(payload, null, 2));
 
+  // Basic validation
   if (
     typeof payload.year !== 'number' ||
     typeof payload.monthIndex !== 'number' ||
@@ -187,23 +151,29 @@ app.post('/api/transmit-month', authMiddleware, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Invalid payload' });
   }
 
-  const userId = req.user.id;           // from login
-  const username = req.user.username;   // also available if you want
+  // Logged-in user
+  const userId = req.user.username;
 
-  const monthNumber = payload.monthIndex + 1;
+  const monthNumber = payload.monthIndex + 1; // 0–11 -> 1–12
   const monthStr = String(monthNumber).padStart(2, '0');
-  const timestamp = Date.now();
 
-  const fileName = `${payload.year}-${monthStr}-${userId}-${timestamp}.json`;
-  const filePath = path.join(DATA_DIR, fileName);
+  const now = new Date();
+  // Example: 2025-03-01T08-30-12-123Z
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+
+  const fileName = `${payload.year}-${monthStr}-${timestamp}.json`;
+
+  // Folder for that user
+  const userDir = getUserDir(userId);
+  const filePath = path.join(userDir, fileName);
 
   const submission = {
     ...payload,
     userId,
-    username,
-    receivedAt: new Date().toISOString(),
+    receivedAt: now.toISOString(),
   };
 
+  // 1) Save full submission
   try {
     fs.writeFileSync(filePath, JSON.stringify(submission, null, 2), 'utf8');
   } catch (err) {
@@ -211,6 +181,39 @@ app.post('/api/transmit-month', authMiddleware, (req, res) => {
     return res
       .status(500)
       .json({ ok: false, error: 'Could not save data on server' });
+  }
+
+  // 2) Update user's index.json (simple list of transmissions)
+  const indexPath = path.join(userDir, 'index.json');
+  let index = [];
+  try {
+    if (fs.existsSync(indexPath)) {
+      const raw = fs.readFileSync(indexPath, 'utf8');
+      index = JSON.parse(raw);
+      if (!Array.isArray(index)) index = [];
+    }
+  } catch (err) {
+    console.warn('Could not read existing index.json, starting fresh', err);
+    index = [];
+  }
+
+  const stats = fs.statSync(filePath);
+  const meta = {
+    id: fileName,
+    year: payload.year,
+    monthIndex: payload.monthIndex,
+    monthLabel: payload.monthLabel,
+    sentAt: now.toISOString(),
+    sizeBytes: stats.size,
+  };
+
+  index.push(meta);
+
+  try {
+    fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to update index.json:', err);
+    // Not fatal for the client; main file is already saved
   }
 
   res.json({
@@ -221,8 +224,32 @@ app.post('/api/transmit-month', authMiddleware, (req, res) => {
 });
 
 
-// === Start server ================================================ //
+// List all transmissions for the logged-in user
+app.get('/api/transmissions', requireAuth, (req, res) => {
+  const userId = req.user.username;
+  const userDir = getUserDir(userId);
+  const indexPath = path.join(userDir, 'index.json');
 
+  let index = [];
+  try {
+    if (fs.existsSync(indexPath)) {
+      const raw = fs.readFileSync(indexPath, 'utf8');
+      index = JSON.parse(raw);
+      if (!Array.isArray(index)) index = [];
+    }
+  } catch (err) {
+    console.error('Failed to read index.json:', err);
+    index = [];
+  }
+
+  res.json({
+    ok: true,
+    transmissions: index,
+  });
+});
+
+
+// ---- Start server ----
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
 });

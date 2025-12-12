@@ -50,9 +50,9 @@ const absenceToEl = document.getElementById('absenceTo');
 const absenceDaysEl = document.getElementById('absenceDays');
 const absenceCommentEl = document.getElementById('absenceComment');
 const absenceSaveBtn = document.getElementById('absenceSaveBtn');
-
+// Send Button
 const dashboardTransmitBtn = document.getElementById('dashboardTransmitBtn');
-
+// Login
 const loginView = document.getElementById('loginView');
 const mainApp = document.getElementById('mainApp');
 const loginForm = document.getElementById('loginForm');
@@ -61,6 +61,12 @@ const loginPasswordInput = document.getElementById('loginPassword');
 const loginErrorEl = document.getElementById('loginError');
 const userDisplayEl = document.getElementById('userDisplay');
 const logoutBtn = document.getElementById('logoutBtn');
+
+// Login Sync Pill
+const syncStatusEl = document.getElementById('syncStatus');
+const syncLabelEl = document.getElementById('syncLabel');
+
+
 
 
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
@@ -82,6 +88,7 @@ topNavTabs.forEach((tab) => {
     if (view === 'dashboard') {
       updateDashboardForCurrentMonth();
       updateOvertimeYearCard();
+      loadSyncStatus();
     }
   });
 });
@@ -151,6 +158,36 @@ function setAuthToken(token) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
   }
 }
+
+const AUTH_USER_KEY = 'authUser';
+
+// Read user object from localStorage (or null)
+function getAuthUser() {
+  const raw = localStorage.getItem(AUTH_USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+// Set both token + user in one place
+function setAuthSession(token, user) {
+  setAuthToken(token);
+  if (user) {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(AUTH_USER_KEY);
+  }
+}
+
+// Clear everything auth-related
+function clearAuthSession() {
+  setAuthToken('');
+  localStorage.removeItem(AUTH_USER_KEY);
+}
+
 
 // Wrapper for fetch that automatically adds Authorization header
 function authFetch(path, options = {}) {
@@ -984,6 +1021,13 @@ if (pikettMonthNextBtn) {
 
 if (dashboardTransmitBtn) {
   dashboardTransmitBtn.addEventListener('click', () => {
+    const token = getAuthToken();
+    if (!token) {
+      alert('Bitte zuerst einloggen, bevor Sie die Monatsdaten übertragen.');
+      showLogin();
+      return;
+    }
+
     const payload = buildPayloadForCurrentDashboardMonth();
 
     authFetch('/api/transmit-month', {
@@ -995,23 +1039,43 @@ if (dashboardTransmitBtn) {
     })
       .then((res) => {
         if (!res.ok) {
-          throw new Error('Server error');
+          // differentiate 401 vs others (optional)
+          if (res.status === 401) {
+            throw new Error('UNAUTHORIZED');
+          }
+          throw new Error('SERVER_ERROR');
         }
         return res.json();
       })
       .then((data) => {
         if (!data.ok) {
-          alert(`Übertragung fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`);
+          alert(
+            `Übertragung fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`
+          );
           return;
         }
-        alert(`Daten für ${payload.monthLabel} erfolgreich übertragen.\nServer: ${data.message}`);
+        alert(
+          `Daten für ${payload.monthLabel} erfolgreich übertragen.\nServer: ${data.message}`
+        );
+
+          // Sync-Status direkt aktualisieren
+           loadSyncStatus();
       })
       .catch((err) => {
         console.error(err);
-        alert('Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).');
+        if (err.message === 'UNAUTHORIZED') {
+          clearAuthSession();
+          showLogin();
+          alert('Sitzung ist abgelaufen. Bitte neu einloggen.');
+        } else {
+          alert(
+            'Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).'
+          );
+        }
       });
   });
 }
+
 
 
 
@@ -1552,6 +1616,103 @@ function updateDashboardForCurrentMonth() {
   // 4) Wochenstatus für diesen Monat aktualisieren
   updateDashboardWeekListForCurrentMonth();
 }
+
+function updateSyncStatus(transmissions) {
+  if (!syncStatusEl || !syncLabelEl) return;
+
+  // Reset base class
+  syncStatusEl.className = 'sync-chip';
+
+  if (!Array.isArray(transmissions) || transmissions.length === 0) {
+    syncLabelEl.textContent = 'Nie gesendet';
+    syncStatusEl.classList.add('sync-age-unknown');
+    syncStatusEl.title = 'Noch keine Übertragung zum Server.';
+    return;
+  }
+
+  // Find the newest transmission by sentAt
+  const latest = transmissions.reduce((best, tx) => {
+    if (!tx.sentAt) return best;
+
+    const d = new Date(tx.sentAt);
+    if (Number.isNaN(d.getTime())) return best;
+
+    if (!best) return { tx, date: d };
+    return d > best.date ? { tx, date: d } : best;
+  }, null);
+
+  if (!latest) {
+    syncLabelEl.textContent = 'Nie gesendet';
+    syncStatusEl.classList.add('sync-age-unknown');
+    syncStatusEl.title = 'Noch keine Übertragung zum Server.';
+    return;
+  }
+
+  const { date } = latest;
+  const now = new Date();
+  const diffMs = now - date;
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  // Show last sync time in the label
+  syncLabelEl.textContent = date.toLocaleString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  // Age → color & tooltip
+  if (diffHours <= 24) {
+    syncStatusEl.classList.add('sync-age-ok');
+    syncStatusEl.title = 'Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).';
+  } else if (diffDays <= 7) {
+    syncStatusEl.classList.add('sync-age-warn');
+    syncStatusEl.title = 'Daten sind leicht veraltet (älter als 1 Tag).';
+  } else {
+    syncStatusEl.classList.add('sync-age-bad');
+    syncStatusEl.title = 'Daten sind veraltet (länger als eine Woche keine Übertragung).';
+  }
+}
+
+function loadSyncStatus() {
+  if (!syncStatusEl || !syncLabelEl) return;
+
+  // Optional mini "loading" state
+  syncLabelEl.textContent = '…';
+  syncStatusEl.className = 'sync-chip sync-age-unknown';
+  syncStatusEl.title = 'Lade Server-Status…';
+
+  authFetch('/api/transmissions')
+    .then((res) => {
+      if (res.status === 401) {
+        // Session invalid → back to login
+        setAuthToken('');
+        showLogin();
+        throw new Error('Nicht eingeloggt');
+      }
+      if (!res.ok) {
+        throw new Error('Serverfehler');
+      }
+      return res.json();
+    })
+    .then((data) => {
+      if (!data.ok) {
+        throw new Error(data.error || 'Fehler beim Laden der Übertragungen');
+      }
+      updateSyncStatus(data.transmissions || []);
+    })
+    .catch((err) => {
+      console.error('Failed to load sync status', err);
+      syncLabelEl.textContent = 'Unbekannt';
+      syncStatusEl.className = 'sync-chip sync-age-unknown';
+      syncStatusEl.title = 'Server-Status konnte nicht geladen werden.';
+    });
+}
+
+
+
 
 function updateOvertimeYearCard() {
   if (
@@ -2391,7 +2552,8 @@ if (loginForm) {
 
     if (!username || !password) {
       if (loginErrorEl) {
-        loginErrorEl.textContent = 'Bitte Benutzername und Passwort eingeben.';
+        loginErrorEl.textContent =
+          'Bitte Benutzername und Passwort eingeben.';
         loginErrorEl.style.display = 'block';
       }
       return;
@@ -2409,7 +2571,8 @@ if (loginForm) {
           throw new Error(data.error || 'Login fehlgeschlagen');
         }
 
-        setAuthToken(data.token);
+        // NEW: store token + user together
+        setAuthSession(data.token, data.user || { username });
 
         if (userDisplayEl) {
           userDisplayEl.textContent =
@@ -2435,9 +2598,10 @@ if (loginForm) {
   });
 }
 
+
 if (logoutBtn) {
   logoutBtn.addEventListener('click', () => {
-    setAuthToken('');
+    clearAuthSession();
     if (userDisplayEl) {
       userDisplayEl.textContent = '–';
     }
@@ -2445,14 +2609,23 @@ if (logoutBtn) {
   });
 }
 
+
 function initAuthView() {
   const token = getAuthToken();
+  const storedUser = getAuthUser();
+
   if (!token) {
+    // no session at all → login screen
     showLogin();
     return;
   }
 
-  // Validate token and fetch user info
+  // Optional: show last known username immediately
+  if (storedUser && userDisplayEl) {
+    userDisplayEl.textContent = storedUser.username || 'Unbekannt';
+  }
+
+  // Validate token + refresh user from backend
   authFetch('/api/auth/me')
     .then((res) => {
       if (!res.ok) {
@@ -2464,17 +2637,26 @@ function initAuthView() {
       if (!data.ok || !data.user) {
         throw new Error('Invalid session');
       }
+
+      // keep same token, update user info from server
+      setAuthSession(token, data.user);
+
       if (userDisplayEl) {
         userDisplayEl.textContent = data.user.username || 'Unbekannt';
       }
       showApp();
+
+      // Beim Login einmal initial laden
+      loadSyncStatus();
+
     })
     .catch((err) => {
       console.error('Auth check failed', err);
-      setAuthToken('');
+      clearAuthSession();
       showLogin();
     });
 }
+
 
 // Call after other init
 initAuthView();

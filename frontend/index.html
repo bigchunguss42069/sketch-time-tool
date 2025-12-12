@@ -53,10 +53,14 @@
     <div id="mainApp" class="hidden">
       <!-- Optional: small header bar with user + logout -->
       <header class="app-header-bar">
+        <!-- User Name -->
         <div class="app-user-info">
-          Angemeldet als <span id="userDisplay" class="user-pill">–</span>
+        <span id="userDisplay" class="user-pill">–</span>
         </div>
+        <!-- LogoutBtn -->
         <button id="logoutBtn" class="logout-button">Abmelden</button>
+        
+        
       </header>
 
 
@@ -952,13 +956,23 @@
     </div>
 
 
-           <div class="dashboard-transmit-row">
+     
+ <!-- TransmitBtn -->
+        <div class="dashboard-transmit-row">
         <button id="dashboardTransmitBtn" class="dashboard-transmit-btn">
-          Daten für diesen Monat übertragen
+          Daten übertragen
         </button>
-      </div>
-
-
+       
+        <!-- SyncStat -->
+         <div
+          id="syncStatus"
+          class="sync-chip sync-age-unknown"
+          title="Noch keine Übertragung"
+          >
+          <span class="sync-dot"></span>
+          <span id="syncLabel" class="sync-label">Nie gesendet</span>
+         </div>
+ </div>
     <!-- Main dashboard card -->
     <div class="dashboard-card">
       <h2 class="dashboard-card-title">Arbeitszeit von diesem Monat</h2>

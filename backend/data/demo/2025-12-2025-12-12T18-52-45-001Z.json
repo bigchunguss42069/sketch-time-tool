@@ -1,0 +1,349 @@
+{
+  "year": 2025,
+  "monthIndex": 11,
+  "monthLabel": "Dezember 2025",
+  "days": {
+    "2025-12-01": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-02": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-08": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-09": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-10": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-11": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-12": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-05": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false,
+        "ferienManual": false,
+        "ferienFromAbsences": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-03": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-04": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    }
+  },
+  "pikett": [
+    {
+      "date": "2025-12-07",
+      "komNr": "",
+      "hours": 0,
+      "note": "",
+      "isOvertime3": false
+    }
+  ],
+  "absences": [],
+  "userId": "demo",
+  "receivedAt": "2025-12-12T18:52:45.001Z"
+}
