@@ -38,36 +38,37 @@ function createToken() {
 
 // ---- Auth routes ----
 
-// Login: POST /api/auth/login
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
+// Receive monthly transmission (protected)
+app.post('/api/transmit-month', requireAuth, (req, res) => {
+  const payload = req.body;
 
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ ok: false, error: 'Username and password are required' });
+  console.log('Received monthly transmission from', req.user.username);
+  console.log(JSON.stringify(payload, null, 2));
+
+  if (
+    typeof payload.year !== 'number' ||
+    typeof payload.monthIndex !== 'number' ||
+    typeof payload.monthLabel !== 'string'
+  ) {
+    return res.status(400).json({ ok: false, error: 'Invalid payload' });
   }
 
-  const user = findUserByCredentials(username, password);
-  if (!user) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Invalid username or password' });
-  }
+  // Logged-in user → use stable ID
+  const userId = req.user.id;
 
-  const token = createToken();
-  sessions.set(token, user.id);
+  const monthNumber = payload.monthIndex + 1;
+  const monthStr = String(monthNumber).padStart(2, '0');
 
-  return res.json({
-    ok: true,
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-    },
-  });
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+  const fileName = `${payload.year}-${monthStr}-${timestamp}.json`;
+
+  const userDir = getUserDir(userId);
+  const filePath = path.join(userDir, fileName);
+
+  // ...
 });
+
 
 // Auth middleware: checks Bearer token, attaches req.user
 function requireAuth(req, res, next) {

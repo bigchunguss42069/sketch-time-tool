@@ -11,14 +11,15 @@ const weekPrevBtn = document.getElementById('weekPrev');
 const weekNextBtn = document.getElementById('weekNext');
 const dayTotalEl = document.getElementById('dayTotal');
 
-const STORAGE_KEY = 'wochenplan-v1';
+let STORAGE_KEY = 'wochenplan-v1';
+let PIKETT_STORAGE_KEY = 'pikett-v1';
+let ABSENCE_STORAGE_KEY = 'absenceRequests-v1';
+
 
 const topNavTabs = document.querySelectorAll('.top-nav-tab');
 const appViews = document.querySelectorAll('.app-view');
 
 const pikettAddBtn = document.getElementById('pikettAddBtn');
-const PIKETT_STORAGE_KEY = 'pikett-v1';
-const ABSENCE_STORAGE_KEY = 'absenceRequests-v1';
 const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
 const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
 const pikettMonthNextBtn = document.getElementById('pikettMonthNext');
@@ -145,49 +146,44 @@ function saveToStorage() {
 
 // --- Auth helper --- //
 const BACKEND_BASE_URL = 'http://localhost:3000';
-const AUTH_TOKEN_KEY = 'authToken';
+const AUTH_SESSION_KEY = 'authSession';
 
-function getAuthToken() {
-  return localStorage.getItem(AUTH_TOKEN_KEY) || '';
-}
-
-function setAuthToken(token) {
-  if (token) {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
+// session = { token: string, user: { id, username, role, ... } }
+function setAuthSession(token, user) {
+  const session = { token, user };
+  try {
+    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  } catch (err) {
+    console.error('Failed to store auth session', err);
   }
 }
 
-const AUTH_USER_KEY = 'authUser';
-
-// Read user object from localStorage (or null)
-function getAuthUser() {
-  const raw = localStorage.getItem(AUTH_USER_KEY);
+function getAuthSession() {
+  const raw = localStorage.getItem(AUTH_SESSION_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (typeof parsed.token !== 'string') return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 
-// Set both token + user in one place
-function setAuthSession(token, user) {
-  setAuthToken(token);
-  if (user) {
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  } else {
-    localStorage.removeItem(AUTH_USER_KEY);
-  }
-}
-
-// Clear everything auth-related
 function clearAuthSession() {
-  setAuthToken('');
-  localStorage.removeItem(AUTH_USER_KEY);
+  localStorage.removeItem(AUTH_SESSION_KEY);
 }
 
+function getAuthToken() {
+  const session = getAuthSession();
+  return session?.token || '';
+}
+
+function getCurrentUser() {
+  const session = getAuthSession();
+  return session?.user || null;
+}
 
 // Wrapper for fetch that automatically adds Authorization header
 function authFetch(path, options = {}) {
@@ -203,6 +199,13 @@ function authFetch(path, options = {}) {
   return fetch(`${BACKEND_BASE_URL}${path}`, {
     ...options,
     headers,
+  }).then((res) => {
+    // Wenn Token ungültig → Session löschen und Login anzeigen
+    if (res.status === 401) {
+      clearAuthSession();
+      showLogin();
+    }
+    return res;
   });
 }
 
@@ -1271,21 +1274,16 @@ function calculateUsedVacationDaysFromFlags(year) {
       });
     }
 
-    // --- Aus Stunden -> Ferien-Tagesanteil --- //
-    let dayFraction = 0;
+    // --- Option C: Ferienanteil = 1 - Stunden/8, keine Minusstunden --- //
+    let fraction = 1 - hoursWorked / DAILY_SOLL;
 
-    if (hoursWorked <= 0) {
-      // 0 h Arbeit → ganzer Ferientag
-      dayFraction = 1;
-    } else if (hoursWorked < DAILY_SOLL) {
-      // z.B. 4h Arbeit + Rest Ferien → halber Ferientag
-      dayFraction = 0.5;
-    } else {
-      // 8h oder mehr gearbeitet → kein Ferienverbrauch
-      dayFraction = 0;
-    }
+    // Untergrenze 0 (wenn > 8h gearbeitet wurde, keine Ferien)
+    if (fraction < 0) fraction = 0;
 
-    totalDays += dayFraction;
+    // Auf Viertel-Tage runden (0.25, 0.5, 0.75, 1.0, ...)
+    fraction = Math.round(fraction * 4) / 4;
+
+    totalDays += fraction;
   });
 
   return totalDays;
@@ -1686,12 +1684,6 @@ function loadSyncStatus() {
 
   authFetch('/api/transmissions')
     .then((res) => {
-      if (res.status === 401) {
-        // Session invalid → back to login
-        setAuthToken('');
-        showLogin();
-        throw new Error('Nicht eingeloggt');
-      }
       if (!res.ok) {
         throw new Error('Serverfehler');
       }
@@ -1710,6 +1702,7 @@ function loadSyncStatus() {
       syncStatusEl.title = 'Server-Status konnte nicht geladen werden.';
     });
 }
+
 
 
 
@@ -2213,6 +2206,14 @@ if (dashboardMonthNextBtn) {
 
 // --- Helpers --- //
 
+function updateStorageKeysForUser(user) {
+  const name = user && user.username ? user.username : 'anon';
+  const safe = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  STORAGE_KEY = `wochenplan-v1-${safe}`;
+  PIKETT_STORAGE_KEY = `pikett-v1-${safe}`;
+  ABSENCE_STORAGE_KEY = `absenceRequests-v1-${safe}`;
+}
 // Normalize Kom.Nummer: remove all whitespace (spaces, tabs, line breaks)
 function normalizeKomNr(value) {
   if (!value) return '';
@@ -2574,6 +2575,8 @@ if (loginForm) {
         // NEW: store token + user together
         setAuthSession(data.token, data.user || { username });
 
+        reloadAllDataForCurrentUser();
+
         if (userDisplayEl) {
           userDisplayEl.textContent =
             (data.user && data.user.username) || username;
@@ -2586,6 +2589,9 @@ if (loginForm) {
 
         loginPasswordInput.value = '';
         showApp();
+
+        loadSyncStatus();
+
       })
       .catch((err) => {
         console.error('Login error', err);
@@ -2611,21 +2617,27 @@ if (logoutBtn) {
 
 
 function initAuthView() {
-  const token = getAuthToken();
-  const storedUser = getAuthUser();
+  const session = getAuthSession(); // { token, user }
 
-  if (!token) {
-    // no session at all → login screen
+  // No session at all → show login and stop
+  if (!session || !session.token) {
     showLogin();
     return;
   }
 
-  // Optional: show last known username immediately
-  if (storedUser && userDisplayEl) {
-    userDisplayEl.textContent = storedUser.username || 'Unbekannt';
+  // Show last known username immediately
+  if (userDisplayEl && session.user && session.user.username) {
+    userDisplayEl.textContent = session.user.username;
   }
 
-  // Validate token + refresh user from backend
+  // Load all local data for this user (per-user storage keys) + render UI
+  reloadAllDataForCurrentUser();
+  showApp();
+
+  // Sync status badge
+  loadSyncStatus();
+
+  // Optional: verify token against backend and refresh user info
   authFetch('/api/auth/me')
     .then((res) => {
       if (!res.ok) {
@@ -2638,17 +2650,17 @@ function initAuthView() {
         throw new Error('Invalid session');
       }
 
-      // keep same token, update user info from server
-      setAuthSession(token, data.user);
+      // Keep existing token, just refresh the user object
+      const currentSession = getAuthSession();
+      if (!currentSession || !currentSession.token) {
+        throw new Error('No token in session anymore');
+      }
+
+      setAuthSession(currentSession.token, data.user);
 
       if (userDisplayEl) {
         userDisplayEl.textContent = data.user.username || 'Unbekannt';
       }
-      showApp();
-
-      // Beim Login einmal initial laden
-      loadSyncStatus();
-
     })
     .catch((err) => {
       console.error('Auth check failed', err);
@@ -2656,6 +2668,7 @@ function initAuthView() {
       showLogin();
     });
 }
+
 
 
 // Call after other init
@@ -3480,20 +3493,32 @@ dayButtons.forEach((btn) => {
   });
 });
 
+function reloadAllDataForCurrentUser() {
+  const user = getCurrentUser();
+  updateStorageKeysForUser(user);
 
-// --- Initial render --- //
+  // Laden
+  Object.keys(dayStore).forEach((k) => delete dayStore[k]);
+  loadFromStorage();                 // uses STORAGE_KEY now for this user
+  pikettStore = loadPikettStore();   // uses PIKETT_STORAGE_KEY
+  absenceRequests = loadAbsenceRequests(); // uses ABSENCE_STORAGE_KEY
 
-loadFromStorage();
-renderWeekInfo();
-updateDayTitleWithDate(); // NEU
-applyFlagsForCurrentDay();
-applyDayHoursForCurrentDay(); 
-applyMealAllowanceForCurrentDay();   
-applyKomForCurrentDay();
-applySpecialEntriesForCurrentDay();
-updateDayTotalFromInputs();
-renderPikettList();
-updatePikettMonthTotal();
-updateDashboardForCurrentMonth();
-updateOvertimeYearCard();
+  // UI neu aufbauen
+  renderWeekInfo();
+  updateDayTitleWithDate();
+  applyFlagsForCurrentDay();
+  applyDayHoursForCurrentDay();
+  applyMealAllowanceForCurrentDay();
+  applyKomForCurrentDay();
+  applySpecialEntriesForCurrentDay();
+  updateDayTotalFromInputs();
+  renderPikettList();
+  updatePikettMonthTotal();
+  updateDashboardForCurrentMonth();
+  updateOvertimeYearCard();
+}
+
+
+
+initAuthView();
 
