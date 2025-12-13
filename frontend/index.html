@@ -49,9 +49,9 @@
       </div>
     </div>
 
-     <!-- MAIN APP (everything you already had) -->
+     <!-- MAIN APP  -->
     <div id="mainApp" class="hidden">
-      <!-- Optional: small header bar with user + logout -->
+      <!--  small header bar with user + logout -->
       <header class="app-header-bar">
         <!-- User Name -->
         <div class="app-user-info">
@@ -75,7 +75,7 @@
         </button>
         <button class="top-nav-tab" data-view="pikett">Pikett</button>
         <button class="top-nav-tab" data-view="dashboard">Dashboard</button>
-        
+        <button class="top-nav-tab-hidden" data-view="admin" id="adminTab">Admin</button>
       </header>
 
       <!-- View 1: Wochenplan (your existing app) -->
@@ -910,19 +910,18 @@
 
         <div id="pikettList" class="pikett-list">
           <!-- Pikett-Karten werden hier per JS eingefügt -->
-        </div>
+         </div>
+       </div>
       </div>
-    </div>
 
 
-    <!-- View 3: Dashboard -->
-   <!-- View 3: Dashboard -->
-<div id="view-dashboard" class="app-view">
-  <div class="dashboard-wrapper">
-    <!-- Header card -->
-    <div class="dashboard-header-card">
-      <div class="dashboard-header-top">
-        <h1 class="dashboard-title">Monatsüberblick</h1>
+        <!-- View 3: Dashboard -->
+      <div id="view-dashboard" class="app-view">
+        <div class="dashboard-wrapper">
+          <!-- Header card -->
+          <div class="dashboard-header-card">
+            <div class="dashboard-header-top">
+              <h1 class="dashboard-title">Monatsüberblick</h1>
 
  
 
@@ -1005,7 +1004,7 @@
       </div>
     </div>
 
-        <!-- Wochenstatus card -->
+         <!-- Wochenstatus card -->
     <div class="dashboard-card">
       <h2 class="dashboard-card-title">Wochenstatus in diesem Monat</h2>
 
@@ -1013,7 +1012,7 @@
         <!-- Zeilen werden per JS eingefügt -->
       </div>
     </div>
-<!-- Neue Karte: Überzeit & Vorarbeit (Jahr) -->
+        <!-- Neue Karte: Überzeit & Vorarbeit (Jahr) -->
     <div class="dashboard-card">
       <h2 class="dashboard-card-title">Überzeit &amp; Vorarbeit (Jahr)</h2>
 
@@ -1113,9 +1112,9 @@
       Antrag speichern
     </button>
   </div>
-</form>
+  </form>
 
-<div class="dashboard-metric-separator"></div>
+  <div class="dashboard-metric-separator"></div>
 
       <!-- Abwesenheits-Liste für das ausgewählte Jahr -->
       <div class="absence-list-wrapper">
@@ -1132,8 +1131,88 @@
 </div>
 
 
-    <!-- View 4: Dokumente -->
-   
+<!-- View 4: Admin -->
+<div class="app-view" id="view-admin">
+  <div class="admin-header">
+    <h2>Admin</h2>
+    <p class="admin-subtitle">
+      Auswertungen für Mitarbeiter, Anlagen und Lohnabrechnung.
+    </p>
+  </div>
+
+  <!-- Inner admin tabs -->
+  <div class="admin-tabs">
+    <button
+      type="button"
+      class="admin-tab-btn active"
+      data-admin-tab="overview"
+    >
+      Überblick
+    </button>
+    <button
+      type="button"
+      class="admin-tab-btn"
+      data-admin-tab="anlagen"
+    >
+      Anlagen
+    </button>
+    <button
+      type="button"
+      class="admin-tab-btn"
+      data-admin-tab="payroll"
+    >
+      Lohnabrechnung
+    </button>
+  </div>
+
+  <!-- Tab: Überblick (Mitarbeiter) -->
+  <div
+    class="admin-tab-content active"
+    data-admin-content="overview"
+  >
+    <div class="admin-section-header">
+      <h3>Mitarbeiter-Überblick</h3>
+      <p class="admin-section-subtitle">
+        Letzte Übertragungen pro Mitarbeiter und Team.
+      </p>
+    </div>
+
+    <div
+      id="adminSummaryContainer"
+      class="admin-summary-container"
+    >
+      <!-- Wird per JS gefüllt (wie bisher) -->
+    </div>
+  </div>
+
+  <!-- Tab: Anlagen (Kom.Nr) -->
+  <div class="admin-tab-content" data-admin-content="anlagen">
+    <div class="admin-section-header">
+      <h3>Anlagen-Auswertung</h3>
+      <p class="admin-section-subtitle">
+        Kommissionsnummern, Stunden und Überzeit nach Anlage.
+      </p>
+    </div>
+    <div class="admin-placeholder">
+      <p>Hier kommen später die Kommissions-Statistiken & Charts rein.</p>
+    </div>
+  </div>
+
+  <!-- Tab: Lohnabrechnung -->
+  <div class="admin-tab-content" data-admin-content="payroll">
+    <div class="admin-section-header">
+      <h3>Lohnabrechnung</h3>
+      <p class="admin-section-subtitle">
+        Aggregierte Daten für HR, mit Export in Excel/PDF.
+      </p>
+    </div>
+    <div class="admin-placeholder">
+      <p>Hier kommen später die Lohn-Übersichten und Exports rein.</p>
+    </div>
+  </div>
+</div>
+
+
   </div>
   </div>
 

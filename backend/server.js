@@ -13,11 +13,15 @@ app.use(express.json());
 
 // ---- "Database": users + sessions (in memory for now) ----
 
-// Adjust these users.
-// Usernames / passwords you can log in with from the frontend:
+// Teams
+const TEAMS = [
+  { id: 'montage', name: 'Team Montage' },
+  // später: { id: 'service', name: 'Team Service' }, ...
+];
+
 const USERS = [
-  { id: 'u1', username: 'demo',  password: 'demo123',  role: 'user' },
-  { id: 'u2', username: 'chef',  password: 'chef123',  role: 'admin' },
+  { id: 'u1', username: 'demo',  password: 'demo123',  role: 'user',  teamId: 'montage' },
+  { id: 'u2', username: 'chef',  password: 'chef123',  role: 'admin', teamId: 'montage' },
 ];
 
 const sessions = new Map(); // token -> userId
@@ -36,41 +40,8 @@ function createToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// ---- Auth routes ----
+// ---- Auth middleware ----
 
-// Receive monthly transmission (protected)
-app.post('/api/transmit-month', requireAuth, (req, res) => {
-  const payload = req.body;
-
-  console.log('Received monthly transmission from', req.user.username);
-  console.log(JSON.stringify(payload, null, 2));
-
-  if (
-    typeof payload.year !== 'number' ||
-    typeof payload.monthIndex !== 'number' ||
-    typeof payload.monthLabel !== 'string'
-  ) {
-    return res.status(400).json({ ok: false, error: 'Invalid payload' });
-  }
-
-  // Logged-in user → use stable ID
-  const userId = req.user.id;
-
-  const monthNumber = payload.monthIndex + 1;
-  const monthStr = String(monthNumber).padStart(2, '0');
-
-  const now = new Date();
-  const timestamp = now.toISOString().replace(/[:.]/g, '-');
-  const fileName = `${payload.year}-${monthStr}-${timestamp}.json`;
-
-  const userDir = getUserDir(userId);
-  const filePath = path.join(userDir, fileName);
-
-  // ...
-});
-
-
-// Auth middleware: checks Bearer token, attaches req.user
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const [scheme, token] = header.split(' ');
@@ -100,6 +71,51 @@ function requireAuth(req, res, next) {
   next();
 }
 
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res
+      .status(403)
+      .json({ ok: false, error: 'Admin role required' });
+  }
+  next();
+}
+
+// ---- Auth routes ----
+
+// Login: POST /api/auth/login
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'Missing username or password' });
+  }
+
+  const user = findUserByCredentials(username, password);
+  if (!user) {
+    return res
+      .status(401)
+      .json({ ok: false, error: 'Ungültige Zugangsdaten' });
+  }
+
+  const token = createToken();
+  // Store the session by *user.id* (stable, independent of username text)
+  sessions.set(token, user.id);
+
+  return res.json({
+    ok: true,
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      teamId: user.teamId,
+    },
+  });
+});
+
+
 // Current user: GET /api/auth/me
 app.get('/api/auth/me', requireAuth, (req, res) => {
   const user = req.user;
@@ -109,6 +125,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
       id: user.id,
       username: user.username,
       role: user.role,
+      teamId: user.teamId,
     },
   });
 });
@@ -118,15 +135,16 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, message: 'Backend is running 🚀' });
 });
 
-// Base folder for all users
+// ---- File storage helpers ----
+
 const BASE_DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(BASE_DATA_DIR)) {
   fs.mkdirSync(BASE_DATA_DIR, { recursive: true });
 }
 
 // Helper: get (and create) the folder for a given user
+// We use username as the folder id (consistent with existing files)
 function getUserDir(userId) {
-  // ensure no weird characters in folder name
   const safeId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
   const dir = path.join(BASE_DATA_DIR, safeId);
   if (!fs.existsSync(dir)) {
@@ -135,6 +153,7 @@ function getUserDir(userId) {
   return dir;
 }
 
+// ---- Month transmission routes ----
 
 // Receive monthly transmission (protected)
 app.post('/api/transmit-month', requireAuth, (req, res) => {
@@ -152,19 +171,17 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Invalid payload' });
   }
 
-  // Logged-in user
+  // Logged-in user → we store by username
   const userId = req.user.username;
 
   const monthNumber = payload.monthIndex + 1; // 0–11 -> 1–12
   const monthStr = String(monthNumber).padStart(2, '0');
 
   const now = new Date();
-  // Example: 2025-03-01T08-30-12-123Z
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
 
   const fileName = `${payload.year}-${monthStr}-${timestamp}.json`;
 
-  // Folder for that user
   const userDir = getUserDir(userId);
   const filePath = path.join(userDir, fileName);
 
@@ -224,10 +241,9 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   });
 });
 
-
 // List all transmissions for the logged-in user
 app.get('/api/transmissions', requireAuth, (req, res) => {
-  const userId = req.user.username;
+  const userId = req.user.username; // consistent with above
   const userDir = getUserDir(userId);
   const indexPath = path.join(userDir, 'index.json');
 
@@ -249,6 +265,74 @@ app.get('/api/transmissions', requireAuth, (req, res) => {
   });
 });
 
+// ---- Admin: summary of transmissions per user ----
+// Only accessible for admins
+app.get(
+  '/api/admin/transmissions-summary',
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+    const summaries = USERS.map((user) => {
+      const userDir = getUserDir(user.username); // stored by username
+      const indexPath = path.join(userDir, 'index.json');
+
+      let transmissions = [];
+      if (fs.existsSync(indexPath)) {
+        try {
+          const raw = fs.readFileSync(indexPath, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            transmissions = parsed;
+          }
+        } catch (err) {
+          console.warn(
+            `Could not read index.json for user ${user.username}`,
+            err
+          );
+        }
+      }
+
+      const transmissionsCount = transmissions.length;
+      let lastSentAt = null;
+      let lastMonthLabel = null;
+
+      if (transmissionsCount > 0) {
+        // find the newest by sentAt
+        const latest = transmissions.reduce((best, tx) => {
+          if (!tx.sentAt) return best;
+          const d = new Date(tx.sentAt);
+          if (Number.isNaN(d.getTime())) return best;
+
+          if (!best) return { tx, date: d };
+          return d > best.date ? { tx, date: d } : best;
+        }, null);
+
+        if (latest) {
+          lastSentAt = latest.date.toISOString();
+          lastMonthLabel = latest.tx.monthLabel || null;
+        }
+      }
+
+      const team = TEAMS.find((t) => t.id === user.teamId) || null;
+
+      return {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        teamId: user.teamId || null,
+        teamName: team ? team.name : null,
+        transmissionsCount,
+        lastSentAt,
+        lastMonthLabel,
+      };
+    });
+
+    res.json({
+      ok: true,
+      users: summaries,
+    });
+  }
+);
 
 // ---- Start server ----
 app.listen(PORT, () => {

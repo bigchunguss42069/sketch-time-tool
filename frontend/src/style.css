@@ -1835,3 +1835,38 @@ color: #dee8ff;
   background: #d32f2f;
 }
 
+.admin-header {
+  margin-bottom: 12px;
+}
+
+.admin-subtitle {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.admin-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.admin-summary-table th,
+.admin-summary-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.admin-summary-table th {
+  text-align: left;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.admin-summary-table td {
+  color: #d1d5db;
+}
+
+.admin-summary-table tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.6);
+}
+

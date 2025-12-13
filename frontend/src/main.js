@@ -19,6 +19,11 @@ let ABSENCE_STORAGE_KEY = 'absenceRequests-v1';
 const topNavTabs = document.querySelectorAll('.top-nav-tab');
 const appViews = document.querySelectorAll('.app-view');
 
+const adminTab = document.getElementById('adminTab');
+const adminSummaryContainer = document.getElementById('adminSummaryContainer');
+
+
+
 const pikettAddBtn = document.getElementById('pikettAddBtn');
 const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
 const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
@@ -91,6 +96,11 @@ topNavTabs.forEach((tab) => {
       updateOvertimeYearCard();
       loadSyncStatus();
     }
+    else if (view === 'admin') {
+      loadAdminSummary();
+      
+    }
+
   });
 });
 
@@ -2490,6 +2500,71 @@ function renderWeekInfo() {
   });
 }
 
+function switchToView(viewName) {
+  const tab = document.querySelector(`.top-nav-tab[data-view="${viewName}"]`);
+  if (tab) {
+    tab.click();
+  }
+}
+
+
+function updateUIForRole() {
+  const user = getCurrentUser();
+
+  if (user && user.role === 'admin') {
+    // Admin: only show Admin tab
+    document.querySelectorAll('.top-nav-tab').forEach((tab) => {
+      const view = tab.dataset.view;
+      if (view === 'admin') {
+        tab.classList.remove('hidden');
+        tab.classList.add('active');
+      } else {
+        tab.classList.add('hidden');
+        tab.classList.remove('active');
+      }
+    });
+
+    // Show only admin view
+    document.querySelectorAll('.app-view').forEach((viewEl) => {
+      if (viewEl.id === 'view-admin') {
+        viewEl.classList.add('active');
+      } else {
+        viewEl.classList.remove('active');
+      }
+    });
+
+    // Load admin data when switching to admin view
+    loadAdminSummary();
+
+    return;
+  }
+
+  // Normal user: hide admin tab, show all others
+  if (adminTab) {
+    adminTab.classList.add('hidden');
+    adminTab.classList.remove('active');
+  }
+
+  document.querySelectorAll('.top-nav-tab').forEach((tab) => {
+    const view = tab.dataset.view;
+    if (view !== 'admin') {
+      tab.classList.remove('hidden');
+    }
+  });
+
+  // If we were in admin view somehow, go back to Wochenplan
+  const currentActive = document.querySelector('.app-view.active');
+  if (currentActive && currentActive.id === 'view-admin') {
+    const firstTab = document.querySelector(
+      '.top-nav-tab[data-view="wochenplan"]'
+    );
+    if (firstTab) {
+      firstTab.click();
+    }
+  }
+}
+
+
 // --- Total hours for currently active day --- //
 
 function updateDayTotalFromInputs() {
@@ -2560,26 +2635,34 @@ if (loginForm) {
       return;
     }
 
-    // Call backend
+        // Call backend
     fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
     })
-      .then((res) => res.json())
+      .then((res) => {
+        // Optional: handle non-2xx differently
+        return res.json();
+      })
       .then((data) => {
+        console.log('Login response JSON:', data);
+
         if (!data.ok || !data.token) {
           throw new Error(data.error || 'Login fehlgeschlagen');
         }
 
-        // NEW: store token + user together
-        setAuthSession(data.token, data.user || { username });
+        const user = data.user || { username };
+
+        setAuthSession(data.token, user);
+
+        // Configure UI based on role (hides/shows tabs, and for admin switches to admin)
+        updateUIForRole();
 
         reloadAllDataForCurrentUser();
 
         if (userDisplayEl) {
-          userDisplayEl.textContent =
-            (data.user && data.user.username) || username;
+          userDisplayEl.textContent = user.username || username;
         }
 
         if (loginErrorEl) {
@@ -2590,8 +2673,14 @@ if (loginForm) {
         loginPasswordInput.value = '';
         showApp();
 
-        loadSyncStatus();
+        // For safety, enforce default view: admin → admin, others → wochenplan
+        if (user.role === 'admin') {
+          switchToView('admin');
+        } else {
+          switchToView('wochenplan');
+        }
 
+        loadSyncStatus();
       })
       .catch((err) => {
         console.error('Login error', err);
@@ -2601,8 +2690,9 @@ if (loginForm) {
           loginErrorEl.style.display = 'block';
         }
       });
-  });
-}
+
+      });
+    }
 
 
 if (logoutBtn) {
@@ -2619,7 +2709,6 @@ if (logoutBtn) {
 function initAuthView() {
   const session = getAuthSession(); // { token, user }
 
-  // No session at all → show login and stop
   if (!session || !session.token) {
     showLogin();
     return;
@@ -2630,11 +2719,21 @@ function initAuthView() {
     userDisplayEl.textContent = session.user.username;
   }
 
-  // Load all local data for this user (per-user storage keys) + render UI
+  // Make sure role-based UI is applied from stored session
+  updateUIForRole();
+
+  // Load all local data for this user + render UI
   reloadAllDataForCurrentUser();
   showApp();
 
-  // Sync status badge
+  // Enforce default view based on stored role
+  const user = getCurrentUser();
+  if (user && user.role === 'admin') {
+    switchToView('admin');
+  } else {
+    switchToView('wochenplan');
+  }
+
   loadSyncStatus();
 
   // Optional: verify token against backend and refresh user info
@@ -2650,7 +2749,6 @@ function initAuthView() {
         throw new Error('Invalid session');
       }
 
-      // Keep existing token, just refresh the user object
       const currentSession = getAuthSession();
       if (!currentSession || !currentSession.token) {
         throw new Error('No token in session anymore');
@@ -2661,6 +2759,9 @@ function initAuthView() {
       if (userDisplayEl) {
         userDisplayEl.textContent = data.user.username || 'Unbekannt';
       }
+
+      // Role might have changed → re-apply UI
+      updateUIForRole();
     })
     .catch((err) => {
       console.error('Auth check failed', err);
@@ -2671,8 +2772,75 @@ function initAuthView() {
 
 
 
-// Call after other init
-initAuthView();
+      function loadAdminSummary() {
+        if (!adminSummaryContainer) return;
+
+        adminSummaryContainer.innerHTML = '<p>Übersicht wird geladen …</p>';
+
+        authFetch('/api/admin/transmissions-summary')
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error('Fehler beim Laden');
+            }
+            return res.json();
+          })
+          .then((data) => {
+            if (!data.ok || !Array.isArray(data.users)) {
+              throw new Error(data.error || 'Ungültige Antwort vom Server');
+            }
+
+            if (data.users.length === 0) {
+              adminSummaryContainer.innerHTML =
+                '<p>Noch keine Übertragungen vorhanden.</p>';
+              return;
+            }
+
+            adminSummaryContainer.innerHTML = '';
+
+            data.users.forEach((u) => {
+              const card = document.createElement('div');
+              card.className = 'admin-user-card';
+
+              const title = document.createElement('div');
+              title.className = 'admin-user-title';
+              title.textContent = `${u.username} (${u.teamName || 'kein Team'})`;
+
+              const body = document.createElement('div');
+              body.className = 'admin-user-body';
+
+              const count = document.createElement('div');
+              count.textContent = `Anzahl Übertragungen: ${u.transmissionsCount}`;
+
+              const last = document.createElement('div');
+              if (u.lastSentAt) {
+                const d = new Date(u.lastSentAt);
+                const dateStr = d.toLocaleString('de-CH', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                last.textContent = `Letzte Übertragung: ${u.lastMonthLabel || ''} (${dateStr})`;
+              } else {
+                last.textContent = 'Noch keine Übertragung';
+              }
+
+              body.appendChild(count);
+              body.appendChild(last);
+
+              card.appendChild(title);
+              card.appendChild(body);
+
+              adminSummaryContainer.appendChild(card);
+            });
+          })
+          .catch((err) => {
+            console.error('Admin summary error', err);
+            adminSummaryContainer.innerHTML =
+              '<p>Fehler beim Laden der Übersicht.</p>';
+          });
+      }
 
 
 
