@@ -21,6 +21,8 @@ const appViews = document.querySelectorAll('.app-view');
 
 const adminTab = document.getElementById('adminTab');
 const adminSummaryContainer = document.getElementById('adminSummaryContainer');
+const adminInnerTabButtons = document.querySelectorAll('.admin-tab-btn');
+const adminTabContents = document.querySelectorAll('.admin-tab-content');
 
 
 
@@ -2770,77 +2772,169 @@ function initAuthView() {
     });
 }
 
+      function getAdminSyncStatusInfo(lastSentAt) {
+  // No transmission yet
+  if (!lastSentAt) {
+    return {
+      className: 'sync-age-unknown',
+      label: 'Nie gesendet',
+      title: 'Noch keine Übertragung zum Server.',
+    };
+  }
+
+  const date = new Date(lastSentAt);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      className: 'sync-age-unknown',
+      label: 'Unbekannt',
+      title: 'Letztes Übertragungsdatum ist ungültig.',
+    };
+  }
+
+  const now = new Date();
+  const diffMs = now - date;
+  const diffHours = diffMs / (1000 * 60 * 60);
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  const label = date.toLocaleString('de-CH', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  let className;
+  let statusText;
+
+  if (diffHours <= 24) {
+    className = 'sync-age-ok';
+    statusText =
+      'Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).';
+  } else if (diffDays <= 7) {
+    className = 'sync-age-warn';
+    statusText = 'Daten sind leicht veraltet (älter als 1 Tag).';
+  } else {
+    className = 'sync-age-bad';
+    statusText =
+      'Daten sind veraltet (länger als eine Woche keine Übertragung).';
+  }
+
+  return {
+    className,
+    label,
+    title: `${statusText} Letzte Übertragung: ${label}`,
+  };
+}
 
 
-      function loadAdminSummary() {
-        if (!adminSummaryContainer) return;
+    function loadAdminSummary() {
+  if (!adminSummaryContainer) return;
 
-        adminSummaryContainer.innerHTML = '<p>Übersicht wird geladen …</p>';
+  adminSummaryContainer.innerHTML = '<p>Übersicht wird geladen …</p>';
 
-        authFetch('/api/admin/transmissions-summary')
-          .then((res) => {
-            if (!res.ok) {
-              throw new Error('Fehler beim Laden');
-            }
-            return res.json();
-          })
-          .then((data) => {
-            if (!data.ok || !Array.isArray(data.users)) {
-              throw new Error(data.error || 'Ungültige Antwort vom Server');
-            }
-
-            if (data.users.length === 0) {
-              adminSummaryContainer.innerHTML =
-                '<p>Noch keine Übertragungen vorhanden.</p>';
-              return;
-            }
-
-            adminSummaryContainer.innerHTML = '';
-
-            data.users.forEach((u) => {
-              const card = document.createElement('div');
-              card.className = 'admin-user-card';
-
-              const title = document.createElement('div');
-              title.className = 'admin-user-title';
-              title.textContent = `${u.username} (${u.teamName || 'kein Team'})`;
-
-              const body = document.createElement('div');
-              body.className = 'admin-user-body';
-
-              const count = document.createElement('div');
-              count.textContent = `Anzahl Übertragungen: ${u.transmissionsCount}`;
-
-              const last = document.createElement('div');
-              if (u.lastSentAt) {
-                const d = new Date(u.lastSentAt);
-                const dateStr = d.toLocaleString('de-CH', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-                last.textContent = `Letzte Übertragung: ${u.lastMonthLabel || ''} (${dateStr})`;
-              } else {
-                last.textContent = 'Noch keine Übertragung';
-              }
-
-              body.appendChild(count);
-              body.appendChild(last);
-
-              card.appendChild(title);
-              card.appendChild(body);
-
-              adminSummaryContainer.appendChild(card);
-            });
-          })
-          .catch((err) => {
-            console.error('Admin summary error', err);
-            adminSummaryContainer.innerHTML =
-              '<p>Fehler beim Laden der Übersicht.</p>';
-          });
+  authFetch('/api/admin/transmissions-summary')
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error('Fehler beim Laden');
       }
+      return res.json();
+    })
+    .then((data) => {
+      if (!data.ok || !Array.isArray(data.users)) {
+        throw new Error(data.error || 'Ungültige Antwort vom Server');
+      }
+
+      if (data.users.length === 0) {
+        adminSummaryContainer.innerHTML =
+          '<p>Noch keine Übertragungen vorhanden.</p>';
+        return;
+      }
+
+      adminSummaryContainer.innerHTML = '';
+
+      data.users.forEach((u) => {
+        const card = document.createElement('div');
+        card.className = 'admin-user-card';
+
+        // --- Header: Name/Team (links) + Sync-Pill (rechts) ---
+        const header = document.createElement('div');
+        header.className = 'admin-user-header';
+
+        const titleBlock = document.createElement('div');
+        titleBlock.className = 'admin-user-title-block';
+
+        const title = document.createElement('div');
+        title.className = 'admin-user-title';
+        title.textContent = u.username || 'Unbekannter Benutzer';
+
+        const team = document.createElement('div');
+        team.className = 'admin-user-team';
+        team.textContent = u.teamName || 'kein Team';
+
+        titleBlock.appendChild(title);
+        titleBlock.appendChild(team);
+
+        // Sync pill on the right of the name
+        const syncInfo = getAdminSyncStatusInfo(u.lastSentAt);
+
+        const pill = document.createElement('div');
+        pill.className = `sync-chip admin-user-sync-chip ${syncInfo.className}`;
+        pill.title = syncInfo.title;
+
+        const dot = document.createElement('span');
+        dot.className = 'sync-dot';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'sync-label';
+        labelSpan.textContent = syncInfo.label;
+
+        pill.appendChild(dot);
+        pill.appendChild(labelSpan);
+
+        header.appendChild(titleBlock);
+        header.appendChild(pill);
+
+        // --- Body: rest of the info ---
+        const body = document.createElement('div');
+        body.className = 'admin-user-body';
+
+        const count = document.createElement('div');
+        count.textContent = `Anzahl Übertragungen: ${u.transmissionsCount}`;
+
+        const last = document.createElement('div');
+        if (u.lastSentAt) {
+          const d = new Date(u.lastSentAt);
+          const dateStr = d.toLocaleString('de-CH', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          last.textContent = `Letzte Übertragung: ${
+            u.lastMonthLabel || ''
+          } (${dateStr})`;
+        } else {
+          last.textContent = 'Noch keine Übertragung';
+        }
+
+        body.appendChild(count);
+        body.appendChild(last);
+
+        card.appendChild(header);
+        card.appendChild(body);
+
+        adminSummaryContainer.appendChild(card);
+      });
+    })
+    .catch((err) => {
+      console.error('Admin summary error', err);
+      adminSummaryContainer.innerHTML =
+        '<p>Fehler beim Laden der Übersicht.</p>';
+    });
+}
+  
 
 
 
@@ -3639,6 +3733,33 @@ function showDay(dayId) {
   // Titel "Montag 22/02/2020" aktualisieren
   updateDayTitleWithDate();
 }
+
+adminInnerTabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.adminTab; // "overview" | "anlagen" | "payroll"
+
+    // Active-Status bei Buttons umschalten
+    adminInnerTabButtons.forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    // Content-Panels umschalten
+    adminTabContents.forEach((section) => {
+      section.classList.toggle(
+        'active',
+        section.dataset.adminContent === target
+      );
+    });
+
+    // Daten nachladen je nach Tab
+    if (target === 'overview') {
+      // nutzt deine bestehende Funktion
+      loadAdminSummary();
+    }
+    // target === 'anlagen' / 'payroll':
+    // später: eigene Loader-Funktionen für Auswertungen & Exports
+  });
+});
+
 
 
 dayButtons.forEach((btn) => {

@@ -22,6 +22,7 @@ const TEAMS = [
 const USERS = [
   { id: 'u1', username: 'demo',  password: 'demo123',  role: 'user',  teamId: 'montage' },
   { id: 'u2', username: 'chef',  password: 'chef123',  role: 'admin', teamId: 'montage' },
+  { id: 'u3', username: 'markus',  password: 'markus',  role: 'user', teamId: 'montage' },
 ];
 
 const sessions = new Map(); // token -> userId

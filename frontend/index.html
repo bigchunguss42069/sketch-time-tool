@@ -1,17 +1,13 @@
 <!doctype html>
 <html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Wochenplan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
 
-<head>
-  <meta charset="UTF-8" />
-  <title>Wochenplan</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-</head>
-
-
-
-<body>
-
- <!-- LOGIN VIEW -->
+  <body>
+    <!-- LOGIN VIEW -->
     <div id="loginView" class="login-view">
       <div class="login-card">
         <h1 class="login-title">Login</h1>
@@ -40,1183 +36,1963 @@
             />
           </label>
 
-          <div id="loginError" class="login-error" style="display:none;"></div>
+          <div
+            id="loginError"
+            class="login-error"
+            style="display: none;"
+          ></div>
 
-          <button type="submit" class="login-button">
-            Anmelden
-          </button>
+          <button type="submit" class="login-button">Anmelden</button>
         </form>
       </div>
     </div>
 
-     <!-- MAIN APP  -->
+    <!-- MAIN APP -->
     <div id="mainApp" class="hidden">
-      <!--  small header bar with user + logout -->
+      <!-- small header bar with user + logout -->
       <header class="app-header-bar">
-        <!-- User Name -->
         <div class="app-user-info">
-        <span id="userDisplay" class="user-pill">–</span>
+          <span id="userDisplay" class="user-pill">–</span>
         </div>
-        <!-- LogoutBtn -->
         <button id="logoutBtn" class="logout-button">Abmelden</button>
-        
-        
       </header>
 
+      <div id="app">
+        <div class="app-shell">
+          <!-- Top navigation -->
+          <header class="top-nav">
+            <button class="top-nav-tab active" data-view="wochenplan">
+              Wochenplan
+            </button>
+            <button class="top-nav-tab" data-view="pikett">Pikett</button>
+            <button class="top-nav-tab" data-view="dashboard">
+              Dashboard
+            </button>
+            <!-- Admin tab: real top-nav-tab, but hidden by default -->
+            <button
+              class="top-nav-tab hidden"
+              data-view="admin"
+              id="adminTab"
+            >
+              Admin
+            </button>
+          </header>
 
+          <!-- View 1: Wochenplan -->
+          <div id="view-wochenplan" class="app-view active">
+            <div class="app">
+              <!-- Sidebar / Wochenplan -->
+              <aside class="sidebar">
+                <details class="sidebar-group">
+                  <summary class="sidebar-header">
+                    <div class="sidebar-header-text">
+                      <span class="sidebar-title">Wochenplan</span>
+                      <span class="sidebar-pill">Montag – Freitag</span>
+                    </div>
+                    <div class="week-control">
+                      <button
+                        id="weekPrev"
+                        class="week-arrow"
+                        type="button"
+                      >
+                        ‹
+                      </button>
+                      <span id="weekLabel" class="week-label">KW --</span>
+                      <button
+                        id="weekNext"
+                        class="week-arrow"
+                        type="button"
+                      >
+                        ›
+                      </button>
+                    </div>
+                    <span class="chevron">▾</span>
+                  </summary>
 
+                  <div class="sidebar-body">
+                    <button
+                      class="day-button active"
+                      data-day="montag"
+                      data-title="Montag"
+                    >
+                      <span class="day-name-row">
+                        <span class="day-name">Montag</span>
+                        <span
+                          class="day-date"
+                          data-day="montag"
+                        ></span>
+                      </span>
+                      <span class="day-desc"></span>
+                    </button>
 
-  <div id="app">
-    <div class="app-shell">
-      <!-- Top navigation -->
-      <header class="top-nav">
-        <button class="top-nav-tab active" data-view="wochenplan">
-          Wochenplan
-        </button>
-        <button class="top-nav-tab" data-view="pikett">Pikett</button>
-        <button class="top-nav-tab" data-view="dashboard">Dashboard</button>
-        <button class="top-nav-tab-hidden" data-view="admin" id="adminTab">Admin</button>
-      </header>
+                    <button
+                      class="day-button"
+                      data-day="dienstag"
+                      data-title="Dienstag"
+                    >
+                      <span class="day-name-row">
+                        <span class="day-name">Dienstag</span>
+                        <span
+                          class="day-date"
+                          data-day="dienstag"
+                        ></span>
+                      </span>
+                      <span class="day-desc"></span>
+                    </button>
 
-      <!-- View 1: Wochenplan (your existing app) -->
-      <div id="view-wochenplan" class="app-view active">
-        <div class="app">
-          <!-- Sidebar / Wochenplan -->
-          <aside class="sidebar">
-            <details class="sidebar-group">
-              <summary class="sidebar-header">
-                <div class="sidebar-header-text">
-                  <span class="sidebar-title">Wochenplan</span>
-                  <span class="sidebar-pill">Montag – Freitag</span>
-                </div>
-                <!-- week control with arrows -->
-                <div class="week-control">
-                  <button id="weekPrev" class="week-arrow" type="button">‹</button>
-                  <span id="weekLabel" class="week-label">KW --</span>
-                  <button id="weekNext" class="week-arrow" type="button">›</button>
-                </div>
-                <span class="chevron">▾</span>
-              </summary>
+                    <button
+                      class="day-button"
+                      data-day="mittwoch"
+                      data-title="Mittwoch"
+                    >
+                      <span class="day-name-row">
+                        <span class="day-name">Mittwoch</span>
+                        <span
+                          class="day-date"
+                          data-day="mittwoch"
+                        ></span>
+                      </span>
+                      <span class="day-desc"></span>
+                    </button>
 
-              <div class="sidebar-body">
-                <button class="day-button active" data-day="montag" data-title="Montag">
-                  <span class="day-name-row">
-                    <span class="day-name">Montag</span>
-                    <span class="day-date" data-day="montag"></span>
-                  </span>
-                  <span class="day-desc"></span>
-                </button>
+                    <button
+                      class="day-button"
+                      data-day="donnerstag"
+                      data-title="Donnerstag"
+                    >
+                      <span class="day-name-row">
+                        <span class="day-name">Donnerstag</span>
+                        <span
+                          class="day-date"
+                          data-day="donnerstag"
+                        ></span>
+                      </span>
+                      <span class="day-desc"></span>
+                    </button>
 
-                <button class="day-button" data-day="dienstag" data-title="Dienstag">
-                  <span class="day-name-row">
-                    <span class="day-name">Dienstag</span>
-                    <span class="day-date" data-day="dienstag"></span>
-                  </span>
-                  <span class="day-desc"></span>
-                </button>
+                    <button
+                      class="day-button"
+                      data-day="freitag"
+                      data-title="Freitag"
+                    >
+                      <span class="day-name-row">
+                        <span class="day-name">Freitag</span>
+                        <span
+                          class="day-date"
+                          data-day="freitag"
+                        ></span>
+                      </span>
+                      <span class="day-desc"></span>
+                    </button>
+                  </div>
+                </details>
+              </aside>
 
-                <button class="day-button" data-day="mittwoch" data-title="Mittwoch">
-                  <span class="day-name-row">
-                    <span class="day-name">Mittwoch</span>
-                    <span class="day-date" data-day="mittwoch"></span>
-                  </span>
-                  <span class="day-desc"></span>
-                </button>
+              <!-- Main content -->
+              <main class="main">
+                <div class="main-header">
+                  <h1 id="dayTitle">Montag</h1>
 
-                <button class="day-button" data-day="donnerstag" data-title="Donnerstag">
-                  <span class="day-name-row">
-                    <span class="day-name">Donnerstag</span>
-                    <span class="day-date" data-day="donnerstag"></span>
-                  </span>
-                  <span class="day-desc"></span>
-                </button>
-
-                <button class="day-button" data-day="freitag" data-title="Freitag">
-                  <span class="day-name-row">
-                    <span class="day-name">Freitag</span>
-                    <span class="day-date" data-day="freitag"></span>
-                  </span>
-                  <span class="day-desc"></span>
-                </button>
-              </div>
-            </details>
-          </aside>
-
-          <!-- Main content -->
-          <main class="main">
-            <div class="main-header">
-              <h1 id="dayTitle">Montag</h1>
-
-              <!-- total hours display for the selected day -->
-              <div class="day-total">
-                <span class="day-total-label">Gesamt</span>
-                <span id="dayTotal">0,0 h</span>
-              </div>
-            </div>
-
-            <section class="day-content active" id="montag">
-              <!-- Tages-Flags (Checkboxen für den ganzen Tag) -->
-              <h2 class="day-section-title">Tagesstatus</h2>
-              <div class="flags-grid">
-                <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="ferien" />
-                  <span>Ferien</span>
-                </label>
-
-                <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                  <span>Schmutzzulagen</span>
-                </label>
-              
-
-              <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
-                  <span>Nebenauslagen</span>
-                </label>
-              </div>
-
-              <!-- NEW: Tagesbezogene Stunden -->
-              <div class="day-hours-section">
-                <h2 class="day-section-title">Tagesbezogene Stunden</h2>
-                <div class="day-hours-grid">
-                  <label class="day-hours-item">
-                    <span>Werk</span>
-                    <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung"
-                      placeholder="0,0" />
-                  </label>
-
-                  <label class="day-hours-item">
-                    <span>Sitzung/Kurs/Schulung</span>
-                    <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
-                      placeholder="0,0" />
-                  </label>
-
-                  <label class="day-hours-item">
-                    <span>Arzt/Krank</span>
-                    <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank"
-                      placeholder="0,0" />
-                  </label>
-                </div>
-              </div>
-
-
-              <!-- NEW: Verpflegungspauschale -->
-              <div class="meal-section">
-                <div class="meal-header">
-                  <span class="meal-title">Verpflegungspauschale</span>
-                  <button type="button" class="meal-info-btn" aria-label="Info Verpflegungspauschale">
-                    i
-                  </button>
+                  <div class="day-total">
+                    <span class="day-total-label">Gesamt</span>
+                    <span id="dayTotal">0,0 h</span>
+                  </div>
                 </div>
 
-                <div class="meal-info-box">
-                  <p><strong>1 = Frühstück 10 CHF</strong></p>
-                  <p><strong>2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong></p>
-                  <p><strong>3 = Abendessen 25 CHF</strong></p>
-                  <p>Du kannst mehrere Stufen pro Tag wählen.</p>
-                </div>
-
-                <div class="meal-pill-row">
-                  <button type="button" class="meal-pill" data-meal="1">1</button>
-                  <button type="button" class="meal-pill" data-meal="2">2</button>
-                  <button type="button" class="meal-pill" data-meal="3">3</button>
-                </div>
-              </div>
-
-              <!-- Kommissions-Liste -->
-              <div class="kom-section">
-                <h2 class="day-section-title">
-                  Kommissions Nummer &amp; Stunden
-                </h2>
-
-                <div class="kom-card">
-                  <div class="kom-card-header">
-                    <label class="kom-label">
-                      <span>Kommission Nummer</span>
-                      <input type="text" class="kom-input" placeholder="z.B. 123456" />
+                <!-- MONTAG -->
+                <section class="day-content active" id="montag">
+                  <h2 class="day-section-title">Tagesstatus</h2>
+                  <div class="flags-grid">
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="ferien"
+                      />
+                      <span>Ferien</span>
                     </label>
-                    <button type="button" class="kom-remove-btn">✕</button>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="schmutzzulage"
+                      />
+                      <span>Schmutzzulagen</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="nebenauslagen"
+                      />
+                      <span>Nebenauslagen</span>
+                    </label>
                   </div>
 
-                  <div class="kom-grid">
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 1</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option1"
-                        placeholder="0,0" />
-                    </div>
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 2</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option2"
-                        placeholder="0,0" />
-                    </div>
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 3</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option3"
-                        placeholder="0,0" />
-                    </div>
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 4</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option4"
-                        placeholder="0,0" />
-                    </div>
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 5</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option5"
-                        placeholder="0,0" />
-                    </div>
-                    <div class="kom-option">
-                      <span class="kom-option-label">Option 6</span>
-                      <input type="number" min="0" step="0.25" class="hours-input" data-option="option6"
-                        placeholder="0,0" />
+                  <!-- Tagesbezogene Stunden -->
+                  <div class="day-hours-section">
+                    <h2 class="day-section-title">
+                      Tagesbezogene Stunden
+                    </h2>
+                    <div class="day-hours-grid">
+                      <label class="day-hours-item">
+                        <span>Werk</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="schulung"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Sitzung/Kurs/Schulung</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="sitzungKurs"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Arzt/Krank</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="arztKrank"
+                          placeholder="0,0"
+                        />
+                      </label>
                     </div>
                   </div>
 
-                  <div class="kom-add-wrapper">
-                    <button type="button" class="kom-add-btn">
-                      + Kommission hinzufügen
+                  <!-- Verpflegungspauschale -->
+                  <div class="meal-section">
+                    <div class="meal-header">
+                      <span class="meal-title"
+                        >Verpflegungspauschale</span
+                      >
+                      <button
+                        type="button"
+                        class="meal-info-btn"
+                        aria-label="Info Verpflegungspauschale"
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    <div class="meal-info-box">
+                      <p><strong>1 = Frühstück 10 CHF</strong></p>
+                      <p>
+                        <strong
+                          >2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong
+                        >
+                      </p>
+                      <p>
+                        <strong>3 = Abendessen 25 CHF</strong>
+                      </p>
+                      <p>
+                        Du kannst mehrere Stufen pro Tag wählen.
+                      </p>
+                    </div>
+
+                    <div class="meal-pill-row">
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="1"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="2"
+                      >
+                        2
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="3"
+                      >
+                        3
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Kommissions-Liste -->
+                  <div class="kom-section">
+                    <h2 class="day-section-title">
+                      Kommissions Nummer &amp; Stunden
+                    </h2>
+
+                    <div class="kom-card">
+                      <div class="kom-card-header">
+                        <label class="kom-label">
+                          <span>Kommission Nummer</span>
+                          <input
+                            type="text"
+                            class="kom-input"
+                            placeholder="z.B. 123456"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          class="kom-remove-btn"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div class="kom-grid">
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 1</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option1"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 2</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option2"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 3</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option3"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 4</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option4"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 5</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option5"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 6</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option6"
+                            placeholder="0,0"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="kom-add-wrapper">
+                        <button
+                          type="button"
+                          class="kom-add-btn"
+                        >
+                          + Kommission hinzufügen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Spezialbuchungen -->
+                  <div class="special-section">
+                    <h2 class="day-section-title">
+                      Spezialbuchungen (Regie / Fehler)
+                    </h2>
+
+                    <div class="special-list">
+                      <div class="special-empty-text">
+                        Keine Spezialbuchungen erfasst.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="special-add-btn"
+                    >
+                      + Spezialbuchung hinzufügen
+                    </button>
+                  </div>
+                </section>
+
+                <!-- DIENSTAG -->
+                <section class="day-content" id="dienstag">
+                  <h2 class="day-section-title">Tagesstatus</h2>
+                  <div class="flags-grid">
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="ferien"
+                      />
+                      <span>Ferien</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="schmutzzulage"
+                      />
+                      <span>Schmutzzulagen</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="nebenauslagen"
+                      />
+                      <span>Nebenauslagen</span>
+                    </label>
+                  </div>
+
+                  <div class="day-hours-section">
+                    <h2 class="day-section-title">
+                      Tagesbezogene Stunden
+                    </h2>
+                    <div class="day-hours-grid">
+                      <label class="day-hours-item">
+                        <span>Werk</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="schulung"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Sitzung/Kurs/Schulung</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="sitzungKurs"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Arzt/Krank</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="arztKrank"
+                          placeholder="0,0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="meal-section">
+                    <div class="meal-header">
+                      <span class="meal-title"
+                        >Verpflegungspauschale</span
+                      >
+                      <button
+                        type="button"
+                        class="meal-info-btn"
+                        aria-label="Info Verpflegungspauschale"
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    <div class="meal-info-box">
+                      <p><strong>1 = Frühstück 10 CHF</strong></p>
+                      <p>
+                        <strong
+                          >2 = Mittagessen 25 CHF (Ab 6
+                          Stunden)</strong
+                        >
+                      </p>
+                      <p>
+                        <strong>3 = Abendessen 25 CHF</strong>
+                      </p>
+                      <p>
+                        Du kannst mehrere Stufen pro Tag wählen.
+                      </p>
+                    </div>
+
+                    <div class="meal-pill-row">
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="1"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="2"
+                      >
+                        2
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="3"
+                      >
+                        3
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="kom-section">
+                    <h2 class="day-section-title">
+                      Kommissions Nummer &amp; Stunden
+                    </h2>
+
+                    <div class="kom-card">
+                      <div class="kom-card-header">
+                        <label class="kom-label">
+                          <span>Kommission Nummer</span>
+                          <input
+                            type="text"
+                            class="kom-input"
+                            placeholder="z.B. 123456"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          class="kom-remove-btn"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div class="kom-grid">
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 1</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option1"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 2</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option2"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 3</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option3"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 4</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option4"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 5</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option5"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 6</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option6"
+                            placeholder="0,0"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="kom-add-wrapper">
+                        <button
+                          type="button"
+                          class="kom-add-btn"
+                        >
+                          + Kommission Hinzufügen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="special-section">
+                    <h2 class="day-section-title">
+                      Spezialbuchungen (Regie / Fehler)
+                    </h2>
+
+                    <div class="special-list">
+                      <div class="special-empty-text">
+                        Keine Spezialbuchungen erfasst.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="special-add-btn"
+                    >
+                      + Spezialbuchung hinzufügen
+                    </button>
+                  </div>
+                </section>
+
+                <!-- MITTWOCH -->
+                <section class="day-content" id="mittwoch">
+                  <h2 class="day-section-title">Tagesstatus</h2>
+                  <div class="flags-grid">
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="ferien"
+                      />
+                      <span>Ferien</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="schmutzzulage"
+                      />
+                      <span>Schmutzzulagen</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="nebenauslagen"
+                      />
+                      <span>Nebenauslagen</span>
+                    </label>
+                  </div>
+
+                  <div class="day-hours-section">
+                    <h2 class="day-section-title">
+                      Tagesbezogene Stunden
+                    </h2>
+                    <div class="day-hours-grid">
+                      <label class="day-hours-item">
+                        <span>Werk</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="schulung"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Sitzung/Kurs/Schulung</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="sitzungKurs"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Arzt/Krank</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="arztKrank"
+                          placeholder="0,0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="meal-section">
+                    <div class="meal-header">
+                      <span class="meal-title"
+                        >Verpflegungspauschale</span
+                      >
+                      <button
+                        type="button"
+                        class="meal-info-btn"
+                        aria-label="Info Verpflegungspauschale"
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    <div class="meal-info-box">
+                      <p><strong>1 = Frühstück 10 CHF</strong></p>
+                      <p>
+                        <strong
+                          >2 = Mittagessen 25 CHF (Ab 6
+                          Stunden)</strong
+                        >
+                      </p>
+                      <p>
+                        <strong>3 = Abendessen 25 CHF</strong>
+                      </p>
+                      <p>
+                        Du kannst mehrere Stufen pro Tag wählen.
+                      </p>
+                    </div>
+
+                    <div class="meal-pill-row">
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="1"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="2"
+                      >
+                        2
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="3"
+                      >
+                        3
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="kom-section">
+                    <h2 class="day-section-title">
+                      Kommissions Nummer &amp; Stunden
+                    </h2>
+
+                    <div class="kom-card">
+                      <div class="kom-card-header">
+                        <label class="kom-label">
+                          <span>Kommissions Nummer</span>
+                          <input
+                            type="text"
+                            class="kom-input"
+                            placeholder="z.B. 123456"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          class="kom-remove-btn"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div class="kom-grid">
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 1</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option1"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 2</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option2"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 3</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option3"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 4</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option4"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 5</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option5"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 6</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option6"
+                            placeholder="0,0"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="kom-add-wrapper">
+                        <button
+                          type="button"
+                          class="kom-add-btn"
+                        >
+                          + Kommission Hinzufügen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="special-section">
+                    <h2 class="day-section-title">
+                      Spezialbuchungen (Regie / Fehler)
+                    </h2>
+
+                    <div class="special-list">
+                      <div class="special-empty-text">
+                        Keine Spezialbuchungen erfasst.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="special-add-btn"
+                    >
+                      + Spezialbuchung hinzufügen
+                    </button>
+                  </div>
+                </section>
+
+                <!-- DONNERSTAG -->
+                <section class="day-content" id="donnerstag">
+                  <h2 class="day-section-title">Tagesstatus</h2>
+                  <div class="flags-grid">
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="ferien"
+                      />
+                      <span>Ferien</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="schmutzzulage"
+                      />
+                      <span>Schmutzzulagen</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="nebenauslagen"
+                      />
+                      <span>Nebenauslagen</span>
+                    </label>
+                  </div>
+
+                  <div class="day-hours-section">
+                    <h2 class="day-section-title">
+                      Tagesbezogene Stunden
+                    </h2>
+                    <div class="day-hours-grid">
+                      <label class="day-hours-item">
+                        <span>Werk</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="schulung"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Sitzung/Kurs/Schulung</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="sitzungKurs"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Arzt/Krank</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="arztKrank"
+                          placeholder="0,0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="meal-section">
+                    <div class="meal-header">
+                      <span class="meal-title"
+                        >Verpflegungspauschale</span
+                      >
+                      <button
+                        type="button"
+                        class="meal-info-btn"
+                        aria-label="Info Verpflegungspauschale"
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    <div class="meal-info-box">
+                      <p><strong>1 = Frühstück 10 CHF</strong></p>
+                      <p>
+                        <strong
+                          >2 = Mittagessen 25 CHF (Ab 6
+                          Stunden)</strong
+                        >
+                      </p>
+                      <p>
+                        <strong>3 = Abendessen 25 CHF</strong>
+                      </p>
+                      <p>
+                        Du kannst mehrere Stufen pro Tag wählen.
+                      </p>
+                    </div>
+
+                    <div class="meal-pill-row">
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="1"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="2"
+                      >
+                        2
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="3"
+                      >
+                        3
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="kom-section">
+                    <h2 class="day-section-title">
+                      Kommissions Nummer &amp; Stunden
+                    </h2>
+
+                    <div class="kom-card">
+                      <div class="kom-card-header">
+                        <label class="kom-label">
+                          <span>Kommissions Nummer</span>
+                          <input
+                            type="text"
+                            class="kom-input"
+                            placeholder="z.B. 123456"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          class="kom-remove-btn"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div class="kom-grid">
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 1</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option1"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 2</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option2"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 3</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option3"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 4</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option4"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 5</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option5"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 6</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option6"
+                            placeholder="0,0"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="kom-add-wrapper">
+                        <button
+                          type="button"
+                          class="kom-add-btn"
+                        >
+                          + Kommission Hinzufügen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="special-section">
+                    <h2 class="day-section-title">
+                      Spezialbuchungen (Regie / Fehler)
+                    </h2>
+
+                    <div class="special-list">
+                      <div class="special-empty-text">
+                        Keine Spezialbuchungen erfasst.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="special-add-btn"
+                    >
+                      + Spezialbuchung hinzufügen
+                    </button>
+                  </div>
+                </section>
+
+                <!-- FREITAG -->
+                <section class="day-content" id="freitag">
+                  <h2 class="day-section-title">Tagesstatus</h2>
+                  <div class="flags-grid">
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="ferien"
+                      />
+                      <span>Ferien</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="schmutzzulage"
+                      />
+                      <span>Schmutzzulagen</span>
+                    </label>
+
+                    <label class="flag-item">
+                      <input
+                        type="checkbox"
+                        class="day-flag"
+                        data-flag="nebenauslagen"
+                      />
+                      <span>Nebenauslagen</span>
+                    </label>
+                  </div>
+
+                  <div class="day-hours-section">
+                    <h2 class="day-section-title">
+                      Tagesbezogene Stunden
+                    </h2>
+                    <div class="day-hours-grid">
+                      <label class="day-hours-item">
+                        <span>Werk</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="schulung"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Sitzung/Kurs/Schulung</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="sitzungKurs"
+                          placeholder="0,0"
+                        />
+                      </label>
+
+                      <label class="day-hours-item">
+                        <span>Arzt/Krank</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          class="day-hours-input"
+                          data-dayhour="arztKrank"
+                          placeholder="0,0"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="meal-section">
+                    <div class="meal-header">
+                      <span class="meal-title"
+                        >Verpflegungspauschale</span
+                      >
+                      <button
+                        type="button"
+                        class="meal-info-btn"
+                        aria-label="Info Verpflegungspauschale"
+                      >
+                        i
+                      </button>
+                    </div>
+
+                    <div class="meal-info-box">
+                      <p><strong>1 = Frühstück 10 CHF</strong></p>
+                      <p>
+                        <strong
+                          >2 = Mittagessen 25 CHF (Ab 6
+                          Stunden)</strong
+                        >
+                      </p>
+                      <p>
+                        <strong>3 = Abendessen 25 CHF</strong>
+                      </p>
+                      <p>
+                        Du kannst mehrere Stufen pro Tag wählen.
+                      </p>
+                    </div>
+
+                    <div class="meal-pill-row">
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="1"
+                      >
+                        1
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="2"
+                      >
+                        2
+                      </button>
+                      <button
+                        type="button"
+                        class="meal-pill"
+                        data-meal="3"
+                      >
+                        3
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="kom-section">
+                    <h2 class="day-section-title">
+                      Kommissions Nummer &amp; Stunden
+                    </h2>
+
+                    <div class="kom-card">
+                      <div class="kom-card-header">
+                        <label class="kom-label">
+                          <span>Kommissions Nummer</span>
+                          <input
+                            type="text"
+                            class="kom-input"
+                            placeholder="z.B. 123456"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          class="kom-remove-btn"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div class="kom-grid">
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 1</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option1"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 2</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option2"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 3</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option3"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 4</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option4"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 5</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option5"
+                            placeholder="0,0"
+                          />
+                        </div>
+                        <div class="kom-option">
+                          <span class="kom-option-label"
+                            >Option 6</span
+                          >
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            class="hours-input"
+                            data-option="option6"
+                            placeholder="0,0"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="kom-add-wrapper">
+                        <button
+                          type="button"
+                          class="kom-add-btn"
+                        >
+                          + Kommission Hinzufügen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="special-section">
+                    <h2 class="day-section-title">
+                      Spezialbuchungen (Regie / Fehler)
+                    </h2>
+
+                    <div class="special-list">
+                      <div class="special-empty-text">
+                        Keine Spezialbuchungen erfasst.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      class="special-add-btn"
+                    >
+                      + Spezialbuchung hinzufügen
+                    </button>
+                  </div>
+                </section>
+              </main>
+            </div>
+          </div>
+
+          <!-- View 2: Pikett -->
+          <div id="view-pikett" class="app-view">
+            <div class="pikett-wrapper">
+              <div class="pikett-header-card">
+                <div class="pikett-header-top">
+                  <h1 class="pikett-title">Pikett-Einsätze</h1>
+
+                  <div class="pikett-month-control">
+                    <button
+                      id="pikettMonthPrev"
+                      class="pikett-month-arrow"
+                      type="button"
+                    >
+                      ‹
+                    </button>
+                    <span
+                      id="pikettMonthLabel"
+                      class="pikett-month-label"
+                    ></span>
+                    <button
+                      id="pikettMonthNext"
+                      class="pikett-month-arrow"
+                      type="button"
+                    >
+                      ›
                     </button>
                   </div>
                 </div>
-              </div>
-              <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
-              <div class="special-section">
-                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
 
-                <div class="special-list">
-                  <!-- Wird per JS gefüllt -->
-                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
+                <p class="pikett-subtitle">
+                  Erfasse hier Pikett Einsätze, und auch Wochenend
+                  Einsätze.
+                </p>
+
+                <div class="pikett-summary-row">
+                  <span class="pikett-summary-label">
+                    Pikettstunden in diesem Monat
+                  </span>
+                  <span
+                    id="pikettMonthTotal"
+                    class="pikett-summary-value"
+                  >
+                    0,0 h
+                  </span>
                 </div>
+              </div>
 
-                <button type="button" class="special-add-btn">
-                  + Spezialbuchung hinzufügen
+              <div class="pikett-actions">
+                <button
+                  id="pikettAddBtn"
+                  class="pikett-add-btn"
+                >
+                  + Pikett-Einsatz hinzufügen
                 </button>
               </div>
 
-
-        
-        </section>
-
-        <!-- DIENSTAG -->
-        <section class="day-content" id="dienstag">
-          
-            <h2 class="day-section-title">Tagesstatus</h2>
-            <div class="flags-grid">
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="ferien" />
-                <span>Ferien</span>
-              </label>
-
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulagen</span>
-              </label>
-            
-              <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
-                  <span>Nebenauslagen</span>
-                </label>
+              <div id="pikettList" class="pikett-list">
+                <!-- Pikett-Karten werden per JS eingefügt -->
               </div>
-
-            <!-- NEW: Tagesbezogene Stunden -->
-            <div class="day-hours-section">
-              <h2 class="day-section-title">Tagesbezogene Stunden</h2>
-              <div class="day-hours-grid">
-                <label class="day-hours-item">
-                  <span>Werk</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Schulung</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Arzt/Krank</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank"
-                    placeholder="0,0" />
-                </label>
-              </div>
-            </div>
-
-            <!-- NEW: Verpflegungspauschale -->
-            <div class="meal-section">
-              <div class="meal-header">
-                <span class="meal-title">Verpflegungspauschale</span>
-                <button type="button" class="meal-info-btn" aria-label="Info Verpflegungspauschale">
-                  i
-                </button>
-              </div>
-
-              <div class="meal-info-box">
-                <p><strong>1 = Frühstück 10 CHF</strong></p>
-                <p><strong>2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong></p>
-                <p><strong>3 = Abendessen 25 CHF</strong></p>
-                <p>Du kannst mehrere Stufen pro Tag wählen.</p>
-              </div>
-
-              <div class="meal-pill-row">
-                <button type="button" class="meal-pill" data-meal="1">1</button>
-                <button type="button" class="meal-pill" data-meal="2">2</button>
-                <button type="button" class="meal-pill" data-meal="3">3</button>
-              </div>
-            </div>
-
-
-            <div class="kom-section">
-              <h2 class="day-section-title">
-                Kommissions Nummer &amp; Stunden
-              </h2>
-
-              <div class="kom-card">
-                <div class="kom-card-header">
-                  <label class="kom-label">
-                    <span>Kommission Nummer</span>
-                    <input type="text" class="kom-input" placeholder="z.B. 123456" />
-                  </label>
-                  <button type="button" class="kom-remove-btn">✕</button>
-                </div>
-
-                <div class="kom-grid">
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 1</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option1"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 2</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option2"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 3</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option3"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 4</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option4"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 5</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option5"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 6</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option6"
-                      placeholder="0,0" />
-                  </div>
-                </div>
-
-                <div class="kom-add-wrapper">
-                  <button type="button" class="kom-add-btn">
-                    + Kommission Hinzufügen
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
-              <div class="special-section">
-                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
-
-                <div class="special-list">
-                  <!-- Wird per JS gefüllt -->
-                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
-                </div>
-
-                <button type="button" class="special-add-btn">
-                  + Spezialbuchung hinzufügen
-                </button>
-              </div>
-
-
-          
-        </section>
-
-        <!-- MITTWOCH -->
-        <section class="day-content" id="mittwoch">
-        
-            <h2 class="day-section-title">Tagesstatus</h2>
-
-            <div class="flags-grid">
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="ferien" />
-                <span>Ferien</span>
-              </label>
-
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulagen</span>
-              </label>
-            
-              <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
-                  <span>Nebenauslagen</span>
-                </label>
-            </div>
-
-            <!-- NEW: Tagesbezogene Stunden -->
-            <div class="day-hours-section">
-              <h2 class="day-section-title">Tagesbezogene Stunden</h2>
-              <div class="day-hours-grid">
-                <label class="day-hours-item">
-                  <span>Werk</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Schulung</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Arzt/Krank</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank"
-                    placeholder="0,0" />
-                </label>
-              </div>
-            </div>
-
-
-            <!-- NEW: Verpflegungspauschale -->
-            <div class="meal-section">
-              <div class="meal-header">
-                <span class="meal-title">Verpflegungspauschale</span>
-                <button type="button" class="meal-info-btn" aria-label="Info Verpflegungspauschale">
-                  i
-                </button>
-              </div>
-
-              <div class="meal-info-box">
-                <p><strong>1 = Frühstück 10 CHF</strong></p>
-                <p><strong>2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong></p>
-                <p><strong>3 = Abendessen 25 CHF</strong></p>
-                <p>Du kannst mehrere Stufen pro Tag wählen.</p>
-              </div>
-
-              <div class="meal-pill-row">
-                <button type="button" class="meal-pill" data-meal="1">1</button>
-                <button type="button" class="meal-pill" data-meal="2">2</button>
-                <button type="button" class="meal-pill" data-meal="3">3</button>
-              </div>
-            </div>
-
-
-            <div class="kom-section">
-              <h2 class="day-section-title">
-                Kommissions Nummer &amp; Stunden
-              </h2>
-
-              <div class="kom-card">
-                <div class="kom-card-header">
-                  <label class="kom-label">
-                    <span>Kommissions Nummer</span>
-                    <input type="text" class="kom-input" placeholder="z.B. 123456" />
-                  </label>
-                  <button type="button" class="kom-remove-btn">✕</button>
-                </div>
-
-                <div class="kom-grid">
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 1</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option1"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 2</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option2"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 3</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option3"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 4</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option4"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 5</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option5"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 6</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option6"
-                      placeholder="0,0" />
-                  </div>
-                </div>
-
-                <div class="kom-add-wrapper">
-                  <button type="button" class="kom-add-btn">
-                    + Kommission Hinzufügen
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
-              <div class="special-section">
-                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
-
-                <div class="special-list">
-                  <!-- Wird per JS gefüllt -->
-                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
-                </div>
-
-                <button type="button" class="special-add-btn">
-                  + Spezialbuchung hinzufügen
-                </button>
-              </div>
-
-
-        </section>
-
-        <!-- DONNERSTAG -->
-        <section class="day-content" id="donnerstag">
-            <h2 class="day-section-title">Tagesstatus</h2>
-
-            <div class="flags-grid">
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="ferien" />
-                <span>Ferien</span>
-              </label>
-
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulagen</span>
-              </label>
-            
-              <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
-                  <span>Nebenauslagen</span>
-                </label>
-              </div>
-
-            <!-- NEW: Tagesbezogene Stunden -->
-            <div class="day-hours-section">
-              <h2 class="day-section-title">Tagesbezogene Stunden</h2>
-              <div class="day-hours-grid">
-                <label class="day-hours-item">
-                  <span>Werk</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Schulung</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Arzt/Krank</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank"
-                    placeholder="0,0" />
-                </label>
-              </div>
-            </div>
-
-
-            <!-- NEW: Verpflegungspauschale -->
-            <div class="meal-section">
-              <div class="meal-header">
-                <span class="meal-title">Verpflegungspauschale</span>
-                <button type="button" class="meal-info-btn" aria-label="Info Verpflegungspauschale">
-                  i
-                </button>
-              </div>
-
-              <div class="meal-info-box">
-                <p><strong>1 = Frühstück 10 CHF</strong></p>
-                <p><strong>2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong></p>
-                <p><strong>3 = Abendessen 25 CHF</strong></p>
-                <p>Du kannst mehrere Stufen pro Tag wählen.</p>
-              </div>
-
-              <div class="meal-pill-row">
-                <button type="button" class="meal-pill" data-meal="1">1</button>
-                <button type="button" class="meal-pill" data-meal="2">2</button>
-                <button type="button" class="meal-pill" data-meal="3">3</button>
-              </div>
-            </div>
-
-
-            <div class="kom-section">
-              <h2 class="day-section-title">
-                Kommissions Nummer &amp; Stunden
-              </h2>
-
-              <div class="kom-card">
-                <div class="kom-card-header">
-                  <label class="kom-label">
-                    <span>Kommissions Nummer</span>
-                    <input type="text" class="kom-input" placeholder="z.B. 123456" />
-                  </label>
-                  <button type="button" class="kom-remove-btn">✕</button>
-                </div>
-
-                <div class="kom-grid">
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 1</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option1"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 2</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option2"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 3</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option3"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 4</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option4"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 5</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option5"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 6</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option6"
-                      placeholder="0,0" />
-                  </div>
-                </div>
-
-                <div class="kom-add-wrapper">
-                  <button type="button" class="kom-add-btn">
-                    + Kommission Hinzufügen
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
-              <div class="special-section">
-                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
-
-                <div class="special-list">
-                  <!-- Wird per JS gefüllt -->
-                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
-                </div>
-
-                <button type="button" class="special-add-btn">
-                  + Spezialbuchung hinzufügen
-                </button>
-              </div>
-
-
-        </section>
-
-        <!-- FREITAG -->
-        <section class="day-content" id="freitag">
-            <h2 class="day-section-title">Tagesstatus</h2>
-            <div class="flags-grid">
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="ferien" />
-                <span>Ferien</span>
-              </label>
-
-              <label class="flag-item">
-                <input type="checkbox" class="day-flag" data-flag="schmutzzulage" />
-                <span>Schmutzzulagen</span>
-              </label>
-            
-              <label class="flag-item">
-                  <input type="checkbox" class="day-flag" data-flag="nebenauslagen" />
-                  <span>Nebenauslagen</span>
-                </label>
-              </div>
-
-            <!-- NEW: Tagesbezogene Stunden -->
-            <div class="day-hours-section">
-              <h2 class="day-section-title">Tagesbezogene Stunden</h2>
-              <div class="day-hours-grid">
-                <label class="day-hours-item">
-                  <span>Werk</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Sitzung/Kurs/Schulung</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs"
-                    placeholder="0,0" />
-                </label>
-
-                <label class="day-hours-item">
-                  <span>Arzt/Krank</span>
-                  <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank"
-                    placeholder="0,0" />
-                </label>
-              </div>
-            </div>
-
-
-            <!-- NEW: Verpflegungspauschale -->
-            <div class="meal-section">
-              <div class="meal-header">
-                <span class="meal-title">Verpflegungspauschale</span>
-                <button type="button" class="meal-info-btn" aria-label="Info Verpflegungspauschale">
-                  i
-                </button>
-              </div>
-
-              <div class="meal-info-box">
-                <p><strong>1 = Frühstück 10 CHF</strong></p>
-                <p><strong>2 = Mittagessen 25 CHF (Ab 6 Stunden)</strong></p>
-                <p><strong>3 = Abendessen 25 CHF</strong></p>
-                <p>Du kannst mehrere Stufen pro Tag wählen.</p>
-              </div>
-
-              <div class="meal-pill-row">
-                <button type="button" class="meal-pill" data-meal="1">1</button>
-                <button type="button" class="meal-pill" data-meal="2">2</button>
-                <button type="button" class="meal-pill" data-meal="3">3</button>
-              </div>
-            </div>
-
-
-            <div class="kom-section">
-              <h2 class="day-section-title">
-                Kommissions Nummer &amp; Stunden
-              </h2>
-
-              <div class="kom-card">
-                <div class="kom-card-header">
-                  <label class="kom-label">
-                    <span>Kommissions Nummer</span>
-                    <input type="text" class="kom-input" placeholder="z.B. 123456" />
-                  </label>
-                  <button type="button" class="kom-remove-btn">✕</button>
-                </div>
-
-                <div class="kom-grid">
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 1</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option1"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 2</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option2"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 3</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option3"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 4</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option4"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 5</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option5"
-                      placeholder="0,0" />
-                  </div>
-                  <div class="kom-option">
-                    <span class="kom-option-label">Option 6</span>
-                    <input type="number" min="0" step="0.25" class="hours-input" data-option="option6"
-                      placeholder="0,0" />
-                  </div>
-                </div>
-
-                <div class="kom-add-wrapper">
-                  <button type="button" class="kom-add-btn">
-                    + Kommission Hinzufügen
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- NEU: Spezialbuchungen (Regie / Fehler) -->
-              <div class="special-section">
-                <h2 class="day-section-title">Spezialbuchungen (Regie / Fehler)</h2>
-
-                <div class="special-list">
-                  <!-- Wird per JS gefüllt -->
-                  <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
-                </div>
-
-                <button type="button" class="special-add-btn">
-                  + Spezialbuchung hinzufügen
-                </button>
-              </div>
-
-
-          
-        </section>
-        </main>
-      </div>
-    </div>
-
-    <!-- View 2: Pikett -->
-    <div id="view-pikett" class="app-view">
-      <div class="pikett-wrapper">
-        <div class="pikett-header-card">
-          <div class="pikett-header-top">
-            <h1 class="pikett-title">Pikett-Einsätze</h1>
-
-            <div class="pikett-month-control">
-              <button id="pikettMonthPrev" class="pikett-month-arrow" type="button">
-                ‹
-              </button>
-              <span id="pikettMonthLabel" class="pikett-month-label">
-                <!-- Wird per JS gesetzt, z.B. "November 2025" -->
-              </span>
-              <button id="pikettMonthNext" class="pikett-month-arrow" type="button">
-                ›
-              </button>
             </div>
           </div>
 
-          <p class="pikett-subtitle">
-            Erfasse hier Pikett Einsätze, und auch Wochenend Einsätze.
-          </p>
+          <!-- View 3: Dashboard -->
+          <div id="view-dashboard" class="app-view">
+            <div class="dashboard-wrapper">
+              <div class="dashboard-header-card">
+                <div class="dashboard-header-top">
+                  <h1 class="dashboard-title">
+                    Monatsüberblick
+                  </h1>
 
-          <div class="pikett-summary-row">
-            <span class="pikett-summary-label">
-              Pikettstunden in diesem Monat
-            </span>
-            <span id="pikettMonthTotal" class="pikett-summary-value">
-              0,0 h
-            </span>
+                  <div class="dashboard-month-control">
+                    <button
+                      id="dashboardMonthPrev"
+                      class="dashboard-month-arrow"
+                      type="button"
+                    >
+                      ‹
+                    </button>
+                    <span
+                      id="dashboardMonthLabel"
+                      class="dashboard-month-label"
+                    >
+                      Aktueller Monat
+                    </span>
+                    <button
+                      id="dashboardMonthNext"
+                      class="dashboard-month-arrow"
+                      type="button"
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+
+                <p class="dashboard-subtitle">
+                  Hier siehst du eine Zusammenfassung deiner Zeiten
+                  und Pauschalen.
+                </p>
+              </div>
+
+              <div class="dashboard-transmit-row">
+                <button
+                  id="dashboardTransmitBtn"
+                  class="dashboard-transmit-btn"
+                >
+                  Daten übertragen
+                </button>
+
+                <div
+                  id="syncStatus"
+                  class="sync-chip sync-age-unknown"
+                  title="Noch keine Übertragung"
+                >
+                  <span class="sync-dot"></span>
+                  <span id="syncLabel" class="sync-label"
+                    >Nie gesendet</span
+                  >
+                </div>
+              </div>
+
+              <div class="dashboard-card">
+                <h2 class="dashboard-card-title">
+                  Arbeitszeit von diesem Monat
+                </h2>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label"
+                    >Kommissions Stunden Überzeit 1</span
+                  >
+                  <span
+                    id="dashTotalKom"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label"
+                    >Pikett Stunden Überzeit 2</span
+                  >
+                  <span
+                    id="dashTotalPikett"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label"
+                    >Stunden Überzeit 3</span
+                  >
+                  <span
+                    id="dashTotalOvertime3"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label"
+                    >Tagesbezogene Stunden (Überzeit 1)</span
+                  >
+                  <span
+                    id="dashTotalDayhours"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-separator"></div>
+
+                <div class="dashboard-metric-row total-row">
+                  <span class="metric-label-total"
+                    >Total Stunden Monat</span
+                  >
+                  <span
+                    id="dashTotalHours"
+                    class="metric-value metric-value-total"
+                    >0,0 h</span
+                  >
+                </div>
+              </div>
+
+              <div class="dashboard-card">
+                <h2 class="dashboard-card-title">
+                  Wochenstatus in diesem Monat
+                </h2>
+
+                <div
+                  id="dashboardWeekList"
+                  class="dashboard-week-list"
+                >
+                  <!-- Zeilen werden per JS eingefügt -->
+                </div>
+              </div>
+
+              <div class="dashboard-card">
+                <h2 class="dashboard-card-title">
+                  Überzeit &amp; Vorarbeit (Jahr)
+                </h2>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label">Überzeit 1</span>
+                  <span
+                    id="overtimeYearUeZ1"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label">Überzeit 2</span>
+                  <span
+                    id="overtimeYearUeZ2"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label">Überzeit 3</span>
+                  <span
+                    id="overtimeYearUeZ3"
+                    class="metric-value"
+                    >0,0 h</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-separator"></div>
+
+                <div class="dashboard-metric-row">
+                  <span class="metric-label">Vorarbeitszeit</span>
+                  <span
+                    id="overtimeYearVorarbeit"
+                    class="metric-value"
+                    >0,0 h / 0,0 h</span
+                  >
+                </div>
+              </div>
+
+              <div class="dashboard-card">
+                <h3 class="dashboard-card-title">
+                  Ferien (Jahr)
+                </h3>
+
+                <div class="overtime-year-row">
+                  <span>Ferien Tage:</span>
+                  <span id="vacationYearSummary"
+                    >0,0 / 21,0 Tage</span
+                  >
+                </div>
+
+                <div class="dashboard-metric-separator"></div>
+
+                <div class="absence-section">
+                  <h4 class="absence-section-title">
+                    Abwesenheits-Anträge
+                  </h4>
+
+                  <form
+                    id="absenceForm"
+                    class="absence-form"
+                    autocomplete="off"
+                  >
+                    <div class="absence-form-row">
+                      <label class="absence-label">
+                        <span>Art</span>
+                        <select
+                          id="absenceType"
+                          class="absence-input"
+                        >
+                          <option value="ferien">Ferien</option>
+                          <option value="unfall">Unfall</option>
+                          <option value="militaer">
+                            Militär
+                          </option>
+                          <option value="bezahlteAbwesenheit">
+                            Bezahlte Abwesenheit
+                          </option>
+                          <option value="vaterschaft">
+                            Vaterschaftsurlaub
+                          </option>
+                          <option value="sonstiges">
+                            Sonstiges
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div
+                      class="absence-form-row absence-form-row--two"
+                    >
+                      <label class="absence-label">
+                        <span>Von</span>
+                        <input
+                          type="date"
+                          id="absenceFrom"
+                          class="absence-input"
+                        />
+                      </label>
+                      <label class="absence-label">
+                        <span>Bis</span>
+                        <input
+                          type="date"
+                          id="absenceTo"
+                          class="absence-input"
+                        />
+                      </label>
+                    </div>
+
+                    <div class="absence-form-row">
+                      <label class="absence-label">
+                        <span>Tage (optional)</span>
+                        <input
+                          type="number"
+                          id="absenceDays"
+                          min="0"
+                          step="0.25"
+                          placeholder="auto"
+                          class="absence-input"
+                        />
+                      </label>
+                    </div>
+
+                    <div class="absence-form-row">
+                      <label class="absence-label">
+                        <span>Notiz (optional)</span>
+                        <input
+                          type="text"
+                          id="absenceComment"
+                          placeholder="z.B. Ferien mit Familie"
+                          class="absence-input"
+                        />
+                      </label>
+                    </div>
+
+                    <div class="absence-form-actions">
+                      <button
+                        type="button"
+                        id="absenceSaveBtn"
+                        class="absence-save-btn"
+                      >
+                        Antrag speichern
+                      </button>
+                    </div>
+                  </form>
+
+                  <div class="dashboard-metric-separator"></div>
+
+                  <div class="absence-list-wrapper">
+                    <h4 class="absence-section-title">
+                      Abwesenheiten im Jahr
+                    </h4>
+                    <div
+                      id="absenceList"
+                      class="absence-list"
+                    >
+                      <!-- Einträge werden per JS eingefügt -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- View 4: Admin -->
+          <div class="app-view" id="view-admin">
+            <div class="admin-header">
+              <h2></h2>
+              <p class="admin-subtitle">
+                
+              </p>
+            </div>
+
+            <!-- Inner admin tabs -->
+            <div class="admin-tabs">
+              <button
+                type="button"
+                class="admin-tab-btn active"
+                data-admin-tab="overview"
+              >
+                Überblick
+              </button>
+              <button
+                type="button"
+                class="admin-tab-btn"
+                data-admin-tab="anlagen"
+              >
+                Anlagen
+              </button>
+              <button
+                type="button"
+                class="admin-tab-btn"
+                data-admin-tab="payroll"
+              >
+                Lohnabrechnung
+              </button>
+            </div>
+
+            <!-- Tab: Überblick (Mitarbeiter) -->
+            <div
+              class="admin-tab-content active"
+              data-admin-content="overview"
+            >
+              <div class="admin-section-header">
+                <h3></h3>
+                <p class="admin-section-subtitle">
+                  
+                </p>
+              </div>
+
+              <div
+                id="adminSummaryContainer"
+                class="admin-summary-container"
+              >
+                <!-- Wird per JS gefüllt -->
+              </div>
+            </div>
+
+            <!-- Tab: Anlagen -->
+            <div
+              class="admin-tab-content"
+              data-admin-content="anlagen"
+            >
+              <div class="admin-section-header">
+                <h3>Anlagen-Auswertung</h3>
+                <p class="admin-section-subtitle">
+                  Kommissionsnummern, Stunden und Überzeit nach
+                  Anlage.
+                </p>
+              </div>
+              <div class="admin-placeholder">
+                <p>
+                  Hier kommen später die Kommissions-Statistiken &
+                  Charts rein.
+                </p>
+              </div>
+            </div>
+
+            <!-- Tab: Lohnabrechnung -->
+            <div
+              class="admin-tab-content"
+              data-admin-content="payroll"
+            >
+              <div class="admin-section-header">
+                <h3>Lohnabrechnung</h3>
+                <p class="admin-section-subtitle">
+                  Aggregierte Daten für HR, mit Export in Excel/PDF.
+                </p>
+              </div>
+              <div class="admin-placeholder">
+                <p>
+                  Hier kommen später die Lohn-Übersichten und
+                  Exports rein.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div class="pikett-actions">
-          <button id="pikettAddBtn" class="pikett-add-btn">
-            + Pikett-Einsatz hinzufügen
-          </button>
-        </div>
-
-        <div id="pikettList" class="pikett-list">
-          <!-- Pikett-Karten werden hier per JS eingefügt -->
-         </div>
-       </div>
-      </div>
-
-
-        <!-- View 3: Dashboard -->
-      <div id="view-dashboard" class="app-view">
-        <div class="dashboard-wrapper">
-          <!-- Header card -->
-          <div class="dashboard-header-card">
-            <div class="dashboard-header-top">
-              <h1 class="dashboard-title">Monatsüberblick</h1>
-
- 
-
-        <div class="dashboard-month-control">
-          <button
-            id="dashboardMonthPrev"
-            class="dashboard-month-arrow"
-            type="button"
-          >
-            ‹
-          </button>
-          <span
-            id="dashboardMonthLabel"
-            class="dashboard-month-label"
-          >
-            Aktueller Monat
-          </span>
-          <button
-            id="dashboardMonthNext"
-            class="dashboard-month-arrow"
-            type="button"
-          >
-            ›
-          </button>
-        </div>
-      </div>
-
-      <p class="dashboard-subtitle">
-        Hier siehst du eine Zusammenfassung deiner Zeiten und Pauschalen.
-      </p>
-    </div>
-
-
-     
- <!-- TransmitBtn -->
-        <div class="dashboard-transmit-row">
-        <button id="dashboardTransmitBtn" class="dashboard-transmit-btn">
-          Daten übertragen
-        </button>
-       
-        <!-- SyncStat -->
-         <div
-          id="syncStatus"
-          class="sync-chip sync-age-unknown"
-          title="Noch keine Übertragung"
-          >
-          <span class="sync-dot"></span>
-          <span id="syncLabel" class="sync-label">Nie gesendet</span>
-         </div>
- </div>
-    <!-- Main dashboard card -->
-    <div class="dashboard-card">
-      <h2 class="dashboard-card-title">Arbeitszeit von diesem Monat</h2>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Kommissions Stunden Überzeit 1</span>
-        <span id="dashTotalKom" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Pikett Stunden Überzeit 2</span>
-        <span id="dashTotalPikett" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Stunden Überzeit 3</span>
-        <span id="dashTotalOvertime3" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Tagesbezogene Stunden (Überzeit 1)</span>
-        <span id="dashTotalDayhours" class="metric-value">0,0 h</span>
-      </div>
-
-        <div class="dashboard-metric-separator"></div>
-
-      <div class="dashboard-metric-row total-row">
-        <span class="metric-label-total">Total Stunden Monat</span>
-        <span id="dashTotalHours" class="metric-value metric-value-total">0,0 h</span>
       </div>
     </div>
 
-         <!-- Wochenstatus card -->
-    <div class="dashboard-card">
-      <h2 class="dashboard-card-title">Wochenstatus in diesem Monat</h2>
-
-      <div id="dashboardWeekList" class="dashboard-week-list">
-        <!-- Zeilen werden per JS eingefügt -->
-      </div>
-    </div>
-        <!-- Neue Karte: Überzeit & Vorarbeit (Jahr) -->
-    <div class="dashboard-card">
-      <h2 class="dashboard-card-title">Überzeit &amp; Vorarbeit (Jahr)</h2>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Überzeit 1</span>
-        <span id="overtimeYearUeZ1" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Überzeit 2</span>
-        <span id="overtimeYearUeZ2" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Überzeit 3</span>
-        <span id="overtimeYearUeZ3" class="metric-value">0,0 h</span>
-      </div>
-
-      <div class="dashboard-metric-separator"></div>
-
-      <div class="dashboard-metric-row">
-        <span class="metric-label">Vorarbeitszeit</span>
-        <span id="overtimeYearVorarbeit" class="metric-value">0,0 h / 0,0 h</span>
-      </div>
-    </div>
-
-        <!-- Ferien + Abwesenheiten -->
-     <div class="dashboard-card">
-      <h3 class="dashboard-card-title">Ferien (Jahr)</h3>
-
-      <!-- Saldo-Zeile (wird per JS gesetzt) -->
-      <div class="overtime-year-row">
-        <span>Ferien Tage:</span>
-        <span id="vacationYearSummary">0,0 / 21,0 Tage</span>
-      </div>
-
-      <div class="dashboard-metric-separator"></div>
-
-      <!-- Abwesenheits-Anträge: Eingabe -->
-      <div class="absence-section">
-        <h4 class="absence-section-title">Abwesenheits-Anträge</h4>
-
-       <form id="absenceForm" class="absence-form" autocomplete="off">
-  <div class="absence-form-row">
-    <label class="absence-label">
-      <span>Art</span>
-      <select id="absenceType" class="absence-input">
-        <option value="ferien">Ferien</option>
-        <option value="unfall">Unfall</option>
-        <option value="militaer">Militär</option>
-        <option value="bezahlteAbwesenheit">Bezahlte Abwesenheit</option>
-        <option value="vaterschaft">Vaterschaftsurlaub</option>
-        <option value="sonstiges">Sonstiges</option>
-      </select>
-    </label>
-  </div>
-
-  <div class="absence-form-row absence-form-row--two">
-    <label class="absence-label">
-      <span>Von</span>
-      <input type="date" id="absenceFrom" class="absence-input" />
-    </label>
-    <label class="absence-label">
-      <span>Bis</span>
-      <input type="date" id="absenceTo" class="absence-input" />
-    </label>
-  </div>
-
-  <div class="absence-form-row">
-    <label class="absence-label">
-      <span>Tage (optional)</span>
-      <input
-        type="number"
-        id="absenceDays"
-        min="0"
-        step="0.25"
-        placeholder="auto"
-        class="absence-input"
-      />
-    </label>
-  </div>
-
-  <div class="absence-form-row">
-    <label class="absence-label">
-      <span>Notiz (optional)</span>
-      <input
-        type="text"
-        id="absenceComment"
-        placeholder="z.B. Ferien mit Familie"
-        class="absence-input"
-      />
-    </label>
-  </div>
-
-  <div class="absence-form-actions">
-    <button type="button" id="absenceSaveBtn" class="absence-save-btn">
-      Antrag speichern
-    </button>
-  </div>
-  </form>
-
-  <div class="dashboard-metric-separator"></div>
-
-      <!-- Abwesenheits-Liste für das ausgewählte Jahr -->
-      <div class="absence-list-wrapper">
-        <h4 class="absence-section-title">Abwesenheiten im Jahr</h4>
-        <div id="absenceList" class="absence-list">
-          <!-- Einträge werden per JS eingefügt -->
-        </div>
-      </div>
-    </div>
-
-
-
-  </div>
-</div>
-
-
-<!-- View 4: Admin -->
-<div class="app-view" id="view-admin">
-  <div class="admin-header">
-    <h2>Admin</h2>
-    <p class="admin-subtitle">
-      Auswertungen für Mitarbeiter, Anlagen und Lohnabrechnung.
-    </p>
-  </div>
-
-  <!-- Inner admin tabs -->
-  <div class="admin-tabs">
-    <button
-      type="button"
-      class="admin-tab-btn active"
-      data-admin-tab="overview"
-    >
-      Überblick
-    </button>
-    <button
-      type="button"
-      class="admin-tab-btn"
-      data-admin-tab="anlagen"
-    >
-      Anlagen
-    </button>
-    <button
-      type="button"
-      class="admin-tab-btn"
-      data-admin-tab="payroll"
-    >
-      Lohnabrechnung
-    </button>
-  </div>
-
-  <!-- Tab: Überblick (Mitarbeiter) -->
-  <div
-    class="admin-tab-content active"
-    data-admin-content="overview"
-  >
-    <div class="admin-section-header">
-      <h3>Mitarbeiter-Überblick</h3>
-      <p class="admin-section-subtitle">
-        Letzte Übertragungen pro Mitarbeiter und Team.
-      </p>
-    </div>
-
-    <div
-      id="adminSummaryContainer"
-      class="admin-summary-container"
-    >
-      <!-- Wird per JS gefüllt (wie bisher) -->
-    </div>
-  </div>
-
-  <!-- Tab: Anlagen (Kom.Nr) -->
-  <div class="admin-tab-content" data-admin-content="anlagen">
-    <div class="admin-section-header">
-      <h3>Anlagen-Auswertung</h3>
-      <p class="admin-section-subtitle">
-        Kommissionsnummern, Stunden und Überzeit nach Anlage.
-      </p>
-    </div>
-    <div class="admin-placeholder">
-      <p>Hier kommen später die Kommissions-Statistiken & Charts rein.</p>
-    </div>
-  </div>
-
-  <!-- Tab: Lohnabrechnung -->
-  <div class="admin-tab-content" data-admin-content="payroll">
-    <div class="admin-section-header">
-      <h3>Lohnabrechnung</h3>
-      <p class="admin-section-subtitle">
-        Aggregierte Daten für HR, mit Export in Excel/PDF.
-      </p>
-    </div>
-    <div class="admin-placeholder">
-      <p>Hier kommen später die Lohn-Übersichten und Exports rein.</p>
-    </div>
-  </div>
-</div>
-
-
-  </div>
-  </div>
-
-  <script type="module" src="/src/main.js"></script>
-</body>
-
+    <script type="module" src="/src/main.js"></script>
+  </body>
 </html>
