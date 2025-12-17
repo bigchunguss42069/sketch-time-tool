@@ -23,6 +23,11 @@ const adminTab = document.getElementById('adminTab');
 const adminSummaryContainer = document.getElementById('adminSummaryContainer');
 const adminInnerTabButtons = document.querySelectorAll('.admin-tab-btn');
 const adminTabContents = document.querySelectorAll('.admin-tab-content');
+const adminMonthPrevBtn = document.getElementById('adminMonthPrev');
+const adminMonthNextBtn = document.getElementById('adminMonthNext');
+const adminMonthLabelEl = document.getElementById('adminMonthLabel');
+
+let adminMonthOffset = 0;
 
 
 
@@ -1015,6 +1020,21 @@ document.addEventListener('click', (event) => {
   }
 });
 
+if (adminMonthPrevBtn) {
+  adminMonthPrevBtn.addEventListener('click', () => {
+    adminMonthOffset -= 1;
+    updateAdminMonthLabel();
+    loadAdminSummary();
+  });
+}
+
+if (adminMonthNextBtn) {
+  adminMonthNextBtn.addEventListener('click', () => {
+    adminMonthOffset += 1;
+    updateAdminMonthLabel();
+    loadAdminSummary();
+  });
+}
 
 
 
@@ -1113,6 +1133,54 @@ function getCurrentDashboardMonthInfo() {
 
   return { year, monthIndex, label };
 }
+
+function getCurrentAdminMonthInfo() {
+  const today = new Date();
+  const base = new Date(today.getFullYear(), today.getMonth(), 1);
+  base.setMonth(base.getMonth() + adminMonthOffset);
+
+  const year = base.getFullYear();
+  const monthIndex = base.getMonth();
+
+  const labelRaw = base.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
+  const label = labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1);
+
+  return { year, monthIndex, label };
+}
+
+function updateAdminMonthLabel() {
+  if (!adminMonthLabelEl) return;
+  const info = getCurrentAdminMonthInfo();
+  adminMonthLabelEl.textContent = info.label;
+}
+
+function parseDateKeyToDate(dateKey) {
+  // dateKey = "YYYY-MM-DD"
+  return new Date(dateKey + 'T00:00:00');
+}
+
+function formatShortDateFromKey(dateKey) {
+  const d = parseDateKeyToDate(dateKey);
+  return formatShortDate(d); // your existing dd.mm.yy
+}
+
+function formatDayLabelFromKey(dateKey, weekdayNum) {
+  const d = parseDateKeyToDate(dateKey);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+
+  const map = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr' };
+  const wd = map[weekdayNum] || '';
+  return `${wd} ${dd}.${mm}`;
+}
+
+function adminStatusText(status) {
+  if (status === 'ok') return 'OK';
+  if (status === 'ferien') return 'Ferien';
+  if (status === 'absence') return 'Absenz';
+  return 'Fehlt';
+}
+
 
 function buildPayloadForCurrentDashboardMonth() {
   const info = getCurrentDashboardMonthInfo();
@@ -2832,16 +2900,17 @@ function initAuthView() {
 }
 
 
-    function loadAdminSummary() {
+  function loadAdminSummary() {
   if (!adminSummaryContainer) return;
 
+  updateAdminMonthLabel();
+
+  const info = getCurrentAdminMonthInfo();
   adminSummaryContainer.innerHTML = '<p>Übersicht wird geladen …</p>';
 
-  authFetch('/api/admin/transmissions-summary')
+  authFetch(`/api/admin/month-overview?year=${info.year}&monthIndex=${info.monthIndex}`)
     .then((res) => {
-      if (!res.ok) {
-        throw new Error('Fehler beim Laden');
-      }
+      if (!res.ok) throw new Error('Fehler beim Laden');
       return res.json();
     })
     .then((data) => {
@@ -2849,19 +2918,21 @@ function initAuthView() {
         throw new Error(data.error || 'Ungültige Antwort vom Server');
       }
 
-      if (data.users.length === 0) {
-        adminSummaryContainer.innerHTML =
-          '<p>Noch keine Übertragungen vorhanden.</p>';
+      adminSummaryContainer.innerHTML = '';
+
+      // Only show real employees in overview (optional): you can keep admins too
+      const users = data.users;
+
+      if (users.length === 0) {
+        adminSummaryContainer.innerHTML = '<p>Keine Benutzer gefunden.</p>';
         return;
       }
 
-      adminSummaryContainer.innerHTML = '';
-
-      data.users.forEach((u) => {
+      users.forEach((u) => {
         const card = document.createElement('div');
         card.className = 'admin-user-card';
 
-        // --- Header: Name/Team (links) + Sync-Pill (rechts) ---
+        // --- Header: Name/Team (left) + Sync pill (right) ---
         const header = document.createElement('div');
         header.className = 'admin-user-header';
 
@@ -2879,7 +2950,6 @@ function initAuthView() {
         titleBlock.appendChild(title);
         titleBlock.appendChild(team);
 
-        // Sync pill on the right of the name
         const syncInfo = getAdminSyncStatusInfo(u.lastSentAt);
 
         const pill = document.createElement('div');
@@ -2899,77 +2969,166 @@ function initAuthView() {
         header.appendChild(titleBlock);
         header.appendChild(pill);
 
-        // --- Body: rest of the info ---
-        const body = document.createElement('div');
-        body.className = 'admin-user-body';
+        // --- Month micro-row (Monat + Total + transmitted badge) ---
+        const monthRow = document.createElement('div');
+        monthRow.className = 'admin-user-month-row';
 
-        const count = document.createElement('div');
-        count.textContent = `Anzahl Übertragungen: ${u.transmissionsCount}`;
+        const monthLeft = document.createElement('div');
+        monthLeft.textContent = `Monat: ${u.month?.monthLabel || info.label}`;
 
-        const last = document.createElement('div');
-        if (u.lastSentAt) {
-          const d = new Date(u.lastSentAt);
-          const dateStr = d.toLocaleString('de-CH', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          last.textContent = `Letzte Übertragung: ${
-            u.lastMonthLabel || ''
-          } (${dateStr})`;
+        const monthRight = document.createElement('div');
+        monthRight.style.display = 'inline-flex';
+        monthRight.style.alignItems = 'center';
+        monthRight.style.gap = '10px';
+
+        const totalText = document.createElement('span');
+        if (u.month && u.month.transmitted && typeof u.month.monthTotalHours === 'number') {
+          totalText.textContent = `Monat total: ${formatHours(u.month.monthTotalHours)}`;
         } else {
-          last.textContent = 'Noch keine Übertragung';
+          totalText.textContent = 'Monat total: –';
         }
 
-        body.appendChild(count);
-        body.appendChild(last);
-        // NEW: show last-month totals on the card (if provided by backend)
-        if (u.lastTotals) {
-          const metrics = document.createElement('div');
-          metrics.className = 'admin-user-metrics';
-
-          const rows = [
-            ['Total', u.lastTotals.total],
-            ['Kom', u.lastTotals.kom],
-            ['Tagesstd.', u.lastTotals.dayHours],
-            ['Pikett', u.lastTotals.pikett],
-            ['ÜZ3', u.lastTotals.overtime3],
-          ];
-
-          rows.forEach(([label, val]) => {
-            const item = document.createElement('div');
-            item.className = 'admin-user-metric';
-
-            const k = document.createElement('span');
-            k.className = 'admin-user-metric-key';
-            k.textContent = label;
-
-            const v = document.createElement('span');
-            v.className = 'admin-user-metric-val';
-            v.textContent = typeof val === 'number' ? formatHours(val) : '–';
-
-            item.appendChild(k);
-            item.appendChild(v);
-            metrics.appendChild(item);
-          });
-
-          body.appendChild(metrics);
+        const badge = document.createElement('span');
+        if (u.month && u.month.transmitted) {
+          badge.className = 'admin-month-badge transmitted';
+          badge.textContent = 'Monat übertragen';
+        } else {
+          badge.className = 'admin-month-badge not-transmitted';
+          badge.textContent = 'Nicht übertragen';
         }
 
+        monthRight.appendChild(totalText);
+        monthRight.appendChild(badge);
+
+        monthRow.appendChild(monthLeft);
+        monthRow.appendChild(monthRight);
+
+        // --- Week blocks (KW) + 5-day rows ---
+        const weekList = document.createElement('div');
+        weekList.className = 'admin-week-list';
+
+        if (!u.month || !u.month.transmitted) {
+          const empty = document.createElement('div');
+          empty.className = 'admin-week-block';
+          empty.textContent = 'Für diesen Monat wurden noch keine Daten übertragen.';
+          weekList.appendChild(empty);
+        } else {
+          const weeks = Array.isArray(u.month.weeks) ? u.month.weeks : [];
+
+          if (weeks.length === 0) {
+            const empty = document.createElement('div');
+            empty.className = 'admin-week-block';
+            empty.textContent = 'Keine Wochen-Daten vorhanden.';
+            weekList.appendChild(empty);
+          } else {
+            weeks.forEach((w) => {
+              const block = document.createElement('div');
+              block.className = 'admin-week-block';
+
+              const headerRow = document.createElement('div');
+              headerRow.className = 'admin-week-header';
+
+              const fromStr = w.minDateKey ? formatShortDateFromKey(w.minDateKey) : '';
+              const toStr = w.maxDateKey ? formatShortDateFromKey(w.maxDateKey) : '';
+
+              const left = document.createElement('div');
+              left.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${w.workDaysInMonth} Tage)`;
+
+              const mid = document.createElement('div');
+              mid.className = 'admin-week-status';
+              const missingCount = Number(w.missingCount || 0);
+              if (missingCount === 0) {
+                mid.textContent = 'Alle Tage erfasst';
+                mid.classList.add('status-ok');
+              } else {
+                mid.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
+                mid.classList.add('status-missing');
+              }
+
+              const right = document.createElement('div');
+              right.textContent = `Week total: ${formatHours(Number(w.weekTotalHours || 0))}`;
+
+              headerRow.appendChild(left);
+              headerRow.appendChild(mid);
+              headerRow.appendChild(right);
+
+              // Day rows (Mo–Fr)
+              const dayList = document.createElement('div');
+              dayList.className = 'admin-day-list';
+
+              const days = Array.isArray(w.days) ? w.days : [];
+              days.forEach((d) => {
+                const row = document.createElement('div');
+                row.className = 'admin-day-row';
+
+                if (d.status === 'ferien') row.classList.add('is-ferien');
+                if (d.status === 'absence') row.classList.add('is-absence');
+
+                const dayLeft = document.createElement('div');
+                dayLeft.textContent = formatDayLabelFromKey(d.dateKey, d.weekday);
+
+                const dayCenter = document.createElement('div');
+                dayCenter.className = 'admin-day-hours';
+
+                const hoursText = document.createElement('span');
+                hoursText.textContent = formatHours(Number(d.totalHours || 0));
+
+                // Option A: tiny bar (0..8h)
+                const bar = document.createElement('div');
+                bar.className = 'admin-hours-bar';
+
+                const fill = document.createElement('div');
+                fill.className = 'admin-hours-bar-fill';
+
+                const h = Number(d.totalHours || 0);
+                const pct = Math.max(0, Math.min(1, h / 8)) * 100;
+                fill.style.width = `${pct}%`;
+
+                bar.appendChild(fill);
+
+                dayCenter.appendChild(hoursText);
+                dayCenter.appendChild(bar);
+
+                const dayRight = document.createElement('div');
+                dayRight.className = `admin-status ${d.status || 'missing'}`;
+
+                const sdot = document.createElement('span');
+                sdot.className = 'admin-status-dot';
+
+                const stxt = document.createElement('span');
+                stxt.textContent = adminStatusText(d.status);
+
+                dayRight.appendChild(sdot);
+                dayRight.appendChild(stxt);
+
+                row.appendChild(dayLeft);
+                row.appendChild(dayCenter);
+                row.appendChild(dayRight);
+                dayList.appendChild(row);
+              });
+
+              block.appendChild(headerRow);
+              block.appendChild(dayList);
+
+              weekList.appendChild(block);
+            });
+          }
+        }
+
+        // Assemble card
         card.appendChild(header);
-        card.appendChild(body);
+        card.appendChild(monthRow);
+        card.appendChild(weekList);
 
         adminSummaryContainer.appendChild(card);
       });
     })
     .catch((err) => {
       console.error('Admin summary error', err);
-      adminSummaryContainer.innerHTML =
-        '<p>Fehler beim Laden der Übersicht.</p>';
+      adminSummaryContainer.innerHTML = '<p>Fehler beim Laden der Übersicht.</p>';
     });
 }
+
   
 
 

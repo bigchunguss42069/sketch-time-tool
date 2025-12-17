@@ -1205,7 +1205,7 @@ body {
 }
 
 /* One row per KW */
-.dashboard-week-row {
+ .dashboard-week-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1902,7 +1902,7 @@ body {
   gap: 4px;
 }
 
-.admin-user-body div {
+.admin-user-body > .admin-user-body-row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -1929,12 +1929,16 @@ body {
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+  
 }
 
 .admin-user-title-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  
+
+
 }
 
 .admin-user-title {
@@ -1995,17 +1999,19 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: -6px;
+  margin-top: 8px;
 }
 
 .admin-user-title-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
+
 }
 
 .admin-user-title {
-  font-size: 0.95rem;
+  font-size: 1.4rem;
   font-weight: 600;
   color: #f9fafb;
 }
@@ -2132,6 +2138,7 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   color: #e5e7eb;
+  
 }
 
 .admin-user-week-lock-btn {
@@ -2177,4 +2184,224 @@ body.in-admin-view #app {
 body.in-admin-view #view-admin {
   max-width: 1600px; /* was 1200px */
   width: 100%;
+}
+
+/* --- Admin toolbar (month selector) --- */
+.admin-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0 14px;
+}
+
+.admin-month-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.admin-month-arrow {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+
+.admin-month-arrow:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.admin-month-label {
+  font-weight: 600;
+  min-width: 140px;
+  text-align: center;
+}
+
+/* --- Admin user card v2 --- */
+.admin-user-month-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 17px;
+  font-weight: 500;
+  color: white;
+  
+}
+
+.admin-month-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  white-space: nowrap;
+}
+
+.admin-month-badge.transmitted {
+  border-color: rgba(0, 200, 120, 0.35);
+}
+
+.admin-month-badge.not-transmitted {
+  opacity: 0.85;
+}
+
+/* Weeks list */
+.admin-week-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-week-block {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.10);
+  padding: 10px;
+}
+
+.admin-week-header {
+  display:flex;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 15px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.admin-week-status.status-ok {
+  opacity: 0.95;
+}
+
+.admin-week-status.status-missing {
+  font-weight: 600;
+}
+
+/* Day rows (always visible) */
+.admin-day-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-day-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 10px) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+  column-gap: 5px;
+}
+
+.admin-day-hours {
+  display: grid;
+  grid-template-columns: 55px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 0;      /* was 6px 8px */
+  min-width: 0;    /* reinforce shrink */
+}
+
+
+
+/* Option A: tiny progress bar next to hours */
+.admin-hours-bar {
+  height: 7px;
+  width: 80px;
+  max-width: 85px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+  overflow: hidden;
+}
+
+.admin-hours-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: rgba(255,255,255,0.55);
+}
+
+/* Status dot + text */
+.admin-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.admin-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.55);
+}
+
+/* Stronger markers */
+.admin-status.missing .admin-status-dot { background: #ff4d4f; }
+.admin-status.ok .admin-status-dot      { background: #2ecc71; }
+.admin-status.ferien .admin-status-dot  { background: #4aa3ff; }
+.admin-status.absence .admin-status-dot { background: #4aa3ff; }
+
+/* Optional: slightly dim neutral days */
+.admin-day-row.is-ferien,
+.admin-day-row.is-absence {
+  opacity: 0.92;
+}
+
+
+#view-admin *, 
+#view-admin *::before, 
+#view-admin *::after {
+  box-sizing: border-box;
+}
+
+.admin-user-card,
+.admin-week-block,
+.admin-day-row {
+  max-width: 100%;
+}
+.admin-day-hours-text{
+  text-align: right;
+  white-space: nowrap;
+}
+.admin-status{
+  justify-self: end;
+}
+.admin-day-row > * {
+  min-width: 0;
+}
+
+.admin-month-badge {
+  display: none !important;
+}
+
+.admin-week-status.status-ok {
+  display: none !important;
+}
+
+.admin-week-status.status-missing {
+display: none !important;
+}
+.admin-user-title::after { 
+display: none; 
 }

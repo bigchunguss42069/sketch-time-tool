@@ -604,34 +604,6 @@ app.get('/api/transmissions', requireAuth, (req, res) => {
     transmissions: index,
   });
 });
-
-// ---- Admin: summary of transmissions per user ----
-// Only accessible for admins
-app.get(
-  '/api/admin/transmissions-summary',
-  requireAuth,
-  requireAdmin,
-  (req, res) => {
-    const summaries = USERS.map((user) => {
-      const userDir = getUserDir(user.username); // stored by username
-      const indexPath = path.join(userDir, 'index.json');
-
-      let transmissions = [];
-      if (fs.existsSync(indexPath)) {
-        try {
-          const raw = fs.readFileSync(indexPath, 'utf8');
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            transmissions = parsed;
-          }
-        } catch (err) {
-          console.warn(
-            `Could not read index.json for user ${user.username}`,
-            err
-          );
-        }
-      }
-
       // ---- Admin: month overview (per user, month-specific) ----
 app.get(
   '/api/admin/month-overview',
@@ -762,6 +734,34 @@ app.get(
     });
   }
 );
+// ---- Admin: summary of transmissions per user ----
+// Only accessible for admins
+app.get(
+  '/api/admin/transmissions-summary',
+  requireAuth,
+  requireAdmin,
+  (req, res) => {
+    const summaries = USERS.map((user) => {
+      const userDir = getUserDir(user.username); // stored by username
+      const indexPath = path.join(userDir, 'index.json');
+
+      let transmissions = [];
+      if (fs.existsSync(indexPath)) {
+        try {
+          const raw = fs.readFileSync(indexPath, 'utf8');
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            transmissions = parsed;
+          }
+        } catch (err) {
+          console.warn(
+            `Could not read index.json for user ${user.username}`,
+            err
+          );
+        }
+      }
+
+
 
 
       const transmissionsCount = transmissions.length;
