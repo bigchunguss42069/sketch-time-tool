@@ -26,6 +26,7 @@ const adminTabContents = document.querySelectorAll('.admin-tab-content');
 
 
 
+
 const pikettAddBtn = document.getElementById('pikettAddBtn');
 const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
 const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
@@ -2356,6 +2357,7 @@ function updateDayTitleWithDate() {
 }
 
 function showLogin() {
+  document.body.classList.remove('admin-only');
   if (loginView) loginView.classList.remove('hidden');
   if (mainApp) mainApp.classList.add('hidden');
 }
@@ -2512,6 +2514,8 @@ function switchToView(viewName) {
 
 function updateUIForRole() {
   const user = getCurrentUser();
+
+  document.body.classList.toggle('admin-only', !!(user && user.role === 'admin'));
 
   if (user && user.role === 'admin') {
     // Admin: only show Admin tab
@@ -2921,6 +2925,38 @@ function initAuthView() {
 
         body.appendChild(count);
         body.appendChild(last);
+        // NEW: show last-month totals on the card (if provided by backend)
+        if (u.lastTotals) {
+          const metrics = document.createElement('div');
+          metrics.className = 'admin-user-metrics';
+
+          const rows = [
+            ['Total', u.lastTotals.total],
+            ['Kom', u.lastTotals.kom],
+            ['Tagesstd.', u.lastTotals.dayHours],
+            ['Pikett', u.lastTotals.pikett],
+            ['ÜZ3', u.lastTotals.overtime3],
+          ];
+
+          rows.forEach(([label, val]) => {
+            const item = document.createElement('div');
+            item.className = 'admin-user-metric';
+
+            const k = document.createElement('span');
+            k.className = 'admin-user-metric-key';
+            k.textContent = label;
+
+            const v = document.createElement('span');
+            v.className = 'admin-user-metric-val';
+            v.textContent = typeof val === 'number' ? formatHours(val) : '–';
+
+            item.appendChild(k);
+            item.appendChild(v);
+            metrics.appendChild(item);
+          });
+
+          body.appendChild(metrics);
+        }
 
         card.appendChild(header);
         card.appendChild(body);

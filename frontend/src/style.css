@@ -1842,9 +1842,9 @@ body {
 /* Summary grid for user cards */
 #adminSummaryContainer {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 18px;
+  align-items: start;
 }
 
 /* Desktop layout */
@@ -1920,8 +1920,8 @@ body {
   background: linear-gradient(135deg, #020511, #0e1a36);
   border: 1px solid rgba(148, 163, 184, 0.5);
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.85);
-  margin-bottom: 8px;
 }
+
 
 .admin-user-header {
   display: flex;
@@ -1952,4 +1952,229 @@ body {
 .admin-user-header .sync-chip {
   font-size: 0.75rem;
   padding: 0.15rem 0.55rem;
+}
+
+/* --- Admin: Monatsübersicht (Mitarbeiter) --- */
+
+.admin-month-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.admin-month-header-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* Container where all employee cards live */
+.admin-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Employee card */
+.admin-user-card {
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.98),
+    rgba(3, 7, 18, 0.95)
+  );
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  padding: 10px 12px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+}
+
+/* Header with name/team + existing sync pill */
+.admin-user-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.admin-user-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-user-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.admin-user-team {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Body below the header */
+.admin-user-body {
+  font-size: 0.8rem;
+  color: #d1d5db;
+}
+
+/* Small loading text */
+.admin-loading-text {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Row: Monat + Gesamtstunden */
+.admin-user-meta-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.admin-user-month-label {
+  font-size: 0.8rem;
+  color: #cbd5f5;
+}
+
+.admin-user-month-hours {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* Row with vacation chip (optional) */
+.admin-user-info-row {
+  margin-bottom: 4px;
+}
+
+.admin-user-vacation-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.7);
+  background: rgba(15, 23, 42, 0.9);
+  font-size: 0.75rem;
+  color: #e0f2fe;
+}
+
+/* KW list inside card */
+.admin-user-week-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.admin-user-week-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(75, 85, 99, 0.8);
+}
+
+.admin-user-week-row.locked {
+  border-color: rgba(129, 140, 248, 0.9);
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.5);
+}
+
+/* Left side: KW + range + vacation icon */
+.admin-user-week-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-user-week-label {
+  font-size: 0.8rem;
+  color: #e5e7eb;
+  white-space: nowrap;
+}
+
+.admin-user-week-vacation-icon {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+/* Middle: status text */
+.admin-user-week-status {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.admin-user-week-status.status-ok {
+  color: #4ade80;
+}
+
+.admin-user-week-status.status-missing {
+  color: #f97373;
+}
+
+/* Right: hours + lock button */
+.admin-user-week-right {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.admin-user-week-total {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.admin-user-week-lock-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.8);
+  color: #e5e7eb;
+}
+
+.admin-user-week-lock-btn:hover {
+  background: rgba(37, 99, 235, 0.25);
+}
+
+/* Placeholder row when there are no weeks for that month */
+.admin-user-week-empty {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* Admin-only: remove the global mobile width constraint */
+body.admin-only #app {
+  max-width: none;
+  margin: 0;
+  padding: 12px 12px 20px; /* keep your spacing, but not phone width */
+}
+
+body.in-admin-only .top-nav,
+body.admin-only .top-nav {
+  display: none !important;
+}
+
+/* Admin view: remove the global mobile max-width constraint */
+body.in-admin-view #app {
+  max-width: none;
+  margin: 0;
+}
+
+/* Optional: allow admin content to grow wider than 1200px if you want more columns */
+body.in-admin-view #view-admin {
+  max-width: 1600px; /* was 1200px */
+  width: 100%;
 }
