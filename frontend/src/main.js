@@ -26,6 +26,8 @@ const adminTabContents = document.querySelectorAll('.admin-tab-content');
 const adminMonthPrevBtn = document.getElementById('adminMonthPrev');
 const adminMonthNextBtn = document.getElementById('adminMonthNext');
 const adminMonthLabelEl = document.getElementById('adminMonthLabel');
+const adminDayDetailCache = new Map(); // key: username|year|monthIndex|dateKey
+
 
 let adminMonthOffset = 0;
 
@@ -1113,8 +1115,193 @@ if (dashboardTransmitBtn) {
 }
 
 
+document.addEventListener('click', (e) => {
+  const row = e.target.closest('.admin-day-row');
+  if (!row) return;
+
+  const username = row.dataset.username;
+  const year = Number(row.dataset.year);
+  const monthIndex = Number(row.dataset.monthIndex);
+  const dateKey = row.dataset.date;
+
+  if (!username || !dateKey || Number.isNaN(year) || Number.isNaN(monthIndex)) return;
+
+  // toggle collapse if already open
+  const existing = row.nextElementSibling;
+  if (existing && existing.classList.contains('admin-day-drawer')) {
+    existing.remove();
+    row.classList.remove('expanded');
+    return;
+  }
+
+  // create drawer placeholder
+  row.classList.add('expanded');
+  const drawer = document.createElement('div');
+  drawer.className = 'admin-day-drawer';
+  drawer.innerHTML = `<div class="admin-day-drawer-loading">Details werden geladen …</div>`;
+  row.insertAdjacentElement('afterend', drawer);
+
+  const cacheKey = `${username}|${year}|${monthIndex}|${dateKey}`;
+  const cached = adminDayDetailCache.get(cacheKey);
+  if (cached) {
+    drawer.innerHTML = '';
+    drawer.appendChild(buildAdminDayDrawer(cached));
+    return;
+  }
+
+  authFetch(`/api/admin/day-detail?username=${encodeURIComponent(username)}&year=${year}&monthIndex=${monthIndex}&date=${encodeURIComponent(dateKey)}`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
+      adminDayDetailCache.set(cacheKey, data);
+      drawer.innerHTML = '';
+      drawer.appendChild(buildAdminDayDrawer(data));
+    })
+    .catch((err) => {
+      console.error(err);
+      drawer.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+    });
+});
 
 
+function buildAdminDayDrawer(data) {
+  const wrap = document.createElement('div');
+  wrap.className = 'admin-day-drawer-content';
+
+  // Status line
+  const statusLine = document.createElement('div');
+  statusLine.className = 'admin-day-drawer-status';
+  statusLine.textContent = `Status: ${statusLabel(data.status)}`;
+
+  // Flags line
+  const flags = data.flags || {};
+  const flagsActive = [];
+  if (flags.ferien) flagsActive.push('Ferien');
+  if (flags.schmutzzulage) flagsActive.push('Schmutzzulage');
+  if (flags.nebenauslagen) flagsActive.push('Nebenauslagen');
+
+  const flagsLine = document.createElement('div');
+  flagsLine.className = 'admin-day-drawer-flags';
+  flagsLine.textContent = flagsActive.length ? `Flags: ${flagsActive.join(', ')}` : 'Flags: –';
+
+  // Absence
+  const abs = data.acceptedAbsence;
+  const absLine = document.createElement('div');
+  absLine.className = 'admin-day-drawer-absence';
+  absLine.textContent = abs
+    ? `Akzeptierte Absenz: ${abs.type || 'Absenz'} · ${abs.from} – ${abs.to}`
+    : 'Akzeptierte Absenz: –';
+
+  // Meal
+  const meal = data.mealAllowance || {};
+  const mealsOn = ['1','2','3'].filter((k) => !!meal[k]);
+  const mealLine = document.createElement('div');
+  mealLine.className = 'admin-day-drawer-meal';
+  mealLine.textContent = mealsOn.length ? `Verpflegung: ${mealsOn.join(' / ')}` : 'Verpflegung: –';
+
+  // Totals / breakdown
+  const t = data.totals || {};
+  const breakdown = document.createElement('div');
+  breakdown.className = 'admin-day-drawer-breakdown';
+  breakdown.innerHTML = `
+    <div><strong>Aufschlüsselung</strong></div>
+    <div>Kommissionsstunden: ${formatHoursSafe(t.komHours)}</div>
+    <div>Tagesstunden: ${formatHoursSafe(t.dayHoursTotal)}</div>
+    <div>Spezialbuchungen: ${formatHoursSafe(t.specialHours)}</div>
+    <div>Pikett: ${formatHoursSafe(t.pikettHours)}</div>
+    <div><strong>Total: ${formatHoursSafe(t.totalHours)}</strong></div>
+  `;
+
+  // Entries list (compact, only show non-zero options)
+  const entriesBlock = document.createElement('div');
+  entriesBlock.className = 'admin-day-drawer-entries';
+
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  if (!entries.length) {
+    entriesBlock.innerHTML = `<div><strong>Kommissionen</strong></div><div>–</div>`;
+  } else {
+    entriesBlock.innerHTML = `<div><strong>Kommissionen</strong></div>`;
+    entries.forEach((e) => {
+      const line = document.createElement('div');
+      const kom = (e && e.komNr) ? e.komNr : '–';
+      const hoursObj = (e && e.hours) ? e.hours : {};
+      const parts = [];
+      Object.entries(hoursObj).forEach(([k, v]) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) return;
+        // OPTION_LABELS exists in your file already
+        const label = OPTION_LABELS[k] || k;
+        parts.push(`${label}: ${n.toFixed(2).replace('.', ',').replace(/,00$/, '')} h`);
+      });
+      line.textContent = `• ${kom}${parts.length ? ' · ' + parts.join(' · ') : ''}`;
+      entriesBlock.appendChild(line);
+    });
+  }
+
+  // Special entries
+  const specialBlock = document.createElement('div');
+  specialBlock.className = 'admin-day-drawer-special';
+
+  const specials = Array.isArray(data.specialEntries) ? data.specialEntries : [];
+  if (!specials.length) {
+    specialBlock.innerHTML = `<div><strong>Spezialbuchungen</strong></div><div>–</div>`;
+  } else {
+    specialBlock.innerHTML = `<div><strong>Spezialbuchungen</strong></div>`;
+    specials.forEach((s) => {
+      const line = document.createElement('div');
+      const type = s?.type === 'fehler' ? 'Fehler' : 'Regie';
+      const kom = s?.komNr || '–';
+      const h = formatHoursSafe(s?.hours);
+      const ref = s?.type === 'fehler' ? (s?.description || '') : (s?.rapportNr || '');
+      line.textContent = `• ${type} · ${kom} · ${h}${ref ? ' · ' + ref : ''}`;
+      specialBlock.appendChild(line);
+    });
+  }
+
+  // Pikett entries
+  const pikettBlock = document.createElement('div');
+  pikettBlock.className = 'admin-day-drawer-pikett';
+
+  const pikett = Array.isArray(data.pikettEntries) ? data.pikettEntries : [];
+  if (!pikett.length) {
+    pikettBlock.innerHTML = `<div><strong>Pikett</strong></div><div>–</div>`;
+  } else {
+    pikettBlock.innerHTML = `<div><strong>Pikett</strong></div>`;
+    pikett.forEach((p) => {
+      const line = document.createElement('div');
+      const h = formatHoursSafe(p?.hours);
+      const note = p?.note ? ` · ${p.note}` : '';
+      const tag = p?.isOvertime3 ? ' (ÜZ3)' : '';
+      line.textContent = `• ${h}${tag}${note}`;
+      pikettBlock.appendChild(line);
+    });
+  }
+
+  wrap.appendChild(statusLine);
+  wrap.appendChild(flagsLine);
+  wrap.appendChild(absLine);
+  wrap.appendChild(mealLine);
+  wrap.appendChild(breakdown);
+  wrap.appendChild(entriesBlock);
+  wrap.appendChild(specialBlock);
+  wrap.appendChild(pikettBlock);
+
+  return wrap;
+}
+
+function statusLabel(s) {
+  if (s === 'ok') return 'OK';
+  if (s === 'missing') return 'Fehlt';
+  if (s === 'ferien') return 'Ferien';
+  if (s === 'absence') return 'Absenz';
+  return '–';
+}
+
+function formatHoursSafe(v) {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return '0,0 h';
+  return n.toFixed(1).replace('.', ',') + ' h';
+}
 
 
 // --- Dashboard month info + aggregation --- //
@@ -2983,9 +3170,9 @@ function initAuthView() {
 
         const totalText = document.createElement('span');
         if (u.month && u.month.transmitted && typeof u.month.monthTotalHours === 'number') {
-          totalText.textContent = `Monat total: ${formatHours(u.month.monthTotalHours)}`;
+          totalText.textContent = `Total: ${formatHours(u.month.monthTotalHours)}`;
         } else {
-          totalText.textContent = 'Monat total: –';
+          totalText.textContent = 'Total: –';
         }
 
         const badge = document.createElement('span');
@@ -3021,97 +3208,185 @@ function initAuthView() {
             empty.textContent = 'Keine Wochen-Daten vorhanden.';
             weekList.appendChild(empty);
           } else {
-            weeks.forEach((w) => {
-              const block = document.createElement('div');
-              block.className = 'admin-week-block';
+                weeks.forEach((w) => {
+  const block = document.createElement('div');
+  block.className = 'admin-week-block';
+  if (w.locked) block.classList.add('locked');
 
-              const headerRow = document.createElement('div');
-              headerRow.className = 'admin-week-header';
+  const headerRow = document.createElement('div');
+  headerRow.className = 'admin-week-header';
 
-              const fromStr = w.minDateKey ? formatShortDateFromKey(w.minDateKey) : '';
-              const toStr = w.maxDateKey ? formatShortDateFromKey(w.maxDateKey) : '';
+  const fromStr = w.minDateKey ? formatShortDateFromKey(w.minDateKey) : '';
+  const toStr = w.maxDateKey ? formatShortDateFromKey(w.maxDateKey) : '';
 
-              const left = document.createElement('div');
-              left.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${w.workDaysInMonth} Tage)`;
+  // --- Top line: KW + date range ---
+  const left = document.createElement('div');
+  left.className = 'admin-week-header-left';
+  left.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${w.workDaysInMonth} Tage)`;
 
-              const mid = document.createElement('div');
-              mid.className = 'admin-week-status';
-              const missingCount = Number(w.missingCount || 0);
-              if (missingCount === 0) {
-                mid.textContent = 'Alle Tage erfasst';
-                mid.classList.add('status-ok');
-              } else {
-                mid.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
-                mid.classList.add('status-missing');
-              }
+  // --- Status (missing/ok) ---
+  const mid = document.createElement('div');
+  mid.className = 'admin-week-status';
 
-              const right = document.createElement('div');
-              right.textContent = `Week total: ${formatHours(Number(w.weekTotalHours || 0))}`;
+  const missingCount = Number(w.missingCount || 0);
+  mid.classList.remove('status-ok', 'status-missing');
 
-              headerRow.appendChild(left);
-              headerRow.appendChild(mid);
-              headerRow.appendChild(right);
+  if (missingCount === 0) {
+    mid.textContent = 'Alle Tage erfasst';
+    mid.classList.add('status-ok');
+  } else {
+    mid.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
+    mid.classList.add('status-missing');
+  }
 
-              // Day rows (Mo–Fr)
-              const dayList = document.createElement('div');
-              dayList.className = 'admin-day-list';
+  // --- Total line (goes below KW/date range) ---
+  const totalLine = document.createElement('div');
+  totalLine.className = 'admin-week-total';
+  totalLine.textContent = `Total: ${formatHours(Number(w.weekTotalHours || 0))}`;
 
-              const days = Array.isArray(w.days) ? w.days : [];
-              days.forEach((d) => {
-                const row = document.createElement('div');
-                row.className = 'admin-day-row';
+  // --- Left stack: (KW/date range) + (Total + status) ---
+  const leftStack = document.createElement('div');
+  leftStack.className = 'admin-week-left-stack';
 
-                if (d.status === 'ferien') row.classList.add('is-ferien');
-                if (d.status === 'absence') row.classList.add('is-absence');
+  const subLine = document.createElement('div');
+  subLine.className = 'admin-week-subline';
+  subLine.appendChild(totalLine);
+  subLine.appendChild(mid);
 
-                const dayLeft = document.createElement('div');
-                dayLeft.textContent = formatDayLabelFromKey(d.dateKey, d.weekday);
+  leftStack.appendChild(left);
+  leftStack.appendChild(subLine);
 
-                const dayCenter = document.createElement('div');
-                dayCenter.className = 'admin-day-hours';
+  // --- Right group: only lock button ---
+  const rightGroup = document.createElement('div');
+  rightGroup.className = 'admin-week-header-right';
 
-                const hoursText = document.createElement('span');
-                hoursText.textContent = formatHours(Number(d.totalHours || 0));
+  const lockBtn = document.createElement('button');
+  lockBtn.type = 'button';
+  lockBtn.className = 'admin-week-lock-btn';
+  lockBtn.classList.toggle('is-locked', !!w.locked);
+  lockBtn.textContent = w.locked ? 'Gesperrt' : 'Sperren';
 
-                // Option A: tiny bar (0..8h)
-                const bar = document.createElement('div');
-                bar.className = 'admin-hours-bar';
+  // optional tooltip meta (keeps it nice)
+  const metaBits = [];
+  if (w.lockedBy) metaBits.push(`von ${w.lockedBy}`);
+  if (w.lockedAt) metaBits.push(`am ${new Date(w.lockedAt).toLocaleString('de-CH')}`);
+  lockBtn.title = w.locked
+    ? `Woche ist gesperrt${metaBits.length ? ' (' + metaBits.join(', ') + ')' : ''}`
+    : 'Woche sperren';
 
-                const fill = document.createElement('div');
-                fill.className = 'admin-hours-bar-fill';
+  lockBtn.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
 
-                const h = Number(d.totalHours || 0);
-                const pct = Math.max(0, Math.min(1, h / 8)) * 100;
-                fill.style.width = `${pct}%`;
+    lockBtn.disabled = true;
+    const nextLocked = !w.locked;
 
-                bar.appendChild(fill);
+    authFetch('/api/admin/week-lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: u.username,
+        weekYear: w.weekYear,
+        week: w.week,
+        locked: nextLocked,
+      }),
+    })
+      .then((res) => res.json())
+      .then((resp) => {
+        if (!resp.ok) throw new Error(resp.error || 'Lock fehlgeschlagen');
 
-                dayCenter.appendChild(hoursText);
-                dayCenter.appendChild(bar);
+        w.locked = !!resp.locked;
+        w.lockedAt = resp.lockedAt || null;
+        w.lockedBy = resp.lockedBy || null;
 
-                const dayRight = document.createElement('div');
-                dayRight.className = `admin-status ${d.status || 'missing'}`;
+        block.classList.toggle('locked', w.locked);
+        lockBtn.classList.toggle('is-locked', w.locked);
+        lockBtn.textContent = w.locked ? 'Gesperrt' : 'Sperren';
 
-                const sdot = document.createElement('span');
-                sdot.className = 'admin-status-dot';
+        const mb = [];
+        if (w.lockedBy) mb.push(`von ${w.lockedBy}`);
+        if (w.lockedAt) mb.push(`am ${new Date(w.lockedAt).toLocaleString('de-CH')}`);
+        lockBtn.title = w.locked
+          ? `Woche ist gesperrt${mb.length ? ' (' + mb.join(', ') + ')' : ''}`
+          : 'Woche sperren';
+      })
+      .catch((err) => {
+        console.error(err);
+        alert(err.message || 'Lock fehlgeschlagen');
+      })
+      .finally(() => {
+        lockBtn.disabled = false;
+      });
+  });
 
-                const stxt = document.createElement('span');
-                stxt.textContent = adminStatusText(d.status);
+      rightGroup.appendChild(lockBtn);
 
-                dayRight.appendChild(sdot);
-                dayRight.appendChild(stxt);
+      // assemble header
+      headerRow.appendChild(leftStack);
+      headerRow.appendChild(rightGroup);
 
-                row.appendChild(dayLeft);
-                row.appendChild(dayCenter);
-                row.appendChild(dayRight);
-                dayList.appendChild(row);
-              });
+      // --- Day rows (Mo–Fr) (unchanged) ---
+      const dayList = document.createElement('div');
+      dayList.className = 'admin-day-list';
 
-              block.appendChild(headerRow);
-              block.appendChild(dayList);
+      const days = Array.isArray(w.days) ? w.days : [];
+      days.forEach((d) => {
+        const row = document.createElement('div');
+        row.className = 'admin-day-row';
+        row.dataset.username = u.username || '';
+        row.dataset.year = String(info.year);
+        row.dataset.monthIndex = String(info.monthIndex);
+        row.dataset.date = d.dateKey;
 
-              weekList.appendChild(block);
-            });
+        if (d.status === 'ferien') row.classList.add('is-ferien');
+        if (d.status === 'absence') row.classList.add('is-absence');
+
+        const dayLeft = document.createElement('div');
+        dayLeft.textContent = formatDayLabelFromKey(d.dateKey, d.weekday);
+
+        const dayCenter = document.createElement('div');
+        dayCenter.className = 'admin-day-hours';
+
+        const hoursText = document.createElement('span');
+        hoursText.textContent = formatHours(Number(d.totalHours || 0));
+
+        const bar = document.createElement('div');
+        bar.className = 'admin-hours-bar';
+
+        const fill = document.createElement('div');
+        fill.className = 'admin-hours-bar-fill';
+
+        const h = Number(d.totalHours || 0);
+        const pct = Math.max(0, Math.min(1, h / 8)) * 100;
+        fill.style.width = `${pct}%`;
+
+        bar.appendChild(fill);
+        dayCenter.appendChild(hoursText);
+        dayCenter.appendChild(bar);
+
+        const dayRight = document.createElement('div');
+        dayRight.className = `admin-status ${d.status || 'missing'}`;
+
+        const sdot = document.createElement('span');
+        sdot.className = 'admin-status-dot';
+
+        const stxt = document.createElement('span');
+        stxt.textContent = adminStatusText(d.status);
+
+        dayRight.appendChild(sdot);
+        dayRight.appendChild(stxt);
+
+        row.appendChild(dayLeft);
+        row.appendChild(dayCenter);
+        row.appendChild(dayRight);
+        dayList.appendChild(row);
+      });
+
+      block.appendChild(headerRow);
+      block.appendChild(dayList);
+      weekList.appendChild(block);
+    });
+
           }
         }
 

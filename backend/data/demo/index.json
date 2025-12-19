@@ -1,10 +1,32 @@
 [
   {
-    "id": "2025-12-2025-12-14T12-03-08-529Z.json",
+    "id": "2025-12-2025-12-18T18-26-50-185Z.json",
     "year": 2025,
     "monthIndex": 11,
     "monthLabel": "Dezember 2025",
-    "sentAt": "2025-12-14T12:03:08.529Z",
-    "sizeBytes": 872
+    "sentAt": "2025-12-18T18:26:50.185Z",
+    "sizeBytes": 3462,
+    "totals": {
+      "kom": 16.5,
+      "dayHours": 9,
+      "pikett": 0,
+      "overtime3": 0,
+      "total": 25.5
+    }
+  },
+  {
+    "id": "2025-12-2025-12-18T21-47-23-176Z.json",
+    "year": 2025,
+    "monthIndex": 11,
+    "monthLabel": "Dezember 2025",
+    "sentAt": "2025-12-18T21:47:23.176Z",
+    "sizeBytes": 3563,
+    "totals": {
+      "kom": 16.5,
+      "dayHours": 9,
+      "pikett": 0,
+      "overtime3": 0,
+      "total": 25.5
+    }
   }
 ]

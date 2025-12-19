@@ -379,6 +379,164 @@ if (!fs.existsSync(BASE_DATA_DIR)) {
   fs.mkdirSync(BASE_DATA_DIR, { recursive: true });
 }
 
+// ---- Week locks (persistent) ----
+// Stored globally, keyed by username -> weekKey -> { locked:true, lockedAt, lockedBy }
+const WEEK_LOCKS_PATH = path.join(BASE_DATA_DIR, 'weekLocks.json');
+
+function readWeekLocks() {
+  return safeReadJson(WEEK_LOCKS_PATH, {});
+}
+
+function writeWeekLocks(data) {
+  fs.writeFileSync(WEEK_LOCKS_PATH, JSON.stringify(data, null, 2), 'utf8');
+}
+
+function weekKey(weekYear, week) {
+  return `${weekYear}-W${week}`;
+}
+
+function getLockMeta(userLocks, wk) {
+  const v = userLocks ? userLocks[wk] : null;
+  if (!v) return { locked: false, lockedAt: null, lockedBy: null };
+  if (v === true) return { locked: true, lockedAt: null, lockedBy: null };
+  if (typeof v === 'object' && v.locked) {
+    return {
+      locked: true,
+      lockedAt: v.lockedAt || null,
+      lockedBy: v.lockedBy || null,
+    };
+  }
+  return { locked: false, lockedAt: null, lockedBy: null };
+}
+
+function collectLockedDatesForMonth(userLocks, year, monthIndex) {
+  const lockedDateKeys = new Set();
+  const lockedWeekKeys = new Set();
+
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0);
+
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const dk = formatDateKey(cursor);
+    const iso = getISOWeekInfo(cursor); // { week, year }
+    const wk = weekKey(iso.year, iso.week);
+
+    const meta = getLockMeta(userLocks, wk);
+    if (meta.locked) {
+      lockedDateKeys.add(dk);
+      lockedWeekKeys.add(wk);
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return { lockedDateKeys, lockedWeekKeys };
+}
+
+function absenceOverlapsLockedDates(abs, lockedDateKeys) {
+  if (!abs || !abs.from || !abs.to) return false;
+
+  const fromKey = String(abs.from).slice(0, 10);
+  const toKey = String(abs.to).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) {
+    return false;
+  }
+
+  const startKey = fromKey <= toKey ? fromKey : toKey;
+  const endKey = fromKey <= toKey ? toKey : fromKey;
+
+  const cursor = new Date(startKey + 'T00:00:00');
+  const end = new Date(endKey + 'T00:00:00');
+
+  while (cursor <= end) {
+    const k = formatDateKey(cursor);
+    if (lockedDateKeys.has(k)) return true;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return false;
+}
+
+function loadLatestMonthSubmission(username, year, monthIndex) {
+  const userDir = getUserDir(username);
+  const indexPath = path.join(userDir, 'index.json');
+  const transmissions = safeReadJson(indexPath, []);
+
+  const monthTxList = Array.isArray(transmissions)
+    ? transmissions.filter((tx) => tx && tx.year === year && tx.monthIndex === monthIndex)
+    : [];
+
+  if (monthTxList.length === 0) return null;
+
+  const latest = monthTxList.reduce((best, tx) => {
+    if (!tx || !tx.sentAt) return best;
+    const d = new Date(tx.sentAt);
+    if (Number.isNaN(d.getTime())) return best;
+    if (!best) return { tx, date: d };
+    return d > best.date ? { tx, date: d } : best;
+  }, null);
+
+  if (!latest || !latest.tx || !latest.tx.id) return null;
+
+  const filePath = path.join(userDir, latest.tx.id);
+  return safeReadJson(filePath, null);
+}
+
+function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys) {
+  const merged = { ...newPayload };
+
+  // 1) days: locked dates are taken from previous submission (or removed if absent)
+  const newDays = (merged.days && typeof merged.days === 'object') ? { ...merged.days } : {};
+  const oldDays = (previousSubmission && previousSubmission.days && typeof previousSubmission.days === 'object')
+    ? previousSubmission.days
+    : {};
+
+  lockedDateKeys.forEach((dk) => {
+    if (Object.prototype.hasOwnProperty.call(oldDays, dk)) {
+      newDays[dk] = oldDays[dk];
+    } else {
+      delete newDays[dk];
+    }
+  });
+
+  merged.days = newDays;
+
+  // 2) pikett: locked dates are taken from previous submission
+  const newPikett = Array.isArray(merged.pikett) ? merged.pikett : [];
+  const oldPikett = Array.isArray(previousSubmission?.pikett) ? previousSubmission.pikett : [];
+
+  merged.pikett = [
+    ...newPikett.filter((p) => p && p.date && !lockedDateKeys.has(p.date)),
+    ...oldPikett.filter((p) => p && p.date && lockedDateKeys.has(p.date)),
+  ];
+
+  // 3) absences: if an absence overlaps locked dates, keep the previous version
+  const newAbs = Array.isArray(merged.absences) ? merged.absences : [];
+  const oldAbs = Array.isArray(previousSubmission?.absences) ? previousSubmission.absences : [];
+
+  const keptNew = newAbs.filter((a) => !absenceOverlapsLockedDates(a, lockedDateKeys));
+  const keptOld = oldAbs.filter((a) => absenceOverlapsLockedDates(a, lockedDateKeys));
+
+  // de-dupe by id (old should override for locked overlaps)
+  const byId = new Map();
+  keptNew.forEach((a) => {
+    const id = a && a.id ? String(a.id) : null;
+    if (id) byId.set(id, a);
+  });
+  keptOld.forEach((a) => {
+    const id = a && a.id ? String(a.id) : null;
+    if (id) byId.set(id, a);
+  });
+
+  // include id-less entries (rare) at the end
+  const idless = [...keptNew, ...keptOld].filter((a) => !(a && a.id));
+
+  merged.absences = [...byId.values(), ...idless];
+
+  return merged;
+}
+
+
 // Helper: get (and create) the folder for a given user
 // We use username as the folder id (consistent with existing files)
 function getUserDir(userId) {
@@ -509,6 +667,35 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   // Logged-in user → we store by username
   const userId = req.user.username;
 
+      // ---- Enforce week locks on server side (freeze locked weeks) ----
+    let payloadToSave = payload;
+
+    try {
+      const allLocks = readWeekLocks();
+      const userLocks = (allLocks[userId] && typeof allLocks[userId] === 'object')
+        ? allLocks[userId]
+        : {};
+
+      const { lockedDateKeys, lockedWeekKeys } = collectLockedDatesForMonth(userLocks, payload.year, payload.monthIndex);
+
+      if (lockedDateKeys.size > 0) {
+        const previous = loadLatestMonthSubmission(userId, payload.year, payload.monthIndex);
+
+        // Only merge if we already have a prior submission for that month
+        if (previous) {
+          payloadToSave = mergeLockedWeeksPayload(payload, previous, lockedDateKeys);
+          payloadToSave._lockInfo = {
+            preservedWeekKeys: Array.from(lockedWeekKeys),
+            preservedDaysCount: lockedDateKeys.size,
+          };
+        }
+      }
+    } catch (e) {
+      console.error('Lock enforcement failed (continuing without lock merge):', e);
+      payloadToSave = payload;
+    }
+
+
   const monthNumber = payload.monthIndex + 1; // 0–11 -> 1–12
   const monthStr = String(monthNumber).padStart(2, '0');
 
@@ -520,10 +707,10 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   const userDir = getUserDir(userId);
   const filePath = path.join(userDir, fileName);
 
-  const totals = computeTransmissionTotals(payload);
+  const totals = computeTransmissionTotals(payloadToSave);
 
   const submission = {
-    ...payload,
+    ...payloadToSave,
     userId,
     receivedAt: now.toISOString(),
     totals,
@@ -612,6 +799,8 @@ app.get(
   (req, res) => {
     const year = Number(req.query.year);
     const monthIndex = Number(req.query.monthIndex);
+    const allLocks = readWeekLocks();
+
 
     if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
       return res.status(400).json({ ok: false, error: 'Invalid year or monthIndex' });
@@ -707,6 +896,21 @@ app.get(
       }
 
       const overview = buildMonthOverviewFromSubmission(submission, year, monthIndex);
+      const userLocks = (allLocks[user.username] && typeof allLocks[user.username] === 'object')
+        ? allLocks[user.username]
+        : {};
+
+      const weeksWithLocks = overview.weeks.map((w) => {
+        const wk = weekKey(w.weekYear, w.week);
+        const meta = getLockMeta(userLocks, wk);
+        return {
+          ...w,
+          locked: meta.locked,
+          lockedAt: meta.lockedAt,
+          lockedBy: meta.lockedBy,
+        };
+       });
+
 
       return {
         userId: user.id,
@@ -722,7 +926,7 @@ app.get(
           transmitted: true,
           sentAt: monthTx.date.toISOString(),
           monthTotalHours: overview.monthTotalHours,
-          weeks: overview.weeks,
+          weeks: weeksWithLocks,
         },
       };
     });
@@ -734,6 +938,216 @@ app.get(
     });
   }
 );
+
+
+// ---- Admin: lock/unlock a week ----
+// POST /api/admin/week-lock
+// body: { username, weekYear, week, locked?: boolean }
+app.post('/api/admin/week-lock', requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.body?.username || '');
+  const weekYear = Number(req.body?.weekYear);
+  const week = Number(req.body?.week);
+  const lockedParam = req.body?.locked;
+
+  if (!username || !USERS.find((u) => u.username === username)) {
+    return res.status(400).json({ ok: false, error: 'Invalid username' });
+  }
+  if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
+    return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
+  }
+  if (!Number.isInteger(week) || week < 1 || week > 53) {
+    return res.status(400).json({ ok: false, error: 'Invalid week' });
+  }
+
+  const allLocks = readWeekLocks();
+  const userLocks = (allLocks[username] && typeof allLocks[username] === 'object')
+    ? allLocks[username]
+    : {};
+
+  const wk = weekKey(weekYear, week);
+  const currentMeta = getLockMeta(userLocks, wk);
+  const nextLocked = (typeof lockedParam === 'boolean') ? lockedParam : !currentMeta.locked;
+
+  if (nextLocked) {
+    userLocks[wk] = {
+      locked: true,
+      lockedAt: new Date().toISOString(),
+      lockedBy: req.user.username,
+    };
+  } else {
+    delete userLocks[wk];
+  }
+
+  // clean-up empty user object
+  if (Object.keys(userLocks).length === 0) {
+    delete allLocks[username];
+  } else {
+    allLocks[username] = userLocks;
+  }
+
+  try {
+    writeWeekLocks(allLocks);
+  } catch (e) {
+    console.error('Failed to write weekLocks.json', e);
+    return res.status(500).json({ ok: false, error: 'Could not persist lock state' });
+  }
+
+  const finalMeta = nextLocked ? userLocks[wk] : null;
+
+  return res.json({
+    ok: true,
+    username,
+    weekYear,
+    week,
+    weekKey: wk,
+    locked: nextLocked,
+    lockedAt: finalMeta?.lockedAt || null,
+    lockedBy: finalMeta?.lockedBy || null,
+  });
+});
+
+
+
+// ---- Admin: day details (fetch on demand) ----
+// GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01
+app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.query.username || '');
+  const year = Number(req.query.year);
+  const monthIndex = Number(req.query.monthIndex);
+  const dateKey = String(req.query.date || '').slice(0, 10);
+
+  if (!username || !Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    return res.status(400).json({ ok: false, error: 'Invalid username/year/monthIndex' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return res.status(400).json({ ok: false, error: 'Invalid date (expected YYYY-MM-DD)' });
+  }
+
+  const user = USERS.find((u) => u.username === username);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+
+  const userDir = getUserDir(user.username);
+  const indexPath = path.join(userDir, 'index.json');
+  const transmissions = safeReadJson(indexPath, []);
+
+  // find latest transmission for that month
+  const monthTxList = Array.isArray(transmissions)
+    ? transmissions.filter((tx) => tx && tx.year === year && tx.monthIndex === monthIndex)
+    : [];
+
+  if (monthTxList.length === 0) {
+    return res.json({
+      ok: true,
+      username,
+      dateKey,
+      transmitted: false,
+      error: null,
+    });
+  }
+
+  const latestMonth = monthTxList.reduce((best, tx) => {
+    const d = tx && tx.sentAt ? new Date(tx.sentAt) : null;
+    if (!d || Number.isNaN(d.getTime())) return best;
+    if (!best) return { tx, date: d };
+    return d > best.date ? { tx, date: d } : best;
+  }, null);
+
+  if (!latestMonth || !latestMonth.tx || !latestMonth.tx.id) {
+    return res.json({ ok: true, username, dateKey, transmitted: false, error: null });
+  }
+
+  const filePath = path.join(userDir, latestMonth.tx.id);
+  const submission = safeReadJson(filePath, null);
+  if (!submission) {
+    return res.json({ ok: true, username, dateKey, transmitted: false, error: 'Submission file missing/corrupt' });
+  }
+
+  const dayData = (submission.days && submission.days[dateKey]) ? submission.days[dateKey] : null;
+
+  // accepted absence covering this day
+  let acceptedAbsence = null;
+  if (Array.isArray(submission.absences)) {
+    acceptedAbsence = submission.absences.find((a) => {
+      if (!a || a.status !== 'accepted') return false;
+      const fromKey = String(a.from || '').slice(0, 10);
+      const toKey = String(a.to || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) return false;
+      const start = fromKey <= toKey ? fromKey : toKey;
+      const end = fromKey <= toKey ? toKey : fromKey;
+      return dateKey >= start && dateKey <= end;
+    }) || null;
+  }
+
+  // pikett entries for that date
+  const pikettEntries = Array.isArray(submission.pikett)
+    ? submission.pikett.filter((p) => p && p.date === dateKey)
+    : [];
+
+  const pikettHours = pikettEntries.reduce((sum, p) => sum + toNumber(p.hours), 0);
+
+  // compute hour breakdown
+  const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
+  const specialEntries = Array.isArray(dayData?.specialEntries) ? dayData.specialEntries : [];
+  const flags = (dayData && dayData.flags && typeof dayData.flags === 'object') ? dayData.flags : {};
+  const mealAllowance = (dayData && dayData.mealAllowance && typeof dayData.mealAllowance === 'object')
+    ? dayData.mealAllowance
+    : { '1': false, '2': false, '3': false };
+
+  let komHours = 0;
+  komEntries.forEach((e) => {
+    if (!e || !e.hours || typeof e.hours !== 'object') return;
+    Object.values(e.hours).forEach((v) => (komHours += toNumber(v)));
+  });
+
+  let specialHours = 0;
+  specialEntries.forEach((s) => (specialHours += toNumber(s?.hours)));
+
+  const dayHoursObj = (dayData && dayData.dayHours && typeof dayData.dayHours === 'object') ? dayData.dayHours : {};
+  const schulung = toNumber(dayHoursObj.schulung);
+  const sitzungKurs = toNumber(dayHoursObj.sitzungKurs);
+  const arztKrank = toNumber(dayHoursObj.arztKrank);
+  const dayHoursTotal = schulung + sitzungKurs + arztKrank;
+
+  const nonPikettTotal = komHours + specialHours + dayHoursTotal;
+  const totalHours = nonPikettTotal + pikettHours;
+
+  // status (same rule family)
+  const ferien = !!flags.ferien;
+  let status = 'missing';
+  if (ferien) status = 'ferien';
+  else if (acceptedAbsence) status = 'absence';
+  else if (totalHours > 0) status = 'ok';
+
+  return res.json({
+    ok: true,
+    username,
+    transmitted: true,
+    month: { year, monthIndex, monthLabel: submission.monthLabel || makeMonthLabel(year, monthIndex), sentAt: latestMonth.date.toISOString() },
+    dateKey,
+    status,
+    flags,
+    mealAllowance,
+    acceptedAbsence: acceptedAbsence
+      ? { type: acceptedAbsence.type || '', from: acceptedAbsence.from, to: acceptedAbsence.to, comment: acceptedAbsence.comment || '' }
+      : null,
+    totals: {
+      komHours: Math.round(komHours * 10) / 10,
+      specialHours: Math.round(specialHours * 10) / 10,
+      dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
+      pikettHours: Math.round(pikettHours * 10) / 10,
+      totalHours: Math.round(totalHours * 10) / 10,
+    },
+    breakdown: {
+      dayHours: { schulung, sitzungKurs, arztKrank },
+    },
+    entries: komEntries,
+    specialEntries,
+    pikettEntries,
+  });
+});
+
+
+
 // ---- Admin: summary of transmissions per user ----
 // Only accessible for admins
 app.get(

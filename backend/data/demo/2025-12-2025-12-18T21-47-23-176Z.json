@@ -1,0 +1,175 @@
+{
+  "year": 2025,
+  "monthIndex": 11,
+  "monthLabel": "Dezember 2025",
+  "days": {
+    "2025-12-08": {
+      "flags": {
+        "ferienManual": true,
+        "ferienFromAbsences": false,
+        "ferien": true,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 4,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-15": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": true,
+        "nebenauslagen": true
+      },
+      "dayHours": {
+        "schulung": 1,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "55664",
+          "hours": {
+            "option1": 2,
+            "option2": 4.5,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": true,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2025-12-16": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": true
+      },
+      "dayHours": {
+        "schulung": 2,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "123445",
+          "hours": {
+            "option1": 2,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        },
+        {
+          "komNr": "554621",
+          "hours": {
+            "option1": 1,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": true,
+        "2": true,
+        "3": false
+      },
+      "specialEntries": [
+        {
+          "type": "regie",
+          "komNr": "123445",
+          "hours": 3,
+          "rapportNr": "5523",
+          "description": ""
+        }
+      ]
+    },
+    "2025-12-17": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": true,
+        "nebenauslagen": true
+      },
+      "dayHours": {
+        "schulung": 2,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "7894456",
+          "hours": {
+            "option1": 4,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": true,
+        "3": false
+      },
+      "specialEntries": []
+    }
+  },
+  "pikett": [],
+  "absences": [],
+  "_lockInfo": {
+    "preservedWeekKeys": [
+      "2025-W51"
+    ],
+    "preservedDaysCount": 7
+  },
+  "userId": "demo",
+  "receivedAt": "2025-12-18T21:47:23.176Z",
+  "totals": {
+    "kom": 16.5,
+    "dayHours": 9,
+    "pikett": 0,
+    "overtime3": 0,
+    "total": 25.5
+  }
+}
