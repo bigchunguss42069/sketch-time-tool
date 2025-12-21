@@ -27,9 +27,24 @@ const adminMonthPrevBtn = document.getElementById('adminMonthPrev');
 const adminMonthNextBtn = document.getElementById('adminMonthNext');
 const adminMonthLabelEl = document.getElementById('adminMonthLabel');
 const adminDayDetailCache = new Map(); // key: username|year|monthIndex|dateKey
-
-
 let adminMonthOffset = 0;
+
+
+// --- Anlagen tab elements ---
+const anlagenSearchInput = document.getElementById('anlagenSearchInput');
+const anlagenStatusSelect = document.getElementById('anlagenStatusSelect');
+const anlagenRefreshBtn = document.getElementById('anlagenRefreshBtn');
+const adminAnlagenList = document.getElementById('adminAnlagenList');
+const adminAnlagenDetail = document.getElementById('adminAnlagenDetail');
+
+// --- Anlagen tab state ---
+let adminActiveInnerTab = 'overview'; // keep this in sync with your inner tab clicks
+let anlagenStatusFilter = 'active';
+let anlagenSearchTerm = '';
+let selectedKomNr = null;
+
+const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
+const anlagenDetailCache = new Map();  // key: komNr -> detail
 
 
 
@@ -132,7 +147,7 @@ const OPTION_LABELS = {
   option1: 'Montage',
   option2: 'Demontage',
   option3: 'Transport',
-  option4: 'Inmebreibnahme',
+  option4: 'Inbetreibnahme',
   option5: 'Abnahme',
   option6: 'Werk',
 };
@@ -1024,6 +1039,7 @@ document.addEventListener('click', (event) => {
 
 if (adminMonthPrevBtn) {
   adminMonthPrevBtn.addEventListener('click', () => {
+    if (adminActiveInnerTab !== 'overview') return;
     adminMonthOffset -= 1;
     updateAdminMonthLabel();
     loadAdminSummary();
@@ -1114,6 +1130,58 @@ if (dashboardTransmitBtn) {
   });
 }
 
+let openAdminDayRow = null;
+
+function getDrawerForRow(row) {
+  const el = row.nextElementSibling;
+  return (el && el.classList.contains('admin-day-drawer')) ? el : null;
+}
+
+function createDrawerForRow(row) {
+  const drawer = document.createElement('div');
+  drawer.className = 'admin-day-drawer';
+  drawer.innerHTML = `<div class="admin-day-drawer-loading">Details werden geladen …</div>`;
+  row.insertAdjacentElement('afterend', drawer);
+  return drawer;
+}
+
+function openDrawer(row, drawer) {
+  row.classList.add('expanded');
+  drawer.classList.add('is-open');
+
+  // animate height
+  drawer.style.maxHeight = '0px';
+  requestAnimationFrame(() => {
+    drawer.style.maxHeight = drawer.scrollHeight + 'px';
+  });
+}
+
+function closeDrawer(row, drawer) {
+  // animate to 0 then remove (prevents the “instant pop”)
+  drawer.style.maxHeight = drawer.scrollHeight + 'px';
+  requestAnimationFrame(() => {
+    drawer.style.maxHeight = '0px';
+    drawer.classList.remove('is-open');
+  });
+
+  row.classList.remove('expanded');
+
+  const onEnd = (ev) => {
+    if (ev.propertyName !== 'max-height') return;
+    drawer.removeEventListener('transitionend', onEnd);
+    drawer.remove();
+  };
+  drawer.addEventListener('transitionend', onEnd);
+}
+
+function refreshDrawerHeight(drawer) {
+  // call after you inject real content
+  requestAnimationFrame(() => {
+    drawer.style.maxHeight = drawer.scrollHeight + 'px';
+  });
+}
+
+
 
 document.addEventListener('click', (e) => {
   const row = e.target.closest('.admin-day-row');
@@ -1126,26 +1194,33 @@ document.addEventListener('click', (e) => {
 
   if (!username || !dateKey || Number.isNaN(year) || Number.isNaN(monthIndex)) return;
 
-  // toggle collapse if already open
-  const existing = row.nextElementSibling;
-  if (existing && existing.classList.contains('admin-day-drawer')) {
-    existing.remove();
-    row.classList.remove('expanded');
+  // If another day is open → close it (accordion behavior)
+  if (openAdminDayRow && openAdminDayRow !== row) {
+    const prevDrawer = getDrawerForRow(openAdminDayRow);
+    if (prevDrawer) closeDrawer(openAdminDayRow, prevDrawer);
+    openAdminDayRow = null;
+  }
+
+  // Toggle this row
+  const existing = getDrawerForRow(row);
+  if (existing) {
+    closeDrawer(row, existing);
+    openAdminDayRow = null;
     return;
   }
 
-  // create drawer placeholder
-  row.classList.add('expanded');
-  const drawer = document.createElement('div');
-  drawer.className = 'admin-day-drawer';
-  drawer.innerHTML = `<div class="admin-day-drawer-loading">Details werden geladen …</div>`;
-  row.insertAdjacentElement('afterend', drawer);
+  // Create + open drawer
+  const drawer = createDrawerForRow(row);
+  openDrawer(row, drawer);
+  openAdminDayRow = row;
 
   const cacheKey = `${username}|${year}|${monthIndex}|${dateKey}`;
   const cached = adminDayDetailCache.get(cacheKey);
+
   if (cached) {
     drawer.innerHTML = '';
     drawer.appendChild(buildAdminDayDrawer(cached));
+    refreshDrawerHeight(drawer);
     return;
   }
 
@@ -1153,141 +1228,250 @@ document.addEventListener('click', (e) => {
     .then((res) => res.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
+
       adminDayDetailCache.set(cacheKey, data);
-      drawer.innerHTML = '';
-      drawer.appendChild(buildAdminDayDrawer(data));
+
+      // If user clicked elsewhere and this drawer got closed in the meantime:
+      const stillThere = getDrawerForRow(row);
+      if (!stillThere) return;
+
+      stillThere.innerHTML = '';
+      stillThere.appendChild(buildAdminDayDrawer(data));
+      refreshDrawerHeight(stillThere);
     })
     .catch((err) => {
       console.error(err);
-      drawer.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+
+      const stillThere = getDrawerForRow(row);
+      if (!stillThere) return;
+
+      stillThere.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+      refreshDrawerHeight(stillThere);
     });
 });
+
 
 
 function buildAdminDayDrawer(data) {
   const wrap = document.createElement('div');
   wrap.className = 'admin-day-drawer-content';
 
-  // Status line
-  const statusLine = document.createElement('div');
-  statusLine.className = 'admin-day-drawer-status';
-  statusLine.textContent = `Status: ${statusLabel(data.status)}`;
+  // -------- helpers --------
+  const el = (tag, className, text) => {
+    const n = document.createElement(tag);
+    if (className) n.className = className;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  };
 
-  // Flags line
-  const flags = data.flags || {};
+  const badgeClassForStatus = (s) => {
+    if (s === 'ok') return 'is-ok';
+    if (s === 'missing') return 'is-missing';
+    if (s === 'ferien') return 'is-ferien';
+    if (s === 'absence') return 'is-absence';
+    return 'is-unknown';
+  };
+
+  const addSection = (titleText, bodyNode) => {
+    const section = el('div', 'admin-day-section');
+    const title = el('div', 'admin-day-section-title', titleText);
+    const body = el('div', 'admin-day-section-body');
+    body.appendChild(bodyNode);
+    section.appendChild(title);
+    section.appendChild(body);
+    return section;
+  };
+
+  const chip = (text, variant) => {
+    const c = el('span', 'admin-day-chip', text);
+    if (variant) c.classList.add(variant);
+    return c;
+  };
+
+  const kv = (label, value) => {
+    const row = el('div', 'admin-day-kv');
+    row.appendChild(el('div', 'admin-day-kv-label', label));
+    row.appendChild(el('div', 'admin-day-kv-value', value));
+    return row;
+  };
+
+  const emptyMuted = (text = '–') => el('div', 'admin-day-muted', text);
+
+  // If backend returns ok:true but transmitted:false for this day/month
+  if (data && data.transmitted === false) {
+    wrap.appendChild(el('div', 'admin-day-muted', 'Für diesen Tag sind keine übertragenen Daten vorhanden.'));
+    return wrap;
+  }
+
+  // -------- header: date + status badge --------
+  const dateKey = data?.dateKey ? String(data.dateKey).slice(0, 10) : '';
+  const dateLabel = dateKey ? formatShortDateFromKey(dateKey) : (data?.dateKey || '–');
+
+  const header = el('div', 'admin-day-header');
+  const headerLeft = el('div', 'admin-day-header-left');
+
+  const title = el('div', 'admin-day-title', `Tag: ${dateLabel}`);
+  const subtitle = el(
+    'div',
+    'admin-day-subtitle',
+    data?.month?.monthLabel ? `${data.month.monthLabel}` : ''
+  );
+
+  headerLeft.appendChild(title);
+  if (subtitle.textContent) headerLeft.appendChild(subtitle);
+
+  const statusBadge = el('div', 'admin-day-status-badge', statusLabel(data?.status));
+  statusBadge.classList.add(badgeClassForStatus(data?.status));
+
+  header.appendChild(headerLeft);
+  header.appendChild(statusBadge);
+
+  // -------- chips row (Flags / Meals / Absence) --------
+  const chipsRow = el('div', 'admin-day-chips');
+
+  // Flags
+  const flags = data?.flags || {};
   const flagsActive = [];
   if (flags.ferien) flagsActive.push('Ferien');
   if (flags.schmutzzulage) flagsActive.push('Schmutzzulage');
   if (flags.nebenauslagen) flagsActive.push('Nebenauslagen');
+  if (flagsActive.length) {
+    flagsActive.forEach((f) => chipsRow.appendChild(chip(f, 'chip-flag')));
+  } else {
+    chipsRow.appendChild(chip('Keine Flags', 'chip-muted'));
+  }
 
-  const flagsLine = document.createElement('div');
-  flagsLine.className = 'admin-day-drawer-flags';
-  flagsLine.textContent = flagsActive.length ? `Flags: ${flagsActive.join(', ')}` : 'Flags: –';
+  // Meal allowance
+  const meal = data?.mealAllowance || {};
+  const mealsOn = ['1', '2', '3'].filter((k) => !!meal[k]);
+  chipsRow.appendChild(
+    mealsOn.length
+      ? chip(`Verpflegung: ${mealsOn.join(' / ')}`, 'chip-meal')
+      : chip('Keine Verpflegung', 'chip-muted')
+  );
 
   // Absence
-  const abs = data.acceptedAbsence;
-  const absLine = document.createElement('div');
-  absLine.className = 'admin-day-drawer-absence';
-  absLine.textContent = abs
-    ? `Akzeptierte Absenz: ${abs.type || 'Absenz'} · ${abs.from} – ${abs.to}`
-    : 'Akzeptierte Absenz: –';
+  const abs = data?.acceptedAbsence || null;
+  if (abs) {
+    const absText = `Absenz: ${abs.type || 'Absenz'} (${String(abs.from).slice(0, 10)} – ${String(abs.to).slice(0, 10)})`;
+    chipsRow.appendChild(chip(absText, 'chip-absence'));
+  }
 
-  // Meal
-  const meal = data.mealAllowance || {};
-  const mealsOn = ['1','2','3'].filter((k) => !!meal[k]);
-  const mealLine = document.createElement('div');
-  mealLine.className = 'admin-day-drawer-meal';
-  mealLine.textContent = mealsOn.length ? `Verpflegung: ${mealsOn.join(' / ')}` : 'Verpflegung: –';
+  // -------- totals grid --------
+  const t = data?.totals || {};
+  const totalsGrid = el('div', 'admin-day-totals');
 
-  // Totals / breakdown
-  const t = data.totals || {};
-  const breakdown = document.createElement('div');
-  breakdown.className = 'admin-day-drawer-breakdown';
-  breakdown.innerHTML = `
-    <div><strong>Aufschlüsselung</strong></div>
-    <div>Kommissionsstunden: ${formatHoursSafe(t.komHours)}</div>
-    <div>Tagesstunden: ${formatHoursSafe(t.dayHoursTotal)}</div>
-    <div>Spezialbuchungen: ${formatHoursSafe(t.specialHours)}</div>
-    <div>Pikett: ${formatHoursSafe(t.pikettHours)}</div>
-    <div><strong>Total: ${formatHoursSafe(t.totalHours)}</strong></div>
-  `;
+  totalsGrid.appendChild(kv('Kommissionen', formatHoursSafe(t.komHours)));
+  totalsGrid.appendChild(kv('Tagesstunden', formatHoursSafe(t.dayHoursTotal)));
+  totalsGrid.appendChild(kv('Spezial', formatHoursSafe(t.specialHours)));
+  totalsGrid.appendChild(kv('Pikett', formatHoursSafe(t.pikettHours)));
 
-  // Entries list (compact, only show non-zero options)
-  const entriesBlock = document.createElement('div');
-  entriesBlock.className = 'admin-day-drawer-entries';
+  const totalStrong = kv('Total', formatHoursSafe(t.totalHours));
+  totalStrong.classList.add('is-total');
+  totalsGrid.appendChild(totalStrong);
 
-  const entries = Array.isArray(data.entries) ? data.entries : [];
+  // optional: show breakdown of dayHours if useful
+  const dayHours = data?.breakdown?.dayHours || null;
+  if (dayHours && (dayHours.schulung || dayHours.sitzungKurs || dayHours.arztKrank)) {
+    const mini = el('div', 'admin-day-mini-breakdown');
+    mini.appendChild(el('div', 'admin-day-mini-title', 'Tagesstunden Details'));
+    mini.appendChild(el('div', 'admin-day-mini-line', `Schulung: ${formatHoursSafe(dayHours.schulung)}`));
+    mini.appendChild(el('div', 'admin-day-mini-line', `Sitzung/Kurs: ${formatHoursSafe(dayHours.sitzungKurs)}`));
+    mini.appendChild(el('div', 'admin-day-mini-line', `Arzt/Krank: ${formatHoursSafe(dayHours.arztKrank)}`));
+    totalsGrid.appendChild(mini);
+  }
+
+  // -------- section: Kommissionen --------
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  let komBody;
   if (!entries.length) {
-    entriesBlock.innerHTML = `<div><strong>Kommissionen</strong></div><div>–</div>`;
+    komBody = emptyMuted();
   } else {
-    entriesBlock.innerHTML = `<div><strong>Kommissionen</strong></div>`;
+    const list = el('div', 'admin-day-list');
     entries.forEach((e) => {
-      const line = document.createElement('div');
-      const kom = (e && e.komNr) ? e.komNr : '–';
-      const hoursObj = (e && e.hours) ? e.hours : {};
+      const line = el('div', 'admin-day-list-row');
+
+      const komNr = (e && e.komNr) ? String(e.komNr) : '–';
+      const hoursObj = (e && e.hours && typeof e.hours === 'object') ? e.hours : {};
+
       const parts = [];
       Object.entries(hoursObj).forEach(([k, v]) => {
         const n = Number(v);
         if (!Number.isFinite(n) || n <= 0) return;
-        // OPTION_LABELS exists in your file already
-        const label = OPTION_LABELS[k] || k;
+        const label = OPTION_LABELS?.[k] || k;
         parts.push(`${label}: ${n.toFixed(2).replace('.', ',').replace(/,00$/, '')} h`);
       });
-      line.textContent = `• ${kom}${parts.length ? ' · ' + parts.join(' · ') : ''}`;
-      entriesBlock.appendChild(line);
+
+      const left = el('div', 'admin-day-list-left', komNr);
+      const right = el('div', 'admin-day-list-right', parts.length ? parts.join(' · ') : '–');
+
+      line.appendChild(left);
+      line.appendChild(right);
+      list.appendChild(line);
     });
+    komBody = list;
   }
 
-  // Special entries
-  const specialBlock = document.createElement('div');
-  specialBlock.className = 'admin-day-drawer-special';
-
-  const specials = Array.isArray(data.specialEntries) ? data.specialEntries : [];
+  // -------- section: Spezialbuchungen --------
+  const specials = Array.isArray(data?.specialEntries) ? data.specialEntries : [];
+  let specialBody;
   if (!specials.length) {
-    specialBlock.innerHTML = `<div><strong>Spezialbuchungen</strong></div><div>–</div>`;
+    specialBody = emptyMuted();
   } else {
-    specialBlock.innerHTML = `<div><strong>Spezialbuchungen</strong></div>`;
+    const list = el('div', 'admin-day-list');
     specials.forEach((s) => {
-      const line = document.createElement('div');
+      const line = el('div', 'admin-day-list-row');
+
       const type = s?.type === 'fehler' ? 'Fehler' : 'Regie';
       const kom = s?.komNr || '–';
       const h = formatHoursSafe(s?.hours);
       const ref = s?.type === 'fehler' ? (s?.description || '') : (s?.rapportNr || '');
-      line.textContent = `• ${type} · ${kom} · ${h}${ref ? ' · ' + ref : ''}`;
-      specialBlock.appendChild(line);
+
+      const left = el('div', 'admin-day-list-left', type);
+      const right = el('div', 'admin-day-list-right', `${kom} · ${h}${ref ? ' · ' + ref : ''}`);
+
+      line.appendChild(left);
+      line.appendChild(right);
+      list.appendChild(line);
     });
+    specialBody = list;
   }
 
-  // Pikett entries
-  const pikettBlock = document.createElement('div');
-  pikettBlock.className = 'admin-day-drawer-pikett';
-
-  const pikett = Array.isArray(data.pikettEntries) ? data.pikettEntries : [];
+  // -------- section: Pikett --------
+  const pikett = Array.isArray(data?.pikettEntries) ? data.pikettEntries : [];
+  let pikettBody;
   if (!pikett.length) {
-    pikettBlock.innerHTML = `<div><strong>Pikett</strong></div><div>–</div>`;
+    pikettBody = emptyMuted();
   } else {
-    pikettBlock.innerHTML = `<div><strong>Pikett</strong></div>`;
+    const list = el('div', 'admin-day-list');
     pikett.forEach((p) => {
-      const line = document.createElement('div');
+      const line = el('div', 'admin-day-list-row');
+
       const h = formatHoursSafe(p?.hours);
-      const note = p?.note ? ` · ${p.note}` : '';
-      const tag = p?.isOvertime3 ? ' (ÜZ3)' : '';
-      line.textContent = `• ${h}${tag}${note}`;
-      pikettBlock.appendChild(line);
+      const tag = p?.isOvertime3 ? 'ÜZ3' : 'ÜZ2';
+      const note = p?.note ? String(p.note) : '';
+
+      const left = el('div', 'admin-day-list-left', tag);
+      const right = el('div', 'admin-day-list-right', `${h}${note ? ' · ' + note : ''}`);
+
+      line.appendChild(left);
+      line.appendChild(right);
+      list.appendChild(line);
     });
+    pikettBody = list;
   }
 
-  wrap.appendChild(statusLine);
-  wrap.appendChild(flagsLine);
-  wrap.appendChild(absLine);
-  wrap.appendChild(mealLine);
-  wrap.appendChild(breakdown);
-  wrap.appendChild(entriesBlock);
-  wrap.appendChild(specialBlock);
-  wrap.appendChild(pikettBlock);
+  // -------- assemble --------
+  wrap.appendChild(header);
+  wrap.appendChild(chipsRow);
+  wrap.appendChild(totalsGrid);
+  wrap.appendChild(addSection('Kommissionen', komBody));
+  wrap.appendChild(addSection('Spezialbuchungen', specialBody));
+  wrap.appendChild(addSection('Pikett', pikettBody));
 
   return wrap;
 }
+
 
 function statusLabel(s) {
   if (s === 'ok') return 'OK';
@@ -2825,6 +3009,34 @@ function updateUIForRole() {
   }
 }
 
+if (anlagenStatusSelect) {
+  anlagenStatusSelect.addEventListener('change', () => {
+    anlagenStatusFilter = anlagenStatusSelect.value || 'active';
+    selectedKomNr = null; // re-select from list
+    loadAdminAnlagenSummary({ force: true });
+  });
+}
+
+if (anlagenSearchInput) {
+  anlagenSearchInput.addEventListener('input', debounce(() => {
+    anlagenSearchTerm = anlagenSearchInput.value || '';
+    // re-render from cache if possible
+    const cacheKey = `${anlagenStatusFilter}`;
+    const base = anlagenSummaryCache.get(cacheKey) || [];
+    renderAnlagenList(base);
+  }, 150));
+}
+
+if (anlagenRefreshBtn) {
+  anlagenRefreshBtn.addEventListener('click', () => {
+    anlagenSummaryCache.clear();
+    anlagenDetailCache.clear();
+    selectedKomNr = null;
+    loadAdminAnlagenSummary({ force: true });
+  });
+}
+
+
 
 // --- Total hours for currently active day --- //
 
@@ -3085,6 +3297,339 @@ function initAuthView() {
     title: `${statusText} Letzte Übertragung: ${label}`,
   };
 }
+
+function operationLabel(opKey) {
+  if (opKey === '_special') return 'Spezial';
+  if (typeof OPTION_LABELS === 'object' && OPTION_LABELS[opKey]) return OPTION_LABELS[opKey];
+  return opKey || '–';
+}
+
+
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function loadAdminAnlagenSummary({ force } = {}) {
+  if (!adminAnlagenList || !adminAnlagenDetail) return;
+
+  const cacheKey = `${anlagenStatusFilter}`;
+  if (!force && anlagenSummaryCache.has(cacheKey)) {
+    const cached = anlagenSummaryCache.get(cacheKey);
+    renderAnlagenList(cached);
+    return;
+  }
+
+  adminAnlagenList.innerHTML = `<div class="admin-day-drawer-loading">Lade Anlagen …</div>`;
+
+  authFetch(`/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.ok || !Array.isArray(data.anlagen)) {
+        throw new Error(data.error || 'Ungültige Antwort');
+      }
+      anlagenSummaryCache.set(cacheKey, data.anlagen);
+      renderAnlagenList(data.anlagen);
+    })
+    .catch((err) => {
+      console.error(err);
+      adminAnlagenList.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+    });
+}
+
+
+
+function renderAnlagenList(anlagen) {
+  if (!adminAnlagenList) return;
+
+  const term = (anlagenSearchTerm || '').trim();
+  const filtered = !term
+    ? anlagen
+    : anlagen.filter((a) => String(a.komNr || '').includes(term));
+
+  if (filtered.length === 0) {
+    adminAnlagenList.innerHTML = `<div style="padding:12px;opacity:.75;">Keine Anlagen gefunden.</div>`;
+    // also clear detail if selection no longer visible
+    if (adminAnlagenDetail) {
+      adminAnlagenDetail.innerHTML = `<div class="anlagen-detail-empty">Wähle links eine Kommissionsnummer aus.</div>`;
+    }
+    selectedKomNr = null;
+    return;
+  }
+
+  adminAnlagenList.innerHTML = '';
+
+  filtered.forEach((a) => {
+    const row = document.createElement('div');
+    row.className = 'anlagen-row';
+    row.dataset.komnr = a.komNr;
+
+    if (selectedKomNr && selectedKomNr === a.komNr) row.classList.add('is-selected');
+
+    const kom = document.createElement('div');
+    kom.className = 'anlagen-komnr';
+    kom.textContent = a.komNr || '–';
+
+    const meta = document.createElement('div');
+    meta.className = 'anlagen-meta';
+
+    const last = a.lastActivity ? formatShortDateFromKey(a.lastActivity) : '–';
+    const topOp = a.topOperationKey ? operationLabel(a.topOperationKey) : '–';
+    meta.textContent = `Top: ${topOp} · Letzte Aktivität: ${last}${a.archived ? ' · Archiviert' : ''}`;
+
+    const hours = document.createElement('div');
+    hours.className = 'anlagen-hours';
+    hours.textContent = formatHours(Number(a.totalHours || 0));
+
+    row.appendChild(kom);
+    row.appendChild(hours);
+    row.appendChild(meta);
+
+    row.addEventListener('click', () => {
+      selectedKomNr = a.komNr;
+      // rerender to update selection highlight
+      renderAnlagenList(anlagen);
+      loadAdminAnlagenDetail(a.komNr, { force: false });
+    });
+
+    adminAnlagenList.appendChild(row);
+  });
+
+  // auto-select first if none selected
+  if (!selectedKomNr) {
+    selectedKomNr = filtered[0].komNr;
+    loadAdminAnlagenDetail(selectedKomNr, { force: false });
+    // highlight
+    renderAnlagenList(anlagen);
+  }
+}
+
+function loadAdminAnlagenDetail(komNr, { force } = {}) {
+  if (!adminAnlagenDetail) return;
+  if (!komNr) return;
+
+  if (!force && anlagenDetailCache.has(komNr)) {
+    renderAnlagenDetail(anlagenDetailCache.get(komNr));
+    return;
+  }
+
+  adminAnlagenDetail.innerHTML = `<div class="admin-day-drawer-loading">Details werden geladen …</div>`;
+
+  authFetch(`/api/admin/anlagen-detail?komNr=${encodeURIComponent(komNr)}`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
+      anlagenDetailCache.set(komNr, data);
+      renderAnlagenDetail(data);
+    })
+    .catch((err) => {
+      console.error(err);
+      adminAnlagenDetail.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+    });
+}
+
+
+function renderAnlagenDetail(data) {
+  if (!adminAnlagenDetail) return;
+
+  const komNr = data.komNr || '–';
+  const total = Number(data.totalHours || 0);
+  const last = data.lastActivity ? formatShortDateFromKey(data.lastActivity) : '–';
+  const archived = !!data.archived;
+
+  adminAnlagenDetail.innerHTML = '';
+
+  // header
+  const head = document.createElement('div');
+  head.className = 'anlagen-detail-head';
+
+  const left = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'anlagen-detail-title';
+  title.textContent = `Kom.-Nr. ${komNr}`;
+
+  const sub = document.createElement('div');
+  sub.className = 'anlagen-detail-sub';
+  sub.textContent = `Total: ${formatHours(total)} · Letzte Aktivität: ${last}`;
+
+  left.appendChild(title);
+  left.appendChild(sub);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'anlagen-archive-btn';
+  btn.classList.toggle('is-archived', archived);
+  btn.textContent = archived ? 'Archiviert (aktivieren)' : 'Archivieren';
+
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+
+    authFetch('/api/admin/anlagen-archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        komNr,
+        archived: !archived,
+        // teamId optional: backend can default to admin team
+      }),
+    })
+      .then((res) => res.json())
+      .then((resp) => {
+        if (!resp.ok) throw new Error(resp.error || 'Archivierung fehlgeschlagen');
+
+        // clear caches so summary reflects new state
+        anlagenSummaryCache.clear();
+        anlagenDetailCache.delete(komNr);
+
+        // reload summary + detail
+        loadAdminAnlagenSummary({ force: true });
+        loadAdminAnlagenDetail(komNr, { force: true });
+      })
+      .catch((err) => {
+        console.error(err);
+        alert(err.message || 'Archivierung fehlgeschlagen');
+      })
+      .finally(() => {
+        btn.disabled = false;
+      });
+  });
+
+  head.appendChild(left);
+  head.appendChild(btn);
+  adminAnlagenDetail.appendChild(head);
+
+  // charts wrapper
+  const charts = document.createElement('div');
+  charts.className = 'anlagen-charts';
+
+  // operations donut
+  const opsCard = document.createElement('div');
+  opsCard.className = 'anlagen-card';
+  opsCard.innerHTML = `<h4>Stunden nach Tätigkeit</h4>`;
+  opsCard.appendChild(buildOperationsDonut(data.operations || [], total));
+
+  // users bars
+  const usersCard = document.createElement('div');
+  usersCard.className = 'anlagen-card';
+  usersCard.innerHTML = `<h4>Stunden nach Benutzer</h4>`;
+  usersCard.appendChild(buildUsersBars(data.users || []));
+
+  charts.appendChild(opsCard);
+  charts.appendChild(usersCard);
+  adminAnlagenDetail.appendChild(charts);
+}
+
+
+function buildOperationsDonut(operations, totalHours) {
+  const wrap = document.createElement('div');
+
+  const ops = Array.isArray(operations) ? operations.filter(o => Number(o.hours || 0) > 0) : [];
+  const total = Number(totalHours || 0) || ops.reduce((s, o) => s + Number(o.hours || 0), 0);
+
+  if (!ops.length || total <= 0) {
+    wrap.innerHTML = `<div style="opacity:.75;">Keine Daten.</div>`;
+    return wrap;
+  }
+
+  const colors = ops.map((_, i) => {
+    // stable, readable palette without dependencies
+    const hue = (i * 47) % 360;
+    return `hsl(${hue} 55% 55%)`;
+  });
+
+  let acc = 0;
+  const stops = ops.map((o, i) => {
+    const pct = (Number(o.hours) / total) * 100;
+    const from = acc;
+    const to = acc + pct;
+    acc = to;
+    return `${colors[i]} ${from}% ${to}%`;
+  });
+
+  const donut = document.createElement('div');
+  donut.className = 'anlagen-donut';
+  donut.style.background = `conic-gradient(${stops.join(',')})`;
+
+  const legend = document.createElement('div');
+  legend.className = 'anlagen-legend';
+
+  ops.forEach((o, i) => {
+    const item = document.createElement('div');
+    item.className = 'anlagen-legend-item';
+
+    const dot = document.createElement('div');
+    dot.className = 'anlagen-legend-dot';
+    dot.style.background = colors[i];
+
+    const label = document.createElement('div');
+    label.textContent = operationLabel(o.key);
+
+    const val = document.createElement('div');
+    val.textContent = formatHours(Number(o.hours || 0));
+
+    item.appendChild(dot);
+    item.appendChild(label);
+    item.appendChild(val);
+    legend.appendChild(item);
+  });
+
+  wrap.appendChild(donut);
+  wrap.appendChild(legend);
+  return wrap;
+}
+
+
+function buildUsersBars(users) {
+  const wrap = document.createElement('div');
+
+  const list = Array.isArray(users) ? users.filter(u => Number(u.hours || 0) > 0) : [];
+  if (!list.length) {
+    wrap.innerHTML = `<div style="opacity:.75;">Keine Daten.</div>`;
+    return wrap;
+  }
+
+  // limit to top 12 for readability (scales better)
+  const top = list.slice(0, 12);
+  const max = Math.max(...top.map(u => Number(u.hours || 0)));
+
+  const bars = document.createElement('div');
+  bars.className = 'anlagen-bars';
+
+  top.forEach((u) => {
+    const row = document.createElement('div');
+    row.className = 'anlagen-bar-row';
+
+    const name = document.createElement('div');
+    name.textContent = u.username || '–';
+
+    const hrs = document.createElement('div');
+    hrs.textContent = formatHours(Number(u.hours || 0));
+
+    const track = document.createElement('div');
+    track.className = 'anlagen-bar-track';
+
+    const fill = document.createElement('div');
+    fill.className = 'anlagen-bar-fill';
+    const pct = max > 0 ? (Number(u.hours || 0) / max) * 100 : 0;
+    fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+
+    track.appendChild(fill);
+
+    row.appendChild(name);
+    row.appendChild(hrs);
+    row.appendChild(track);
+
+    bars.appendChild(row);
+  });
+
+  wrap.appendChild(bars);
+  return wrap;
+}
+
+
 
 
   function loadAdminSummary() {
@@ -4206,27 +4751,24 @@ function showDay(dayId) {
 
 adminInnerTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
-    const target = btn.dataset.adminTab; // "overview" | "anlagen" | "payroll"
+    const target = btn.dataset.adminTab;
+    if (!target) return;
 
-    // Active-Status bei Buttons umschalten
+    adminActiveInnerTab = target;
+
     adminInnerTabButtons.forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
 
-    // Content-Panels umschalten
-    adminTabContents.forEach((section) => {
-      section.classList.toggle(
-        'active',
-        section.dataset.adminContent === target
-      );
+    document.querySelectorAll('.admin-tab-content').forEach((c) => {
+      c.classList.remove('active');
+      if (c.dataset.adminContent === target) c.classList.add('active');
     });
 
-    // Daten nachladen je nach Tab
     if (target === 'overview') {
-      // nutzt deine bestehende Funktion
       loadAdminSummary();
+    } else if (target === 'anlagen') {
+      loadAdminAnlagenSummary({ force: false });
     }
-    // target === 'anlagen' / 'payroll':
-    // später: eigene Loader-Funktionen für Auswertungen & Exports
   });
 });
 

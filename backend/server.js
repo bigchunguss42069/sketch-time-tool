@@ -204,6 +204,8 @@ function buildAcceptedAbsenceDaysSet(absencesArray, monthStartKey, monthEndKey) 
   return set;
 }
 
+
+
 /**
  * Build month overview from a saved submission file.
  * Missing rule (matches your dashboard):
@@ -384,11 +386,24 @@ if (!fs.existsSync(BASE_DATA_DIR)) {
 const WEEK_LOCKS_PATH = path.join(BASE_DATA_DIR, 'weekLocks.json');
 
 function readWeekLocks() {
-  return safeReadJson(WEEK_LOCKS_PATH, {});
+  if (!fs.existsSync(WEEK_LOCKS_PATH)) return {};
+  try {
+    const raw = fs.readFileSync(WEEK_LOCKS_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch (e) {
+    // quarantine corrupt file instead of wiping it
+    const badPath = WEEK_LOCKS_PATH.replace(/\.json$/, '') + `.corrupt-${Date.now()}.json`;
+    try { fs.renameSync(WEEK_LOCKS_PATH, badPath); } catch {}
+    throw new Error(`weekLocks.json is corrupt (moved aside): ${e.message}`);
+  }
 }
 
+
 function writeWeekLocks(data) {
-  fs.writeFileSync(WEEK_LOCKS_PATH, JSON.stringify(data, null, 2), 'utf8');
+  const tmpPath = WEEK_LOCKS_PATH + '.tmp';
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmpPath, WEEK_LOCKS_PATH);
 }
 
 function weekKey(weekYear, week) {
@@ -646,6 +661,424 @@ app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, (
 
 
 
+// ---- Anlagen (Kom.-Nr.) global index + archive state ----
+
+
+const ANLAGEN_INDEX_PATH = path.join(BASE_DATA_DIR, 'anlagenIndex.json');
+const ANLAGEN_ARCHIVE_PATH = path.join(BASE_DATA_DIR, 'anlagenArchive.json');
+
+// atomic write to avoid partially-written JSON on crash
+function writeJsonAtomic(filePath, data) {
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
+function normalizeKomNr(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  // keep it permissive; just remove whitespace
+  return s.replace(/\s+/g, '');
+}
+
+function addNum(obj, key, val) {
+  const n = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(n) || n === 0) return;
+  if (!obj[key]) obj[key] = 0;
+  obj[key] += n;
+}
+
+function cleanupZeroish(obj, eps = 1e-9) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const k of Object.keys(obj)) {
+    const v = Number(obj[k]);
+    if (!Number.isFinite(v) || Math.abs(v) < eps) delete obj[k];
+  }
+}
+
+function round1(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * 10) / 10;
+}
+
+function readAnlagenIndex() {
+  const fallback = { version: 1, updatedAt: null, teams: {} };
+  const data = safeReadJson(ANLAGEN_INDEX_PATH, fallback);
+  if (!data || typeof data !== 'object') return fallback;
+  if (!data.teams || typeof data.teams !== 'object') data.teams = {};
+  if (!data.version) data.version = 1;
+  if (!('updatedAt' in data)) data.updatedAt = null;
+  return data;
+}
+
+function writeAnlagenIndex(data) {
+  data.updatedAt = new Date().toISOString();
+  writeJsonAtomic(ANLAGEN_INDEX_PATH, data);
+}
+
+function readAnlagenArchive() {
+  return safeReadJson(ANLAGEN_ARCHIVE_PATH, {}); // { [teamId]: { [komNr]: { archived, archivedAt, archivedBy } } }
+}
+
+function writeAnlagenArchive(data) {
+  writeJsonAtomic(ANLAGEN_ARCHIVE_PATH, data);
+}
+
+function ensureAnlageRec(teamObj, komNr) {
+  if (!teamObj[komNr] || typeof teamObj[komNr] !== 'object') {
+    teamObj[komNr] = { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null };
+  }
+  if (!teamObj[komNr].byOperation || typeof teamObj[komNr].byOperation !== 'object') teamObj[komNr].byOperation = {};
+  if (!teamObj[komNr].byUser || typeof teamObj[komNr].byUser !== 'object') teamObj[komNr].byUser = {};
+  if (!('lastActivity' in teamObj[komNr])) teamObj[komNr].lastActivity = null;
+  if (!('totalHours' in teamObj[komNr])) teamObj[komNr].totalHours = 0;
+  return teamObj[komNr];
+}
+
+// Extract Anlagen from one saved submission file.
+// returns Map(komNr -> { totalHours, byOperation:{opKey:hours}, byUser:{username:hours}, lastActivity })
+function extractAnlagenFromSubmission(submission, username) {
+  const out = new Map();
+  if (!submission || typeof submission !== 'object') return out;
+
+  const days = (submission.days && typeof submission.days === 'object') ? submission.days : {};
+
+  for (const [dateKey, dayData] of Object.entries(days)) {
+    if (!dayData || typeof dayData !== 'object') continue;
+
+    // 1) Kommissions entries
+    const entries = Array.isArray(dayData.entries) ? dayData.entries : [];
+    for (const e of entries) {
+      const komNr = normalizeKomNr(e?.komNr);
+      if (!komNr) continue;
+
+      const hoursObj = (e?.hours && typeof e.hours === 'object') ? e.hours : {};
+      let sum = 0;
+
+      if (!out.has(komNr)) {
+        out.set(komNr, { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null });
+      }
+      const rec = out.get(komNr);
+
+      for (const [opKey, raw] of Object.entries(hoursObj)) {
+        const h = toNumber(raw);
+        if (!(h > 0)) continue;
+        sum += h;
+        addNum(rec.byOperation, opKey, h);
+      }
+
+      if (sum > 0) {
+        rec.totalHours += sum;
+        addNum(rec.byUser, username, sum);
+        if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+      }
+    }
+
+    // 2) Special entries (only those with komNr count into Anlagen)
+    const specials = Array.isArray(dayData.specialEntries) ? dayData.specialEntries : [];
+    for (const s of specials) {
+      const komNr = normalizeKomNr(s?.komNr);
+      if (!komNr) continue;
+
+      const h = toNumber(s?.hours);
+      if (!(h > 0)) continue;
+
+      if (!out.has(komNr)) {
+        out.set(komNr, { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null });
+      }
+      const rec = out.get(komNr);
+
+      rec.totalHours += h;
+      addNum(rec.byUser, username, h);
+
+      // split specials into regie/fehler buckets
+      const t = String(s?.type || '').toLowerCase();
+      const bucket = (t === 'fehler') ? 'Fehler' : 'Regie'; // default regie
+      addNum(rec.byOperation, bucket, h);
+
+      if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+    }
+  }
+
+  return out;
+}
+
+// Apply delta (new - old) for one user/month submission to the global index.
+function applyAnlagenDelta(teamId, username, newMap, oldMap) {
+  const index = readAnlagenIndex();
+  if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') index.teams[teamId] = {};
+  const teamObj = index.teams[teamId];
+
+  const allKom = new Set([...(newMap ? newMap.keys() : []), ...(oldMap ? oldMap.keys() : [])]);
+
+  for (const komNr of allKom) {
+    const newRec = newMap && newMap.get(komNr) ? newMap.get(komNr) : null;
+    const oldRec = oldMap && oldMap.get(komNr) ? oldMap.get(komNr) : null;
+
+    const deltaTotal = (newRec?.totalHours || 0) - (oldRec?.totalHours || 0);
+    const deltaOps = new Set([
+      ...Object.keys(newRec?.byOperation || {}),
+      ...Object.keys(oldRec?.byOperation || {}),
+    ]);
+
+    const rec = ensureAnlageRec(teamObj, komNr);
+
+    // totals
+    rec.totalHours = round1((Number(rec.totalHours || 0)) + deltaTotal);
+
+    // byOperation
+    for (const opKey of deltaOps) {
+      const dv = (Number(newRec?.byOperation?.[opKey] || 0)) - (Number(oldRec?.byOperation?.[opKey] || 0));
+      addNum(rec.byOperation, opKey, dv);
+    }
+    cleanupZeroish(rec.byOperation);
+
+    // byUser (only update this user key)
+    const du = (Number(newRec?.byUser?.[username] || 0)) - (Number(oldRec?.byUser?.[username] || 0));
+    addNum(rec.byUser, username, du);
+    cleanupZeroish(rec.byUser);
+
+    // lastActivity: best-effort monotonic update (does not decrease)
+    if (newRec?.lastActivity) {
+      if (!rec.lastActivity || newRec.lastActivity > rec.lastActivity) rec.lastActivity = newRec.lastActivity;
+    }
+
+    // if record is effectively empty, remove it
+    if (!(rec.totalHours > 0) || Object.keys(rec.byUser).length === 0) {
+      // if totalHours ended up negative or zero, clamp and delete
+      if (!(rec.totalHours > 0)) {
+        delete teamObj[komNr];
+      }
+    }
+  }
+
+  // persist
+  writeAnlagenIndex(index);
+  return index;
+}
+
+// Optional: full rebuild from stored transmission files (latest per user/month).
+// Useful if anlagenIndex.json is missing or you want to verify consistency.
+function rebuildAnlagenIndex() {
+  const index = { version: 1, updatedAt: null, teams: {} };
+
+  // group transmissions by user + month -> latest sentAt
+  for (const u of USERS) {
+    const userDir = getUserDir(u.username);
+    const indexPath = path.join(userDir, 'index.json');
+    const transmissions = safeReadJson(indexPath, []);
+
+    if (!Array.isArray(transmissions) || transmissions.length === 0) continue;
+
+    const latestByMonth = new Map(); // "YYYY-MM" -> meta
+    for (const tx of transmissions) {
+      if (!tx || typeof tx.year !== 'number' || typeof tx.monthIndex !== 'number' || !tx.sentAt || !tx.id) continue;
+      const monthNum = tx.monthIndex + 1;
+      const mk = `${tx.year}-${String(monthNum).padStart(2, '0')}`;
+      const existing = latestByMonth.get(mk);
+      if (!existing) {
+        latestByMonth.set(mk, tx);
+        continue;
+      }
+      const dA = new Date(existing.sentAt);
+      const dB = new Date(tx.sentAt);
+      if (!Number.isNaN(dB.getTime()) && (Number.isNaN(dA.getTime()) || dB > dA)) {
+        latestByMonth.set(mk, tx);
+      }
+    }
+
+    // merge all months for this user
+    for (const tx of latestByMonth.values()) {
+      const filePath = path.join(userDir, tx.id);
+      const sub = safeReadJson(filePath, null);
+      if (!sub) continue;
+
+      const teamId = (sub.teamId || u.teamId || '') || 'unknown';
+      if (!index.teams[teamId]) index.teams[teamId] = {};
+      const teamObj = index.teams[teamId];
+
+      const local = extractAnlagenFromSubmission(sub, u.username);
+      for (const [komNr, rec] of local.entries()) {
+        const g = ensureAnlageRec(teamObj, komNr);
+        g.totalHours = round1((Number(g.totalHours || 0)) + (Number(rec.totalHours || 0)));
+        for (const [k, v] of Object.entries(rec.byOperation || {})) addNum(g.byOperation, k, v);
+        for (const [name, v] of Object.entries(rec.byUser || {})) addNum(g.byUser, name, v);
+        if (rec.lastActivity && (!g.lastActivity || rec.lastActivity > g.lastActivity)) g.lastActivity = rec.lastActivity;
+
+        cleanupZeroish(g.byOperation);
+        cleanupZeroish(g.byUser);
+      }
+    }
+  }
+
+  writeAnlagenIndex(index);
+  return index;
+}
+
+// ---- Admin: Anlagen summary (global) ----
+// GET /api/admin/anlagen-summary?teamId=montage&status=active|archived|all&search=123
+app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, (req, res) => {
+  const status = String(req.query.status || 'active'); // default hide archived
+  const teamId = String(req.query.teamId || req.user.teamId || '');
+
+  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
+
+  const search = String(req.query.search || '').trim();
+  const index = readAnlagenIndex();
+  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
+    ? index.teams[teamId]
+    : {};
+
+  const archive = readAnlagenArchive();
+  const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
+
+  const list = Object.entries(teamObj).map(([komNr, rec]) => {
+    const m = teamArchive[komNr] || null;
+    const archived = !!(m && m.archived);
+
+    // compute top operation (exclude _special)
+    let topOpKey = null;
+    let topOpHours = 0;
+    for (const [k, v] of Object.entries(rec.byOperation || {})) {
+      const h = Number(v) || 0;
+      if (k === '_special') continue;
+      if (h > topOpHours) {
+        topOpHours = h;
+        topOpKey = k;
+      }
+    }
+
+    return {
+      komNr,
+      totalHours: round1(rec.totalHours || 0),
+      lastActivity: rec.lastActivity || null,
+      topOperationKey: topOpKey,
+      archived,
+      archivedAt: m?.archivedAt || null,
+      archivedBy: m?.archivedBy || null,
+    };
+  });
+
+  const filtered = list.filter((a) => {
+    if (search && !String(a.komNr).includes(search)) return false;
+    if (status === 'all') return true;
+    if (status === 'archived') return !!a.archived;
+    return !a.archived; // active
+  });
+
+  filtered.sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+
+  return res.json({
+    ok: true,
+    teamId,
+    updatedAt: index.updatedAt || null,
+    anlagen: filtered,
+  });
+});
+
+// ---- Admin: Anlage detail (global) ----
+// GET /api/admin/anlagen-detail?komNr=12345&teamId=montage
+app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, (req, res) => {
+  const teamId = String(req.query.teamId || req.user.teamId || '');
+  const komNr = normalizeKomNr(req.query.komNr);
+
+  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
+  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
+
+  const index = readAnlagenIndex();
+  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
+    ? index.teams[teamId]
+    : {};
+
+  const rec = teamObj[komNr];
+  if (!rec) {
+    return res.status(404).json({ ok: false, error: 'Anlage not found' });
+  }
+
+  const archive = readAnlagenArchive();
+  const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
+  const m = teamArchive[komNr] || null;
+
+  const operations = Object.entries(rec.byOperation || {})
+    .map(([key, hours]) => ({ key, hours: round1(hours) }))
+    .sort((a, b) => b.hours - a.hours);
+
+  const users = Object.entries(rec.byUser || {})
+    .map(([username, hours]) => ({ username, hours: round1(hours) }))
+    .sort((a, b) => b.hours - a.hours);
+
+  return res.json({
+    ok: true,
+    teamId,
+    komNr,
+    totalHours: round1(rec.totalHours || 0),
+    lastActivity: rec.lastActivity || null,
+    operations,
+    users,
+    archived: !!(m && m.archived),
+    archivedAt: m?.archivedAt || null,
+    archivedBy: m?.archivedBy || null,
+    updatedAt: index.updatedAt || null,
+  });
+});
+
+// ---- Admin: archive/unarchive Anlage ----
+// POST /api/admin/anlagen-archive
+// body: { teamId, komNr, archived: true|false }
+app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, (req, res) => {
+  const teamId = String(req.body?.teamId || req.user.teamId || '');
+  const komNr = normalizeKomNr(req.body?.komNr);
+  const archived = !!req.body?.archived;
+
+  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
+  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
+
+  const meta = readAnlagenArchive();
+  const teamMeta = (meta[teamId] && typeof meta[teamId] === 'object') ? meta[teamId] : {};
+
+  if (archived) {
+    teamMeta[komNr] = {
+      archived: true,
+      archivedAt: new Date().toISOString(),
+      archivedBy: req.user.username,
+    };
+  } else {
+    delete teamMeta[komNr];
+  }
+
+  if (Object.keys(teamMeta).length === 0) delete meta[teamId];
+  else meta[teamId] = teamMeta;
+
+  try {
+    writeAnlagenArchive(meta);
+  } catch (e) {
+    console.error('Failed to write anlagenArchive.json:', e);
+    return res.status(500).json({ ok: false, error: 'Could not persist archive state' });
+  }
+
+  return res.json({
+    ok: true,
+    teamId,
+    komNr,
+    archived,
+    archivedAt: archived ? teamMeta[komNr]?.archivedAt : null,
+    archivedBy: archived ? teamMeta[komNr]?.archivedBy : null,
+  });
+});
+
+// ---- Admin: rebuild Anlagen index (optional maintenance) ----
+// POST /api/admin/anlagen-rebuild
+app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const idx = rebuildAnlagenIndex();
+    return res.json({ ok: true, updatedAt: idx.updatedAt || null });
+  } catch (e) {
+    console.error('Anlagen rebuild failed:', e);
+    return res.status(500).json({ ok: false, error: 'Rebuild failed' });
+  }
+});
+
 // ---- Month transmission routes ----
 
 // Receive monthly transmission (protected)
@@ -667,34 +1100,53 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   // Logged-in user → we store by username
   const userId = req.user.username;
 
-      // ---- Enforce week locks on server side (freeze locked weeks) ----
-    let payloadToSave = payload;
+  // ---- Enforce week locks on server side (freeze locked weeks) ----
+  let payloadToSave = payload;
 
-    try {
-      const allLocks = readWeekLocks();
-      const userLocks = (allLocks[userId] && typeof allLocks[userId] === 'object')
-        ? allLocks[userId]
-        : {};
 
-      const { lockedDateKeys, lockedWeekKeys } = collectLockedDatesForMonth(userLocks, payload.year, payload.monthIndex);
+  // Load previous submission once (needed for lock enforcement AND Anlagen delta)
+  let previousMonthSubmission = null;
+  try {
+    previousMonthSubmission = loadLatestMonthSubmission(userId, payload.year, payload.monthIndex);
+  } catch (e) {
+    console.error('Failed to load previous month submission (continuing as first transmission):', e);
+    previousMonthSubmission = null;
+  }
 
-      if (lockedDateKeys.size > 0) {
-        const previous = loadLatestMonthSubmission(userId, payload.year, payload.monthIndex);
+  // 1) Read locks (hard fail if unreadable)
+  let allLocks;
+  try {
+    allLocks = readWeekLocks();
+  } catch (e) {
+    console.error('Failed to read weekLocks.json:', e);
+    return res.status(500).json({ ok: false, error: 'Lock file unreadable. Please contact admin.' });
+  }
 
-        // Only merge if we already have a prior submission for that month
-        if (previous) {
-          payloadToSave = mergeLockedWeeksPayload(payload, previous, lockedDateKeys);
-          payloadToSave._lockInfo = {
-            preservedWeekKeys: Array.from(lockedWeekKeys),
-            preservedDaysCount: lockedDateKeys.size,
-          };
-        }
+  // 2) Enforce locks (hard fail if enforcement breaks)
+  try {
+    const userLocks = (allLocks[userId] && typeof allLocks[userId] === 'object')
+      ? allLocks[userId]
+      : {};
+
+    const { lockedDateKeys, lockedWeekKeys } =
+      collectLockedDatesForMonth(userLocks, payload.year, payload.monthIndex);
+
+    if (lockedDateKeys.size > 0) {
+      const previous = previousMonthSubmission;
+
+      if (previous) {
+        payloadToSave = mergeLockedWeeksPayload(payload, previous, lockedDateKeys);
+        payloadToSave._lockInfo = {
+          preservedWeekKeys: Array.from(lockedWeekKeys),
+          preservedDaysCount: lockedDateKeys.size,
+        };
       }
-    } catch (e) {
-      console.error('Lock enforcement failed (continuing without lock merge):', e);
-      payloadToSave = payload;
     }
-
+  } catch (e) {
+    console.error('Lock enforcement failed:', e);
+    return res.status(500).json({ ok: false, error: 'Could not enforce locks. Submission rejected.' });
+  }
+    
 
   const monthNumber = payload.monthIndex + 1; // 0–11 -> 1–12
   const monthStr = String(monthNumber).padStart(2, '0');
@@ -712,6 +1164,7 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   const submission = {
     ...payloadToSave,
     userId,
+    teamId: req.user.teamId || null,
     receivedAt: now.toISOString(),
     totals,
   };
@@ -725,6 +1178,32 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     return res
       .status(500)
       .json({ ok: false, error: 'Could not save data on server' });
+  }
+
+
+  // 1.5) Update global Anlagen index (delta vs previous submission for this month)
+  const anlagenTeamId = req.user.teamId || 'unknown';
+  let _oldAnlagenMap = null;
+  let _newAnlagenMap = null;
+
+  try {
+    _oldAnlagenMap = previousMonthSubmission
+      ? extractAnlagenFromSubmission(previousMonthSubmission, userId)
+      : new Map();
+
+    _newAnlagenMap = extractAnlagenFromSubmission(payloadToSave, userId);
+
+    applyAnlagenDelta(anlagenTeamId, userId, _newAnlagenMap, _oldAnlagenMap);
+  } catch (err) {
+    console.error('Failed to update anlagenIndex.json:', err);
+
+    // keep consistency: remove the just-saved submission file if possible
+    try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+
+    return res.status(500).json({
+      ok: false,
+      error: 'Could not update Anlagen index. Submission rejected.',
+    });
   }
 
   // 2) Update user's index.json (simple list of transmissions)
@@ -755,10 +1234,23 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   index.push(meta);
 
   try {
-    fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), 'utf8');
+    writeJsonAtomic(indexPath, index);
   } catch (err) {
     console.error('Failed to update index.json:', err);
-    // Not fatal for the client; main file is already saved
+
+    // Roll back Anlagen delta to keep aggregates consistent
+    try {
+      if (_oldAnlagenMap && _newAnlagenMap) {
+        applyAnlagenDelta(anlagenTeamId, userId, _oldAnlagenMap, _newAnlagenMap);
+      }
+    } catch (e) {
+      console.error('Failed to roll back anlagen index (manual rebuild may be required):', e);
+    }
+
+    // Remove the just-saved submission file (best effort)
+    try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
+
+    return res.status(500).json({ ok: false, error: 'Could not persist submission index.json. Submission rejected.' });
   }
 
   res.json({
@@ -799,7 +1291,11 @@ app.get(
   (req, res) => {
     const year = Number(req.query.year);
     const monthIndex = Number(req.query.monthIndex);
-    const allLocks = readWeekLocks();
+    let allLocks;
+    try { allLocks = readWeekLocks(); }
+    catch (e) { return res.status(500).json({ ok:false, error: e.message }); }
+
+        
 
 
     if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
@@ -959,7 +1455,10 @@ app.post('/api/admin/week-lock', requireAuth, requireAdmin, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Invalid week' });
   }
 
-  const allLocks = readWeekLocks();
+  let allLocks;
+  try { allLocks = readWeekLocks(); }
+  catch (e) { return res.status(500).json({ ok:false, error: e.message }); }
+
   const userLocks = (allLocks[username] && typeof allLocks[username] === 'object')
     ? allLocks[username]
     : {};

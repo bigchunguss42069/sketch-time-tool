@@ -1802,8 +1802,8 @@ body {
   margin: 6px auto 12px;
   padding: 4px 8px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #020511, #0e1a36);
-  border: 1px solid rgba(100, 112, 129, 0.4);
+  background: linear-gradient(135deg, #02051144, #0e1a363f);
+  border: 1px solid rgba(60, 64, 70, 0.233);
   box-shadow: 0 10px 25px rgba(28, 32, 43, 0.9);
 }
 
@@ -1813,19 +1813,20 @@ body {
   padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
-  border-radius: 999px;
+  border-radius: 666px;
   color: #ffffff;
+  font-weight: 600;
   transition:
     background-color 0.15s ease,
     color 0.15s ease;
 }
 
 .admin-tab-btn:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(84, 115, 218, 0.363);
 }
 
 .admin-tab-btn.active {
-  background-color: #3669f7;
+  background-color: #2158eebb;
   color: rgb(255, 255, 255);
 }
 
@@ -2484,3 +2485,333 @@ display: none;
   border-color: rgba(129, 140, 248, 0.65);
   box-shadow: 0 0 0 1px hsla(234, 89%, 74%, 0.35), 0 12px 30px rgba(15, 23, 42, 0.9);
 }
+
+.admin-day-drawer{
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: max-height 180ms ease, opacity 180ms ease, transform 180ms ease;
+  will-change: max-height;
+}
+
+.admin-day-drawer.is-open{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.admin-day-row.expanded{
+  outline: 1px solid rgba(0,0,0,0.08);
+}
+
+.admin-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.admin-day-title { font-weight: 700; }
+.admin-day-subtitle { opacity: 0.75; font-size: 12px; margin-top: 2px; }
+
+.admin-day-status-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.admin-day-status-badge.is-ok { background: rgba(0,0,0,0.08); }
+.admin-day-status-badge.is-missing { background: rgba(0,0,0,0.08); }
+.admin-day-status-badge.is-ferien { background: rgba(0,0,0,0.08); }
+.admin-day-status-badge.is-absence { background: rgba(0,0,0,0.08); }
+
+.admin-day-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.admin-day-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: #15193a80;
+  border: #f1f1f12a 1px solid;
+}
+
+.admin-day-chip.chip-muted { opacity: 0.7; }
+
+.admin-day-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #5763cf0a;
+  margin-bottom: 10px;
+  
+}
+
+.admin-day-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+.admin-day-kv.is-total { font-weight: 800; }
+
+.admin-day-mini-breakdown {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 247, 247, 0.089);
+  font-size: 12px;
+  opacity: 0.9;
+}
+.admin-day-mini-title { font-weight: 700; margin-bottom: 4px; color: white; font-size: 13px;}
+
+.admin-day-section { 
+ display: grid;
+
+  gap: 6px 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #5763cf0a;
+  margin-bottom: 10px;
+
+}
+.admin-day-section-title { font-weight: 800; margin-bottom: 6px; }
+.admin-day-muted { opacity: 0.7; font-size: 13px; }
+
+.admin-day-list { display: flex; flex-direction: column; gap: 6px; }
+.admin-day-list-row { display: flex; gap: 10px; }
+.admin-day-list-left { min-width: 90px; font-weight: 700; }
+.admin-day-list-right { opacity: 0.9; }
+
+
+.anlagen-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .anlagen-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.anlagen-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.anlagen-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.anlagen-search {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(32, 31, 31, 0.781);
+  
+}
+
+.anlagen-status,
+.anlagen-refresh {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgb(211, 206, 206);
+}
+
+.anlagen-list {
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 70vh;
+  background: rgb(255, 255, 255);
+  color: #1f1d1d;
+}
+
+.anlagen-row {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  
+}
+
+.anlagen-row:last-child {
+  border-bottom: none;
+}
+
+.anlagen-row.is-selected {
+  background: rgba(0, 0, 0, 0.116);
+}
+
+.anlagen-komnr {
+  font-weight: 700;
+}
+
+.anlagen-meta {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.anlagen-hours {
+  font-weight: 700;
+  justify-self: end;
+}
+
+.anlagen-detail {
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 12px;
+  padding: 14px;
+  background: white;
+  min-height: 200px;
+  color: #000000;
+}
+
+.anlagen-detail-empty {
+  opacity: 0.7;
+}
+
+.anlagen-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.anlagen-detail-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.anlagen-detail-sub {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.anlagen-archive-btn {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.anlagen-archive-btn.is-archived {
+  opacity: 0.8;
+}
+
+.anlagen-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .anlagen-charts {
+    grid-template-columns: 1fr;
+  }
+}
+
+.anlagen-card {
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.anlagen-card h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+}
+
+.anlagen-donut {
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.anlagen-donut::after {
+  content: "";
+  position: absolute;
+  inset: 26px;
+  border-radius: 50%;
+  background: white;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.anlagen-legend {
+  display: grid;
+  gap: 6px;
+}
+
+.anlagen-legend-item {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  
+}
+
+.anlagen-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.anlagen-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.anlagen-bar-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.anlagen-bar-track {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.anlagen-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: rgba(23, 46, 150, 0.623);
+}
+ .admin-section-header{
+  margin-bottom: 10px;
+  opacity: 0.99;
+
+ }

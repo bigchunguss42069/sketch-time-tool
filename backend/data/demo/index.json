@@ -1,32 +1,32 @@
 [
   {
-    "id": "2025-12-2025-12-18T18-26-50-185Z.json",
+    "id": "2025-12-2025-12-21T17-44-39-825Z.json",
     "year": 2025,
     "monthIndex": 11,
     "monthLabel": "Dezember 2025",
-    "sentAt": "2025-12-18T18:26:50.185Z",
-    "sizeBytes": 3462,
+    "sentAt": "2025-12-21T17:44:39.825Z",
+    "sizeBytes": 1328,
     "totals": {
-      "kom": 16.5,
-      "dayHours": 9,
+      "kom": 8,
+      "dayHours": 3,
       "pikett": 0,
       "overtime3": 0,
-      "total": 25.5
+      "total": 11
     }
   },
   {
-    "id": "2025-12-2025-12-18T21-47-23-176Z.json",
+    "id": "2025-12-2025-12-21T17-47-23-554Z.json",
     "year": 2025,
     "monthIndex": 11,
     "monthLabel": "Dezember 2025",
-    "sentAt": "2025-12-18T21:47:23.176Z",
-    "sizeBytes": 3563,
+    "sentAt": "2025-12-21T17:47:23.554Z",
+    "sizeBytes": 1328,
     "totals": {
-      "kom": 16.5,
-      "dayHours": 9,
+      "kom": 8,
+      "dayHours": 3,
       "pikett": 0,
       "overtime3": 0,
-      "total": 25.5
+      "total": 11
     }
   }
 ]

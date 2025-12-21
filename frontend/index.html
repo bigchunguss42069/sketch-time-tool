@@ -1969,16 +1969,42 @@
               <div class="admin-section-header">
                 <h3>Anlagen-Auswertung</h3>
                 <p class="admin-section-subtitle">
-                  Kommissionsnummern, Stunden und Überzeit nach
-                  Anlage.
+               
                 </p>
               </div>
-              <div class="admin-placeholder">
-                <p>
-                  Hier kommen später die Kommissions-Statistiken &
-                  Charts rein.
-                </p>
+          
+              <div class="anlagen-layout">
+              <div class="anlagen-sidebar">
+                <div class="anlagen-controls">
+                  <input
+                    id="anlagenSearchInput"
+                    class="anlagen-search"
+                    type="text"
+                    placeholder="Kom.-Nr. suchen…"
+                  />
+
+                  <select id="anlagenStatusSelect" class="anlagen-status">
+                    <option value="active" selected>Aktiv</option>
+                    <option value="archived">Archiviert</option>
+                    <option value="all">Alle</option>
+                  </select>
+
+                  <button id="anlagenRefreshBtn" class="anlagen-refresh" type="button">
+                    Aktualisieren
+                  </button>
+                </div>
+
+                <div id="adminAnlagenList" class="anlagen-list"></div>
               </div>
+
+              <div id="adminAnlagenDetail" class="anlagen-detail">
+                <div class="anlagen-detail-empty">
+                  Wähle links eine Kommissionsnummer aus.
+                </div>
+              </div>
+            </div>
+
+        
             </div>
 
             <!-- Tab: Lohnabrechnung -->

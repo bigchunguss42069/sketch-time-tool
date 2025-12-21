@@ -1,0 +1,67 @@
+{
+  "year": 2025,
+  "monthIndex": 11,
+  "monthLabel": "Dezember 2025",
+  "days": {
+    "2025-12-15": {
+      "flags": {
+        "ferienManual": false,
+        "ferienFromAbsences": false,
+        "ferien": false,
+        "schmutzzulage": true,
+        "nebenauslagen": true
+      },
+      "dayHours": {
+        "schulung": 1,
+        "sitzungKurs": 1,
+        "arztKrank": 1
+      },
+      "entries": [
+        {
+          "komNr": "123123",
+          "hours": {
+            "option1": 1,
+            "option2": 1,
+            "option3": 1,
+            "option4": 1,
+            "option5": 1,
+            "option6": 1
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": true,
+        "2": true,
+        "3": false
+      },
+      "specialEntries": [
+        {
+          "type": "regie",
+          "komNr": "123123",
+          "hours": 1,
+          "rapportNr": "1122",
+          "description": ""
+        },
+        {
+          "type": "fehler",
+          "komNr": "123123",
+          "hours": 1,
+          "rapportNr": "",
+          "description": "11234"
+        }
+      ]
+    }
+  },
+  "pikett": [],
+  "absences": [],
+  "userId": "demo",
+  "teamId": "montage",
+  "receivedAt": "2025-12-21T17:47:23.554Z",
+  "totals": {
+    "kom": 8,
+    "dayHours": 3,
+    "pikett": 0,
+    "overtime3": 0,
+    "total": 11
+  }
+}
