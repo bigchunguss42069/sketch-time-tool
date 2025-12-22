@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2025-12-21T17:47:23.556Z",
+  "updatedAt": "2025-12-21T21:06:58.978Z",
   "teams": {
     "montage": {
       "123123": {
@@ -20,6 +20,25 @@
         },
         "lastActivity": "2025-12-15"
       }
+    }
+  },
+  "montage": {
+    "123123": {
+      "totalHours": 8,
+      "byOperation": {
+        "option1": 1,
+        "option2": 1,
+        "option3": 1,
+        "option4": 1,
+        "option5": 1,
+        "option6": 1,
+        "_regie": 1,
+        "_fehler": 1
+      },
+      "byUser": {
+        "demo": 8
+      },
+      "lastActivity": "2025-12-15"
     }
   }
 }

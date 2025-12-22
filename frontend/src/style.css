@@ -2710,10 +2710,10 @@ display: none;
 }
 
 .anlagen-archive-btn {
-  padding: 8px 10px;
+ padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.12);
-  background: white;
+  border: 1px solid rgba(0, 0, 0, 0.404);
+  background: rgba(150, 145, 145, 0.158);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -2815,3 +2815,19 @@ display: none;
   opacity: 0.99;
 
  }
+
+ .anlagen-detail-actions {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.anlagen-export-btn{
+ padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.404);
+  background: rgba(150, 145, 145, 0.158);
+  cursor: pointer;
+  white-space: nowrap;
+
+}

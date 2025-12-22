@@ -3447,6 +3447,7 @@ function renderAnlagenDetail(data) {
   head.className = 'anlagen-detail-head';
 
   const left = document.createElement('div');
+
   const title = document.createElement('div');
   title.className = 'anlagen-detail-title';
   title.textContent = `Kom.-Nr. ${komNr}`;
@@ -3458,14 +3459,19 @@ function renderAnlagenDetail(data) {
   left.appendChild(title);
   left.appendChild(sub);
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'anlagen-archive-btn';
-  btn.classList.toggle('is-archived', archived);
-  btn.textContent = archived ? 'Archiviert (aktivieren)' : 'Archivieren';
+  // --- NEW: actions container (right side) ---
+  const actions = document.createElement('div');
+  actions.className = 'anlagen-detail-actions';
 
-  btn.addEventListener('click', () => {
-    btn.disabled = true;
+  // archive button (your existing logic)
+  const archiveBtn = document.createElement('button');
+  archiveBtn.type = 'button';
+  archiveBtn.className = 'anlagen-archive-btn';
+  archiveBtn.classList.toggle('is-archived', archived);
+  archiveBtn.textContent = archived ? 'Archiviert (aktivieren)' : 'Archivieren';
+
+  archiveBtn.addEventListener('click', () => {
+    archiveBtn.disabled = true;
 
     authFetch('/api/admin/anlagen-archive', {
       method: 'POST',
@@ -3493,12 +3499,39 @@ function renderAnlagenDetail(data) {
         alert(err.message || 'Archivierung fehlgeschlagen');
       })
       .finally(() => {
-        btn.disabled = false;
+        archiveBtn.disabled = false;
       });
   });
 
+  // --- NEW: export button ---
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'anlagen-export-btn';
+  exportBtn.textContent = 'Export PDF';
+
+  exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled = true;
+    const prevText = exportBtn.textContent;
+    exportBtn.textContent = 'Export läuft…';
+
+    try {
+      // must exist from step 5.6
+      await exportAnlagePdf(komNr);
+    } catch (err) {
+      console.error(err);
+      alert(err?.message || 'PDF Export fehlgeschlagen');
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.textContent = prevText;
+    }
+  });
+
+  // assemble header
+  actions.appendChild(archiveBtn);
+  actions.appendChild(exportBtn);
+
   head.appendChild(left);
-  head.appendChild(btn);
+  head.appendChild(actions);
   adminAnlagenDetail.appendChild(head);
 
   // charts wrapper
@@ -3521,6 +3554,308 @@ function renderAnlagenDetail(data) {
   charts.appendChild(usersCard);
   adminAnlagenDetail.appendChild(charts);
 }
+async function exportAnlagePdf(komNr) {
+  if (!komNr) throw new Error('Kom.-Nr fehlt');
+
+  const user = getCurrentUser();
+  const teamId = user?.teamId || '';
+
+  // 1) Detail laden
+  const detailRes = await authFetch(
+    `/api/admin/anlagen-detail?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`
+  );
+
+  if (!detailRes.ok) {
+    let msg = 'Detail konnte nicht geladen werden';
+    try {
+      const j = await detailRes.json();
+      msg = j?.error || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const detail = await detailRes.json();
+  if (!detail.ok) throw new Error(detail.error || 'Detail konnte nicht geladen werden');
+
+  // 2) Ledger (optional)
+  let ledger = null;
+  try {
+    const ledgerRes = await authFetch(
+      `/api/admin/anlagen-ledger?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`
+    );
+    if (ledgerRes.ok) {
+      const ledgerJson = await ledgerRes.json();
+      if (ledgerJson?.ok) ledger = ledgerJson;
+    }
+  } catch {
+    ledger = null; // optional -> PDF Export soll trotzdem gehen
+  }
+
+  // 3) Charts als PNG (SVG -> PNG DataURL)
+  const donutSvg = buildDonutChartSvg(
+    detail.operations || [],
+    Number(detail.totalHours || 0),
+    { title: `Kom.-Nr. ${komNr}` }
+  );
+
+  const usersSvg = buildUsersBarsSvg(detail.users || [], {
+    title: 'Stunden nach Benutzer',
+  });
+
+  const donutPngDataUrl = await svgToPngDataUrl(donutSvg, 520, 320);
+  const usersPngDataUrl = await svgToPngDataUrl(usersSvg, 520, 320);
+
+  // 4) PDF Export Request (WICHTIG: resp variable!)
+  const resp = await authFetch('/api/admin/anlagen-export-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      komNr,
+      teamId,
+      detail,
+      ledger,
+      donutPngDataUrl,
+      usersPngDataUrl,
+    }),
+  });
+
+  if (!resp.ok) {
+    let msg = 'Export fehlgeschlagen';
+    try {
+      const j = await resp.json();
+      msg = j?.error || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  // 5) Download
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Anlage_${komNr}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  // revoke after a short delay (some browsers need a tick)
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- PDF export chart helpers (SVG -> PNG) ----------
+
+function escapeXml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// You can swap these colors to match your UI.
+// Keep it deterministic so PDF always looks the same.
+function exportOpColor(opKey) {
+  const map = {
+    option1: '#4E79A7',
+    option2: '#F28E2B',
+    option3: '#E15759',
+    option4: '#76B7B2',
+    option5: '#59A14F',
+    option6: '#EDC948',
+    _special_regie: '#B07AA1',
+    _special_fehler: '#FF9DA7',
+    _special: '#9C755F',
+  };
+  return map[opKey] || '#9AA0A6';
+}
+
+function buildDonutChartSvg(operations, totalHours, opts = {}) {
+  const width = opts.width ?? 900;
+  const height = opts.height ?? 420;
+
+  const cx = 170;
+  const cy = 200;
+  const r = 110;
+  const strokeW = 44;
+  const circ = 2 * Math.PI * r;
+
+  const total = Number(totalHours || 0);
+  const items = Array.isArray(operations) ? operations : [];
+  const normalized = items
+    .map((o) => ({ key: String(o.key || ''), hours: Number(o.hours || 0) }))
+    .filter((o) => o.key && o.hours > 0);
+
+  // Empty state (still render something so PDF layout stays consistent)
+  if (total <= 0 || normalized.length === 0) {
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Tätigkeit</text>
+  <text x="40" y="110" font-family="Arial" font-size="16" fill="#666">Keine Daten vorhanden</text>
+</svg>`;
+  }
+
+  // Donut slices: stacked circles with dashoffset
+  let offset = 0;
+  const slices = normalized.map((it) => {
+    const frac = it.hours / total;
+    const len = frac * circ;
+    const dash = `${len} ${circ - len}`;
+    const dashOffset = -offset;
+    offset += len;
+
+    return `
+<circle cx="${cx}" cy="${cy}" r="${r}"
+  fill="none"
+  stroke="${exportOpColor(it.key)}"
+  stroke-width="${strokeW}"
+  stroke-linecap="butt"
+  stroke-dasharray="${dash}"
+  stroke-dashoffset="${dashOffset}"
+  transform="rotate(-90 ${cx} ${cy})"
+/>`;
+  }).join('');
+
+  // Legend (right side)
+  const legendX = 360;
+  let legendY = 95;
+  const legend = normalized.map((it) => {
+    const pct = (it.hours / total) * 100;
+    const line = `
+<rect x="${legendX}" y="${legendY - 14}" width="14" height="14" fill="${exportOpColor(it.key)}"/>
+<text x="${legendX + 22}" y="${legendY - 2}" font-family="Arial" font-size="16" fill="#111">
+  ${escapeXml(it.key)}: ${it.hours.toFixed(1).replace('.', ',')} h (${pct.toFixed(0)}%)
+</text>`;
+    legendY += 26;
+    return line;
+  }).join('');
+
+  const centerText = `
+<text x="${cx}" y="${cy - 6}" text-anchor="middle" font-family="Arial" font-size="16" fill="#666">Total</text>
+<text x="${cx}" y="${cy + 22}" text-anchor="middle" font-family="Arial" font-size="28" fill="#111">
+  ${total.toFixed(1).replace('.', ',')} h
+</text>`;
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Tätigkeit</text>
+
+  ${slices}
+  ${centerText}
+
+  ${legend}
+</svg>`;
+}
+
+function buildUsersBarsSvg(users, opts = {}) {
+  const width = opts.width ?? 900;
+  const height = opts.height ?? 420;
+
+  const items = (Array.isArray(users) ? users : [])
+    .map((u) => ({ username: String(u.username || ''), hours: Number(u.hours || 0) }))
+    .filter((u) => u.username);
+
+  if (items.length === 0) {
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Benutzer</text>
+  <text x="40" y="110" font-family="Arial" font-size="16" fill="#666">Keine Daten vorhanden</text>
+</svg>`;
+  }
+
+  const max = Math.max(...items.map((i) => i.hours), 0.1);
+
+  // Layout
+  const chartX = 60;
+  const chartY = 90;
+  const chartW = width - 120;
+  const chartH = height - 150;
+
+  const barGap = 10;
+  const barCount = items.length;
+  const barW = Math.max(10, (chartW - barGap * (barCount - 1)) / barCount);
+
+  // Simple grid lines
+  const gridLines = [0.25, 0.5, 0.75, 1].map((p) => {
+    const y = chartY + chartH - p * chartH;
+    const val = (p * max).toFixed(1).replace('.', ',');
+    return `
+<line x1="${chartX}" y1="${y}" x2="${chartX + chartW}" y2="${y}" stroke="#E5E7EB" stroke-width="1"/>
+<text x="${chartX - 10}" y="${y + 5}" text-anchor="end" font-family="Arial" font-size="12" fill="#666">${val}</text>`;
+  }).join('');
+
+  const bars = items.map((it, idx) => {
+    const h = (it.hours / max) * chartH;
+    const x = chartX + idx * (barW + barGap);
+    const y = chartY + chartH - h;
+
+    const label = escapeXml(it.username);
+    const hoursLabel = it.hours.toFixed(1).replace('.', ',');
+
+    return `
+<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="#4E79A7"/>
+<text x="${x + barW / 2}" y="${chartY + chartH + 18}" text-anchor="middle"
+  font-family="Arial" font-size="12" fill="#111">${label}</text>
+<text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle"
+  font-family="Arial" font-size="12" fill="#111">${hoursLabel}</text>`;
+  }).join('');
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Benutzer</text>
+
+  ${gridLines}
+  ${bars}
+
+  <line x1="${chartX}" y1="${chartY + chartH}" x2="${chartX + chartW}" y2="${chartY + chartH}" stroke="#111" stroke-width="1"/>
+</svg>`;
+}
+
+function svgToPngDataUrl(svgString, width, height) {
+  return new Promise((resolve, reject) => {
+    try {
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          // white background for PDF
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+
+          ctx.drawImage(img, 0, 0, width, height);
+          URL.revokeObjectURL(url);
+
+          resolve(canvas.toDataURL('image/png'));
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          reject(e);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('SVG image load failed'));
+      };
+
+      img.src = url;
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+
 
 
 function buildOperationsDonut(operations, totalHours) {
@@ -3627,6 +3962,183 @@ function buildUsersBars(users) {
 
   wrap.appendChild(bars);
   return wrap;
+}
+
+
+function chartColorByIndex(i) {
+  // stable color palette (same idea as your UI)
+  const hue = (i * 47) % 360;
+  return `hsl(${hue}, 55%, 55%)`;
+}
+
+function renderDonutChartToPng(operations, totalHours) {
+  // operations: [{ key, hours }]
+  const ops = Array.isArray(operations) ? operations.filter(o => (Number(o.hours) || 0) > 0) : [];
+  const total = Number(totalHours) || ops.reduce((s, o) => s + (Number(o.hours) || 0), 0);
+
+  const W = 1100;
+  const H = 520;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+
+  const ctx = canvas.getContext('2d');
+
+  // background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // title
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Stunden nach Tätigkeit', 40, 42);
+
+  // donut geometry
+  const cx = 260;
+  const cy = 290;
+  const rOuter = 160;
+  const rInner = 92;
+
+  // empty state
+  if (!(total > 0) || ops.length === 0) {
+    ctx.fillStyle = '#334155';
+    ctx.font = '500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.fillText('Keine Stunden vorhanden.', 40, 80);
+    return canvas.toDataURL('image/png');
+  }
+
+  // draw segments
+  let start = -Math.PI / 2;
+  ops.forEach((o, i) => {
+    const h = Number(o.hours) || 0;
+    const angle = (h / total) * Math.PI * 2;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, rOuter, start, start + angle);
+    ctx.closePath();
+    ctx.fillStyle = chartColorByIndex(i);
+    ctx.fill();
+
+    start += angle;
+  });
+
+  // punch hole
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // center label
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '700 22px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(formatHours(total), cx, cy + 8);
+
+  // legend (right side)
+  const lx = 520;
+  let ly = 110;
+
+  ctx.textAlign = 'left';
+  ctx.font = '600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText('Legende', lx, ly);
+  ly += 18;
+
+  ctx.font = '500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+
+  ops.forEach((o, i) => {
+    const label = operationLabel(o.key);
+    const h = Number(o.hours) || 0;
+    const pct = total > 0 ? Math.round((h / total) * 100) : 0;
+
+    // color dot
+    ctx.fillStyle = chartColorByIndex(i);
+    ctx.beginPath();
+    ctx.arc(lx + 8, ly + 8, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // text
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(`${label}`, lx + 22, ly + 12);
+
+    ctx.fillStyle = '#334155';
+    ctx.fillText(`${formatHours(h)} · ${pct}%`, lx + 320, ly + 12);
+
+    ly += 26;
+    if (ly > H - 30) {
+      // stop legend if it would overflow (optional)
+      return;
+    }
+  });
+
+  return canvas.toDataURL('image/png');
+}
+
+function renderUsersBarsToPng(users) {
+  // users: [{ username, hours }]
+  const list = Array.isArray(users) ? users.filter(u => (Number(u.hours) || 0) > 0) : [];
+  const max = list.reduce((m, u) => Math.max(m, Number(u.hours) || 0), 0);
+
+  const W = 1100;
+  const rowH = 34;
+  const topPad = 80;
+  const bottomPad = 30;
+  const H = Math.max(260, topPad + list.length * rowH + bottomPad);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Stunden nach Mitarbeiter', 40, 42);
+
+  if (!list.length || !(max > 0)) {
+    ctx.fillStyle = '#334155';
+    ctx.font = '500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.fillText('Keine Stunden vorhanden.', 40, 80);
+    return canvas.toDataURL('image/png');
+  }
+
+  const nameX = 40;
+  const barX = 260;
+  const barW = 680;
+  const valX = barX + barW + 18;
+
+  ctx.font = '500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+
+  list.forEach((u, i) => {
+    const y = topPad + i * rowH;
+    const h = Number(u.hours) || 0;
+    const w = Math.round((h / max) * barW);
+
+    // name
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(u.username || '–', nameX, y + 20);
+
+    // track
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(barX, y + 6, barW, 16);
+
+    // fill
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(barX, y + 6, w, 16);
+
+    // value
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(formatHours(h), valX, y + 20);
+  });
+
+  return canvas.toDataURL('image/png');
 }
 
 

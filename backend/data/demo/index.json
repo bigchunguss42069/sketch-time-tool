@@ -28,5 +28,20 @@
       "overtime3": 0,
       "total": 11
     }
+  },
+  {
+    "id": "2025-12-2025-12-21T21-06-58-972Z.json",
+    "year": 2025,
+    "monthIndex": 11,
+    "monthLabel": "Dezember 2025",
+    "sentAt": "2025-12-21T21:06:58.972Z",
+    "sizeBytes": 1328,
+    "totals": {
+      "kom": 8,
+      "dayHours": 3,
+      "pikett": 0,
+      "overtime3": 0,
+      "total": 11
+    }
   }
 ]

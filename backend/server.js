@@ -3,13 +3,17 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const PDFDocument = require('pdfkit');
+const exportPdfBody = express.json({ limit: '10mb' });
 
 const app = express();
 const PORT = 3000;
 
+
 // ---- Middleware ----
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
+
 
 // ---- "Database": users + sessions (in memory for now) ----
 
@@ -660,6 +664,208 @@ app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, (
 });
 
 
+// ---- Anlagen: global index + daily ledger + per-user-month snapshots ----
+
+
+const ANLAGEN_LEDGER_PATH = path.join(BASE_DATA_DIR, 'anlagenLedger.json');
+const ANLAGEN_SNAP_DIR    = path.join(BASE_DATA_DIR, 'anlagenSnapshots');
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function readAnlagenIndex() {
+  return safeReadJson(ANLAGEN_INDEX_PATH, {}); // { [teamId]: { [komNr]: {...} } }
+}
+function writeAnlagenIndex(data) {
+  writeJsonAtomic(ANLAGEN_INDEX_PATH, data);
+}
+
+function readAnlagenLedger() {
+  return safeReadJson(ANLAGEN_LEDGER_PATH, {}); // { [teamId]: { [komNr]: { byUser: { [username]: { byDate: {...} } } } } }
+}
+function writeAnlagenLedger(data) {
+  writeJsonAtomic(ANLAGEN_LEDGER_PATH, data);
+}
+
+function monthKey(year, monthIndex) {
+  const mm = String(monthIndex + 1).padStart(2, '0');
+  return `${year}-${mm}`;
+}
+
+function getSnapshotPath(username, year, monthIndex) {
+  ensureDir(ANLAGEN_SNAP_DIR);
+  const userDir = path.join(ANLAGEN_SNAP_DIR, String(username).replace(/[^a-zA-Z0-9_-]/g, '_'));
+  ensureDir(userDir);
+  return path.join(userDir, `${monthKey(year, monthIndex)}.json`);
+}
+
+function readAnlagenSnapshot(username, year, monthIndex) {
+  return safeReadJson(getSnapshotPath(username, year, monthIndex), null); // null if none
+}
+
+function writeAnlagenSnapshot(username, year, monthIndex, snap) {
+  writeJsonAtomic(getSnapshotPath(username, year, monthIndex), snap);
+}
+
+function addNum(obj, key, val) {
+  if (!obj[key]) obj[key] = 0;
+  obj[key] += val;
+}
+
+function subNum(obj, key, val) {
+  if (!obj[key]) obj[key] = 0;
+  obj[key] -= val;
+  if (Math.abs(obj[key]) < 1e-9) delete obj[key];
+}
+
+function normalizeKomNr(v) {
+  const s = String(v || '').trim();
+  return s ? s.replace(/\s+/g, '') : '';
+}
+
+function extractAnlagenSnapshotFromPayload(payload, username) {
+  // returns: { [komNr]: { totalHours, byOperation, byDate, lastActivity } }
+  const snap = {};
+  const days = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+
+  for (const [dateKey, dayData] of Object.entries(days)) {
+    if (!dayData || typeof dayData !== 'object') continue;
+
+    // 1) Regular kom entries (option buckets)
+    const entries = Array.isArray(dayData.entries) ? dayData.entries : [];
+    for (const e of entries) {
+      const komNr = normalizeKomNr(e?.komNr);
+      if (!komNr) continue;
+
+      const hoursObj = (e?.hours && typeof e.hours === 'object') ? e.hours : {};
+      let sumDayKom = 0;
+
+      if (!snap[komNr]) snap[komNr] = { totalHours: 0, byOperation: {}, byDate: {}, lastActivity: null };
+      const rec = snap[komNr];
+
+      for (const [opKey, raw] of Object.entries(hoursObj)) {
+        const h = toNumber(raw);
+        if (!(h > 0)) continue;
+        sumDayKom += h;
+        addNum(rec.byOperation, opKey, h);
+      }
+
+      if (sumDayKom > 0) {
+        addNum(rec.byDate, dateKey, sumDayKom);
+        rec.totalHours += sumDayKom;
+        if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+      }
+    }
+
+    // 2) Special entries: split regie vs fehler
+    const specials = Array.isArray(dayData.specialEntries) ? dayData.specialEntries : [];
+    for (const s of specials) {
+      const komNr = normalizeKomNr(s?.komNr);
+      if (!komNr) continue;
+
+      const h = toNumber(s?.hours);
+      if (!(h > 0)) continue;
+
+      if (!snap[komNr]) snap[komNr] = { totalHours: 0, byOperation: {}, byDate: {}, lastActivity: null };
+      const rec = snap[komNr];
+
+      const type = String(s?.type || '').toLowerCase();
+      const bucket = (type === 'fehler') ? '_fehler' : '_regie';
+
+      addNum(rec.byOperation, bucket, h);
+      addNum(rec.byDate, dateKey, h);
+
+      rec.totalHours += h;
+      if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+    }
+  }
+
+  // optional cleanup: drop empty kom
+  for (const [komNr, rec] of Object.entries(snap)) {
+    if (!(rec.totalHours > 0)) delete snap[komNr];
+  }
+
+  return snap;
+}
+
+
+function getMaxDateFromKomLedger(komLedger) {
+  // komLedger = { byUser: { u: { byDate: { 'YYYY-MM-DD': hours } } } }
+  let max = null;
+  const byUser = komLedger?.byUser || {};
+  for (const u of Object.values(byUser)) {
+    const byDate = u?.byDate || {};
+    for (const dateKey of Object.keys(byDate)) {
+      if (!max || dateKey > max) max = dateKey;
+    }
+  }
+  return max;
+}
+
+function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, sign }) {
+  // sign: +1 add, -1 subtract
+  if (!index[teamId]) index[teamId] = {};
+  if (!ledger[teamId]) ledger[teamId] = {};
+
+  for (const [komNr, rec] of Object.entries(snap || {})) {
+    // ---- index ----
+    if (!index[teamId][komNr]) {
+      index[teamId][komNr] = { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null };
+    }
+    const gi = index[teamId][komNr];
+
+    const total = Number(rec.totalHours || 0);
+    gi.totalHours += sign * total;
+
+    // byOperation
+    for (const [k, v] of Object.entries(rec.byOperation || {})) {
+      const h = Number(v) || 0;
+      if (sign > 0) addNum(gi.byOperation, k, h);
+      else subNum(gi.byOperation, k, h);
+    }
+
+    // byUser total (store totals only)
+    if (sign > 0) addNum(gi.byUser, username, total);
+    else subNum(gi.byUser, username, total);
+
+    // ---- ledger ----
+    if (!ledger[teamId][komNr]) ledger[teamId][komNr] = { byUser: {} };
+    if (!ledger[teamId][komNr].byUser[username]) ledger[teamId][komNr].byUser[username] = { byDate: {} };
+
+    const lu = ledger[teamId][komNr].byUser[username];
+    for (const [dateKey, v] of Object.entries(rec.byDate || {})) {
+      const h = Number(v) || 0;
+      if (sign > 0) addNum(lu.byDate, dateKey, h);
+      else subNum(lu.byDate, dateKey, h);
+    }
+
+    // cleanup empty user ledger
+    if (Object.keys(lu.byDate).length === 0) {
+      delete ledger[teamId][komNr].byUser[username];
+    }
+
+    // cleanup empty kom ledger
+    if (Object.keys(ledger[teamId][komNr].byUser).length === 0) {
+      delete ledger[teamId][komNr];
+    }
+
+    // cleanup empty kom in index if totals are gone
+    if (!(gi.totalHours > 0)) {
+      delete index[teamId][komNr];
+    }
+  }
+}
+
+function recomputeLastActivitiesForTeam(index, ledger, teamId, komNrs) {
+  for (const komNr of komNrs) {
+    const gi = index?.[teamId]?.[komNr];
+    if (!gi) continue;
+    const komLedger = ledger?.[teamId]?.[komNr];
+    gi.lastActivity = getMaxDateFromKomLedger(komLedger);
+  }
+}
+
 
 // ---- Anlagen (Kom.-Nr.) global index + archive state ----
 
@@ -915,6 +1121,158 @@ function rebuildAnlagenIndex() {
   writeAnlagenIndex(index);
   return index;
 }
+
+
+// POST /api/admin/anlagen-export-pdf
+// body: { teamId, komNr, donutPngDataUrl?, usersPngDataUrl? }
+app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, (req, res) => {
+  const teamId = String(req.body?.teamId || req.user.teamId || '');
+  const komNr = normalizeKomNr(req.body?.komNr);
+
+  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
+  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
+
+  // Optional: enforce team scoping (recommended when you add more teams)
+  // if (req.user.teamId !== teamId) return res.status(403).json({ ok:false, error:'Wrong team' });
+
+  const index = readAnlagenIndex();
+  const ledger = readAnlagenLedger();
+  const meta = readAnlagenArchive(); // you already have this
+
+  const rec = index?.[teamId]?.[komNr];
+  if (!rec) return res.status(404).json({ ok: false, error: 'KomNr not found in index' });
+
+  const ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
+  const teamMeta = (meta?.[teamId] && typeof meta[teamId] === 'object') ? meta[teamId] : {};
+  const m = teamMeta[komNr] || null;
+
+  // charts from frontend (optional)
+  const donutUrl = req.body?.donutPngDataUrl;
+  const usersUrl = req.body?.usersPngDataUrl;
+
+  function dataUrlToPngBuffer(url) {
+    if (!url || typeof url !== 'string') return null;
+    if (!url.startsWith('data:image/png;base64,')) return null;
+    const b64 = url.split(',')[1];
+    if (!b64 || b64.length > 8_000_000) return null; // basic size guard
+    return Buffer.from(b64, 'base64');
+  }
+
+  const donutBuf = dataUrlToPngBuffer(donutUrl);
+  const usersBuf = dataUrlToPngBuffer(usersUrl);
+
+  // Stream PDF
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Anlage_${komNr}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  doc.pipe(res);
+
+  const now = new Date();
+
+  // Title
+  doc.fontSize(18).text(`Anlage ${komNr}`, { align: 'left' });
+  doc.moveDown(0.2);
+  doc.fontSize(10).text(`Team: ${teamId} · Exportiert am: ${now.toLocaleString('de-CH')}`);
+  doc.moveDown(0.6);
+
+  // Archive info
+  if (m?.archived) {
+    doc.fontSize(10).text(`Archiviert: Ja · am ${new Date(m.archivedAt).toLocaleString('de-CH')} · von ${m.archivedBy || '-'}`);
+    doc.moveDown(0.6);
+  }
+
+  // Summary
+  doc.fontSize(12).text('Zusammenfassung', { underline: true });
+  doc.moveDown(0.3);
+  doc.fontSize(10).text(`Total Stunden: ${(Number(rec.totalHours || 0)).toFixed(1).replace('.', ',')} h`);
+  doc.fontSize(10).text(`Letzte Aktivität: ${rec.lastActivity ? rec.lastActivity : '–'}`);
+  doc.moveDown(0.6);
+
+  // Charts
+  doc.fontSize(12).text('Charts', { underline: true });
+  doc.moveDown(0.3);
+
+  const startX = doc.x;
+  const yBefore = doc.y;
+
+  if (donutBuf) {
+    doc.image(donutBuf, startX, yBefore, { width: 240 });
+  } else {
+    doc.fontSize(9).text('Donut Chart nicht vorhanden (Frontend hat kein PNG gesendet).');
+  }
+
+  if (usersBuf) {
+    doc.image(usersBuf, startX + 260, yBefore, { width: 260 });
+  } else {
+    doc.fontSize(9).text('', startX + 260, yBefore);
+    doc.fontSize(9).text('User Chart nicht vorhanden.', startX + 260, yBefore + 12);
+  }
+
+  doc.moveDown(16); // push below charts
+
+  // Operations table (from index.byOperation)
+  doc.fontSize(12).text('Stunden nach Tätigkeit', { underline: true });
+  doc.moveDown(0.3);
+
+  const ops = Object.entries(rec.byOperation || {})
+    .map(([key, hours]) => ({ key, hours: Number(hours) || 0 }))
+    .filter((x) => x.hours > 0)
+    .sort((a, b) => b.hours - a.hours);
+
+  ops.forEach((o) => {
+    doc.fontSize(10).text(`${o.key}: ${o.hours.toFixed(1).replace('.', ',')} h`);
+  });
+
+  doc.moveDown(0.6);
+
+  // Users totals (from index.byUser)
+  doc.fontSize(12).text('Stunden nach Mitarbeiter', { underline: true });
+  doc.moveDown(0.3);
+
+  const users = Object.entries(rec.byUser || {})
+    .map(([u, h]) => ({ u, h: Number(h) || 0 }))
+    .filter((x) => x.h > 0)
+    .sort((a, b) => b.h - a.h);
+
+  users.forEach((u) => {
+    doc.fontSize(10).text(`${u.u}: ${u.h.toFixed(1).replace('.', ',')} h`);
+  });
+
+  doc.moveDown(0.8);
+
+  // Daily ledger appendix (server-side truth)
+  doc.fontSize(12).text('Tagesjournal (Audit)', { underline: true });
+  doc.moveDown(0.3);
+  doc.fontSize(9).text('Pro Mitarbeiter die Tages-Summen für diese Anlage.');
+
+  const ledgerByUser = ledgerRec?.byUser || {};
+  const userNames = Object.keys(ledgerByUser).sort((a, b) => a.localeCompare(b, 'de'));
+
+  for (const uname of userNames) {
+    const byDate = ledgerByUser[uname]?.byDate || {};
+    const dates = Object.keys(byDate).sort(); // ascending
+
+    if (dates.length === 0) continue;
+
+    // page break guard
+    if (doc.y > 760) doc.addPage();
+
+    doc.moveDown(0.5);
+    doc.fontSize(10).text(uname, { underline: true });
+
+    for (const dk of dates) {
+      const h = Number(byDate[dk]) || 0;
+      if (!(h > 0)) continue;
+      if (doc.y > 780) doc.addPage();
+      doc.fontSize(9).text(`${dk}: ${h.toFixed(1).replace('.', ',')} h`);
+    }
+  }
+
+  doc.end();
+});
+
+
 
 // ---- Admin: Anlagen summary (global) ----
 // GET /api/admin/anlagen-summary?teamId=montage&status=active|archived|all&search=123
@@ -1253,6 +1611,52 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     return res.status(500).json({ ok: false, error: 'Could not persist submission index.json. Submission rejected.' });
   }
 
+
+  // ---- Update Anlagen global index + daily ledger (idempotent by user-month snapshot) ----
+    try {
+      const teamId = String(req.user.teamId || '');   // important for multi-team future
+      const username = req.user.username;
+
+      if (teamId) {
+        const year = payload.year;
+        const monthIndex = payload.monthIndex;
+
+        const oldSnap = readAnlagenSnapshot(username, year, monthIndex);
+        const newSnap = extractAnlagenSnapshotFromPayload(payloadToSave, username);
+
+        const index = readAnlagenIndex();
+        const ledger = readAnlagenLedger();
+
+        const touched = new Set([
+          ...Object.keys(oldSnap || {}),
+          ...Object.keys(newSnap || {}),
+        ]);
+
+        // subtract old
+        if (oldSnap) {
+          applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap: oldSnap, sign: -1 });
+        }
+
+        // add new
+        applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap: newSnap, sign: +1 });
+
+        // recompute lastActivity reliably for touched komNrs
+        recomputeLastActivitiesForTeam(index, ledger, teamId, Array.from(touched));
+
+        // persist
+        writeAnlagenIndex(index);
+        writeAnlagenLedger(ledger);
+        writeAnlagenSnapshot(username, year, monthIndex, newSnap);
+      }
+    } catch (e) {
+      console.error('Anlagen update failed:', e);
+      // Decide policy:
+      // - If you want "submission still accepted even if Anlagen fails", keep it non-fatal.
+      // - If you want strict correctness, return 500 and reject.
+    }
+
+
+
   res.json({
     ok: true,
     message: `Month ${payload.monthLabel} received and saved as ${fileName}`,
@@ -1434,6 +1838,8 @@ app.get(
     });
   }
 );
+
+
 
 
 // ---- Admin: lock/unlock a week ----
