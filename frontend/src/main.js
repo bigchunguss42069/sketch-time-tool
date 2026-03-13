@@ -46,6 +46,14 @@ let selectedKomNr = null;
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
 const anlagenDetailCache = new Map();  // key: komNr -> detail
 
+// --- Admin: Personnel tab elements ---
+const adminAbsenceListEl = document.getElementById('adminAbsenceList');
+const adminAbsenceStatusFilterEl = document.getElementById('adminAbsenceStatusFilter');
+const adminAbsenceSearchEl = document.getElementById('adminAbsenceSearch');
+const adminPersonnelRefreshBtn = document.getElementById('adminPersonnelRefreshBtn');
+const adminKontenGridEl = document.getElementById('adminKontenGrid');
+
+
 
 
 
@@ -70,6 +78,8 @@ const overtimeYearUeZ1El = document.getElementById('overtimeYearUeZ1');
 const overtimeYearUeZ2El = document.getElementById('overtimeYearUeZ2');
 const overtimeYearUeZ3El = document.getElementById('overtimeYearUeZ3');
 const overtimeYearVorarbeitEl = document.getElementById('overtimeYearVorarbeit');
+
+const overtimeYearSourceEl = document.getElementById('overtimeYearSource');
 
 // Ferien-Card (Jahr)
 const vacationYearSummaryEl = document.getElementById('vacationYearSummary');
@@ -245,6 +255,86 @@ function authFetch(path, options = {}) {
 }
 
 
+// Fetch official konto values and transmitted months from server
+async function loadMyKontoFromServer() {
+  try {
+    const token = getAuthToken();
+    if (!token) return null;
+    
+    const res = await authFetch('/api/konten/me');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.ok) return null;
+    
+    return {
+      konto: data.konto,
+      transmittedMonths: new Set(data.transmittedMonths || [])
+    };
+  } catch (e) {
+    console.error('Failed to load konto from server:', e);
+    return null;
+  }
+}
+
+// Check if a date falls within a transmitted month
+function isDateInTransmittedMonth(dateKey, transmittedMonths) {
+  // dateKey format: "2025-01-15"
+  // transmittedMonths format: Set of "2025-01", "2025-02", etc.
+  const monthKey = dateKey.slice(0, 7); // "2025-01"
+  return transmittedMonths.has(monthKey);
+}
+
+
+// Replace local dayStore + pikettStore for a given month with the server-authoritative saved payload
+function applySavedMonthPayloadToLocalStores(savedPayload) {
+  if (!savedPayload || typeof savedPayload !== 'object') return;
+
+  const year = Number(savedPayload.year);
+  const monthIndex = Number(savedPayload.monthIndex);
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) return;
+
+  // 1) Overwrite dayStore for that month
+  Object.keys(dayStore).forEach((dateKey) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() === year && d.getMonth() === monthIndex) {
+      delete dayStore[dateKey];
+    }
+  });
+
+  const daysObj =
+    savedPayload.days && typeof savedPayload.days === 'object'
+      ? savedPayload.days
+      : {};
+
+  Object.entries(daysObj).forEach(([dateKey, dayData]) => {
+    dayStore[dateKey] = dayData;
+  });
+
+  saveToStorage();
+
+  // 2) Overwrite pikettStore for that month
+  const newPikett = Array.isArray(savedPayload.pikett) ? savedPayload.pikett : [];
+
+  pikettStore = pikettStore.filter((p) => {
+    if (!p || !p.date) return true;
+    const d = new Date(String(p.date).slice(0, 10) + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) return true;
+    return !(d.getFullYear() === year && d.getMonth() === monthIndex);
+  });
+
+  newPikett.forEach((p) => {
+    if (!p || !p.date) return;
+    pikettStore.push({
+      ...p,
+      isOvertime3: !!(p.isOvertime3 ?? p.overtime3),
+    });
+  });
+
+  savePikettStore();
+}
+
+
 // --- Pikett localStorage helpers --- //
 
 function loadPikettStore() {
@@ -274,31 +364,39 @@ function loadAbsenceRequests() {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((item) => ({
-      id:
-        item.id ||
-        'abs-' +
-          Date.now().toString(36) +
-          Math.random().toString(36).slice(2, 8),
-      type: (item.type || '').toLowerCase(),
-      from: item.from || '',
-      to: item.to || '',
-      days:
-        typeof item.days === 'number' && !Number.isNaN(item.days)
-          ? item.days
-          : undefined,
-      comment: item.comment || '',
-      status:
-        item.status === 'accepted' ||
-        item.status === 'rejected' ||
-        item.status === 'pending'
-          ? item.status
-          : 'pending',
-    }));
+
+    return parsed.map((item) => {
+      const st = String(item.status || '').toLowerCase();
+      const allowed = new Set([
+        'pending',
+        'accepted',
+        'rejected',
+        'cancel_requested',
+        'cancelled',
+      ]);
+
+      return {
+        id:
+          item.id ||
+          'abs-' +
+            Date.now().toString(36) +
+            Math.random().toString(36).slice(2, 8),
+        type: (item.type || '').toLowerCase(),
+        from: item.from || '',
+        to: item.to || '',
+        days:
+          typeof item.days === 'number' && !Number.isNaN(item.days)
+            ? item.days
+            : undefined,
+        comment: item.comment || '',
+        status: allowed.has(st) ? st : 'pending',
+      };
+    });
   } catch {
     return [];
   }
 }
+
 
 function saveAbsenceRequests() {
   localStorage.setItem(ABSENCE_STORAGE_KEY, JSON.stringify(absenceRequests));
@@ -757,73 +855,48 @@ if (pikettAddBtn) {
 }
 
 // Abwesenheits-Antrag speichern
-if (absenceSaveBtn) {
-  absenceSaveBtn.addEventListener('click', () => {
-    if (!absenceTypeEl || !absenceFromEl || !absenceToEl) return;
 
-    const type = absenceTypeEl.value.trim().toLowerCase();
+if (absenceSaveBtn) {
+  absenceSaveBtn.addEventListener('click', async () => {
+    const type = absenceTypeEl.value;
     const from = absenceFromEl.value;
     const to = absenceToEl.value;
-    const daysRaw = absenceDaysEl ? absenceDaysEl.value.trim() : '';
-    const comment = absenceCommentEl
-      ? absenceCommentEl.value.trim()
-      : '';
+    const days = absenceDaysEl.value ? parseFloat(absenceDaysEl.value) : null;
+    const comment = absenceCommentEl.value.trim();
 
-    // Minimale Validierung: ohne Typ/Von/Bis kein Eintrag
     if (!type || !from || !to) {
+      alert('Bitte Typ, Von und Bis ausfüllen.');
       return;
     }
 
-    let fromDate = new Date(from);
-    let toDate = new Date(to);
-    if (
-      Number.isNaN(fromDate.getTime()) ||
-      Number.isNaN(toDate.getTime())
-    ) {
-      return;
-    }
+    const localId = `abs-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
-    // Falls "Bis" vor "Von" liegt, still tauschen
-    if (toDate < fromDate) {
-      const tmp = fromDate;
-      fromDate = toDate;
-      toDate = tmp;
-    }
+    try {
+      const res = await authFetch('/api/absences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: localId, type, from, to, days, comment }),
+      });
 
-    let daysValue;
-    if (daysRaw) {
-      let num = parseFloat(daysRaw.replace(',', '.'));
-      if (!Number.isNaN(num) && num > 0) {
-        // auf 0.25 runden
-        num = Math.round(num * 4) / 4;
-        daysValue = num;
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Absenz konnte nicht gespeichert werden');
       }
+
+      // Reset form
+      absenceFromEl.value = '';
+      absenceToEl.value = '';
+      absenceDaysEl.value = '';
+      absenceCommentEl.value = '';
+
+      await syncMyAbsencesFromServer();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Fehler beim Speichern');
     }
-
-    const request = {
-      id: createAbsenceId(),
-      type,
-      from: fromDate.toISOString().slice(0, 10),
-      to: toDate.toISOString().slice(0, 10),
-      days: daysValue,
-      comment,
-      status: 'pending',
-    };
-
-    absenceRequests.push(request);
-    saveAbsenceRequests();
-
-    // Formular leeren
-    absenceTypeEl.value = '';
-    absenceFromEl.value = '';
-    absenceToEl.value = '';
-    if (absenceDaysEl) absenceDaysEl.value = '';
-    if (absenceCommentEl) absenceCommentEl.value = '';
-
-    // Dashboard-Karten aktualisieren
-    updateOvertimeYearCard();
   });
 }
+
 
 
 // Update Pikett entries when the user edits fields
@@ -967,46 +1040,33 @@ document.addEventListener('click', (event) => {
 });
 
 // Abwesenheits-Antrag löschen – mit Bestätigungszeile
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
-  // 1) Klick auf "Löschen" → Bestätigungszeile einblenden
-  if (target.classList.contains('absence-delete-btn')) {
-    const item = target.closest('.absence-item');
-    if (!item) return;
+  if (target.classList.contains('absence-cancel-btn')) {
+  const item = target.closest('.absence-item');
+  if (!item) return;
 
-    // Wenn schon im Bestätigungsmodus, nichts tun
-    if (item.classList.contains('absence-confirm-mode')) {
-      return;
-    }
+  const id = item.dataset.absenceId;
+  if (!id) return;
 
-    item.classList.add('absence-confirm-mode');
+  try {
+    const res = await authFetch(`/api/absences/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Aktion nicht möglich');
 
-    const row = document.createElement('div');
-    row.className = 'absence-confirm-row';
-
-    const text = document.createElement('span');
-    text.className = 'absence-confirm-text';
-    text.textContent = 'Abwesenheit wirklich löschen?';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'absence-confirm-cancel';
-    cancelBtn.textContent = 'Abbrechen';
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'absence-confirm-delete';
-    deleteBtn.textContent = 'Löschen';
-
-    row.appendChild(text);
-    row.appendChild(cancelBtn);
-    row.appendChild(deleteBtn);
-
-    item.appendChild(row);
-    return;
+    await syncMyAbsencesFromServer();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || 'Fehler');
   }
+  return;
+}
+
 
   // 2) "Abbrechen" in der Bestätigungszeile
   if (target.classList.contains('absence-confirm-cancel')) {
@@ -1020,21 +1080,29 @@ document.addEventListener('click', (event) => {
     return;
   }
 
-  // 3) Endgültig löschen
-  if (target.classList.contains('absence-confirm-delete')) {
-    const item = target.closest('.absence-item');
-    if (!item) return;
+    // 3) Endgültig löschen (Stornieren) in der Bestätigungszeile
+    if (target.classList.contains('absence-confirm-delete')) {
+      const item = target.closest('.absence-item');
+      if (!item) return;
 
-    const id = item.dataset.absenceId;
-    if (!id) return;
+      const id = item.dataset.absenceId;
+      if (!id) return;
 
-    const index = absenceRequests.findIndex((r) => r.id === id);
-    if (index === -1) return;
+      try {
+        const res = await authFetch(`/api/absences/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Stornieren nicht möglich');
 
-    absenceRequests.splice(index, 1);
-    saveAbsenceRequests();
-    updateOvertimeYearCard(); // rendert Liste neu + Ferienstand
-  }
+        // Refresh local state from server (single source of truth)
+        await syncMyAbsencesFromServer();
+      } catch (e) {
+        console.error(e);
+        alert(e.message || 'Fehler beim Stornieren');
+      }
+      return;
+    }
+
+
 });
 
 if (adminMonthPrevBtn) {
@@ -1114,6 +1182,23 @@ if (dashboardTransmitBtn) {
 
           // Sync-Status direkt aktualisieren
            loadSyncStatus();
+
+           // If the backend preserved locked days (or otherwise normalized the payload),
+          // sync the local stores to the authoritative saved payload to keep user/admin views consistent.
+          if (data.savedPayload) {
+            applySavedMonthPayloadToLocalStores(data.savedPayload);
+
+            // Optional: if locks were involved, you can surface this to the user later (toast/banner)
+            if (data.lockInfo && data.lockInfo.preservedDaysCount > 0) {
+              console.info('Hinweis: Server hat gesperrte Tage beibehalten:', data.lockInfo);
+            }
+
+            updateDashboardForCurrentMonth();
+            renderPikettList();
+            updatePikettMonthTotal();
+            updateOvertimeYearCard();
+          }
+
       })
       .catch((err) => {
         console.error(err);
@@ -1249,6 +1334,7 @@ document.addEventListener('click', (e) => {
       refreshDrawerHeight(stillThere);
     });
 });
+
 
 
 
@@ -1603,6 +1689,224 @@ function buildPayloadForCurrentDashboardMonth() {
 }
 
 
+async function loadAdminPersonnel() {
+  if (!adminAbsenceListEl || !adminKontenGridEl) return;
+
+  const status = adminAbsenceStatusFilterEl ? adminAbsenceStatusFilterEl.value : 'pending';
+  const search = adminAbsenceSearchEl ? adminAbsenceSearchEl.value.trim().toLowerCase() : '';
+
+  adminAbsenceListEl.innerHTML = 'Lade…';
+  adminKontenGridEl.innerHTML = 'Lade…';
+
+  try {
+    const [absRes, kontRes] = await Promise.all([
+      authFetch(`/api/admin/absences?status=${encodeURIComponent(status)}`),
+      authFetch('/api/admin/konten'),
+    ]);
+
+    const absData = await absRes.json();
+    const kontData = await kontRes.json();
+
+    if (!absRes.ok || !absData.ok) throw new Error(absData.error || 'Absenzen konnten nicht geladen werden');
+    if (!kontRes.ok || !kontData.ok) throw new Error(kontData.error || 'Konten konnten nicht geladen werden');
+
+    let absences = Array.isArray(absData.absences) ? absData.absences : [];
+    if (search) {
+      absences = absences.filter((a) => {
+        const hay = `${a.username || ''} ${a.type || ''} ${a.comment || ''}`.toLowerCase();
+        return hay.includes(search);
+      });
+    }
+
+    renderAdminAbsenceList(absences);
+    renderAdminKontenGrid(Array.isArray(kontData.users) ? kontData.users : []);
+  } catch (e) {
+    console.error(e);
+    adminAbsenceListEl.innerHTML = `<div class="admin-error">${e.message || 'Fehler'}</div>`;
+    adminKontenGridEl.innerHTML = `<div class="admin-error">${e.message || 'Fehler'}</div>`;
+  }
+}
+
+function renderAdminAbsenceList(absences) {
+  adminAbsenceListEl.innerHTML = '';
+
+  if (!absences.length) {
+    adminAbsenceListEl.innerHTML = '<div class="admin-empty">Keine Einträge.</div>';
+    return;
+  }
+
+  absences.forEach((a) => {
+    const item = document.createElement('div');
+    item.className = 'admin-absence-item';
+
+    const top = document.createElement('div');
+    top.className = 'admin-absence-top';
+
+    const title = document.createElement('div');
+    title.className = 'admin-absence-title';
+    title.textContent = `${a.username} · ${a.type}`;
+
+    const badge = document.createElement('span');
+    badge.className = `absence-status-badge ${a.status}`;
+    const statusText = {
+    pending: 'Offen',
+    accepted: 'Akzeptiert',
+    rejected: 'Abgelehnt',
+    cancel_requested: 'Storno angefragt',
+    cancelled: 'Storniert',
+    };
+
+    badge.textContent = statusText[String(a.status || '').toLowerCase()] || 'Offen';
+
+
+    top.appendChild(title);
+    top.appendChild(badge);
+
+    const meta = document.createElement('div');
+    meta.className = 'admin-absence-meta';
+    meta.textContent = `${a.from} → ${a.to}` + (a.days != null ? ` · ${a.days} Tage` : '');
+
+    const comment = document.createElement('div');
+    comment.className = 'admin-absence-comment';
+    comment.textContent = a.comment || '';
+
+    item.appendChild(top);
+    item.appendChild(meta);
+    if (a.comment) item.appendChild(comment);
+
+    if (a.status === 'pending') {
+      const actions = document.createElement('div');
+      actions.className = 'admin-absence-actions';
+
+      const acceptBtn = document.createElement('button');
+      acceptBtn.type = 'button';
+      acceptBtn.className = 'admin-absence-accept';
+      acceptBtn.textContent = 'Akzeptieren';
+      acceptBtn.dataset.username = a.username;
+      acceptBtn.dataset.absenceId = a.id;
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.type = 'button';
+      rejectBtn.className = 'admin-absence-reject';
+      rejectBtn.textContent = 'Ablehnen';
+      rejectBtn.dataset.username = a.username;
+      rejectBtn.dataset.absenceId = a.id;
+
+      actions.appendChild(acceptBtn);
+      actions.appendChild(rejectBtn);
+      item.appendChild(actions);
+    }
+
+    if (a.status === 'cancel_requested') {
+      const actions = document.createElement('div');
+      actions.className = 'admin-absence-actions';
+
+      const approveCancel = document.createElement('button');
+      approveCancel.type = 'button';
+      approveCancel.className = 'admin-absence-cancel-approve';
+      approveCancel.textContent = 'Storno genehmigen';
+      approveCancel.dataset.username = a.username;
+      approveCancel.dataset.absenceId = a.id;
+
+      const denyCancel = document.createElement('button');
+      denyCancel.type = 'button';
+      denyCancel.className = 'admin-absence-cancel-deny';
+      denyCancel.textContent = 'Storno ablehnen';
+      denyCancel.dataset.username = a.username;
+      denyCancel.dataset.absenceId = a.id;
+
+      actions.appendChild(approveCancel);
+      actions.appendChild(denyCancel);
+      item.appendChild(actions);
+    }
+
+
+    adminAbsenceListEl.appendChild(item);
+  });
+}
+
+
+
+function renderAdminKontenGrid(rows) {
+  if (!adminKontenGridEl) return;
+
+  adminKontenGridEl.innerHTML = '';
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    adminKontenGridEl.innerHTML = `<div class="admin-empty">Keine Konten-Daten.</div>`;
+    return;
+  }
+
+  const toNum = (v, fallback = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  // Use the same year context as the admin month navigation (so the admin can switch month/year)
+  const { year: selectedYear } = getCurrentAdminMonthInfo();
+  const yearCfg = getYearConfig(selectedYear);
+  const vorarbeitRequired = Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
+
+  rows.forEach(({ username, konto }) => {
+    const rawUeZ1 = toNum(konto?.ueZ1, 0);
+
+    // Backend already maintains this field per user for Vorarbeit logic:
+    const posByYear = konto?.ueZ1PositiveByYear || {};
+    const positiveThisYear = Math.max(0, toNum(posByYear[String(selectedYear)], 0));
+
+    // Same rule as your user-year card: consume yearly positive hours into Vorarbeit first
+    const vorarbeitFilled = Math.min(vorarbeitRequired, positiveThisYear);
+    const ueZ1AfterVorarbeit = rawUeZ1 - vorarbeitFilled;
+
+    const card = document.createElement('div');
+    card.className = 'admin-konto-card';
+
+    card.innerHTML = `
+      <div class="admin-konto-header">
+        <div class="admin-konto-user">${username}</div>
+      </div>
+
+      <div class="admin-konto-metrics">
+        <div class="admin-konto-metric-row">
+          <div class="admin-konto-metric-label">ÜZ1 (nach Vorarbeit, ${selectedYear})</div>
+          <div class="admin-konto-metric-value">${formatHoursSigned(ueZ1AfterVorarbeit)}</div>
+        </div>
+        <div class="admin-konto-metric-row">
+          <div class="admin-konto-metric-label">Vorarbeit (${selectedYear})</div>
+          <div class="admin-konto-metric-value">${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}</div>
+        </div>
+      </div>
+
+      <div class="admin-konto-grid">
+        <label>ÜZ1 (roh)
+          <input class="admin-konto-input" data-field="ueZ1" type="number" step="0.1" value="${rawUeZ1}">
+        </label>
+        <label>ÜZ2
+          <input class="admin-konto-input" data-field="ueZ2" type="number" step="0.1" value="${toNum(konto?.ueZ2, 0)}">
+        </label>
+        <label>ÜZ3
+          <input class="admin-konto-input" data-field="ueZ3" type="number" step="0.1" value="${toNum(konto?.ueZ3, 0)}">
+        </label>
+        <label>Ferien
+          <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${toNum(konto?.vacationDays, 0)}">
+        </label>
+        <label>Ferien/Jahr
+          <input class="admin-konto-input" data-field="vacationDaysPerYear" type="number" step="1" value="${toNum(konto?.vacationDaysPerYear, 21)}">
+        </label>
+      </div>
+
+      <div class="admin-konto-actions">
+        <button type="button" class="admin-konto-save" data-username="${username}">Speichern</button>
+      </div>
+    `;
+
+    adminKontenGridEl.appendChild(card);
+  });
+}
+
+
+
+
 // --- Abwesenheiten-Helper: Tage pro Jahr berechnen & Liste rendern --- //
 
 function datesOverlapYear(fromDate, toDate, year) {
@@ -1829,80 +2133,68 @@ function renderAbsenceListForCurrentYear() {
     const statusRow = document.createElement('div');
     statusRow.className = 'absence-status-row';
 
-    const statusSelect = document.createElement('select');
-    statusSelect.className = 'absence-status-select';
-    statusSelect.dataset.absenceId = req.id;
-
-    const optPending = document.createElement('option');
-    optPending.value = 'pending';
-    optPending.textContent = 'Offen';
-
-    const optAccepted = document.createElement('option');
-    optAccepted.value = 'accepted';
-    optAccepted.textContent = 'Akzeptiert';
-
-    const optRejected = document.createElement('option');
-    optRejected.value = 'rejected';
-    optRejected.textContent = 'Abgelehnt';
-
-    statusSelect.appendChild(optPending);
-    statusSelect.appendChild(optAccepted);
-    statusSelect.appendChild(optRejected);
-    statusSelect.value =
-      req.status === 'accepted' || req.status === 'rejected'
-        ? req.status
-        : 'pending';
-
     const badge = document.createElement('span');
     badge.className = 'absence-status-badge';
-    if (statusSelect.value === 'pending') {
-      badge.classList.add('pending');
-      badge.textContent = 'Offen';
-    } else if (statusSelect.value === 'accepted') {
-      badge.classList.add('accepted');
-      badge.textContent = 'Akzeptiert';
-    } else {
-      badge.classList.add('rejected');
-      badge.textContent = 'Abgelehnt';
+
+    const st = String(req.status || 'pending').toLowerCase();
+    badge.classList.add(st);
+    badge.textContent =
+      st === 'accepted' ? 'Akzeptiert' :
+      st === 'rejected' ? 'Abgelehnt' :
+      st === 'cancel_requested' ? 'Storno angefragt' :
+      st === 'cancelled' ? 'Storniert' :
+      'Offen';
+
+    statusRow.appendChild(badge);
+
+    // Actions:
+    // pending  -> user can delete (stornieren)
+    // accepted -> user can request cancellation (storno anfragen)
+    if (st === 'pending') {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'absence-cancel-btn';
+    btn.textContent = 'Stornieren';
+    statusRow.appendChild(btn);
+   }
+
+
+    if (st === 'accepted') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'absence-cancel-btn';
+      btn.textContent = 'Storno anfragen';
+      statusRow.appendChild(btn);
     }
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'absence-delete-btn';
-    deleteBtn.dataset.absenceId = req.id;
-    deleteBtn.textContent = 'Löschen';
-
-    statusRow.appendChild(statusSelect);
-    statusRow.appendChild(badge);
-    statusRow.appendChild(deleteBtn);
-
+    // IMPORTANT: do NOT append deleteBtn outside the if-block
+    meta.appendChild(statusRow);
     container.appendChild(header);
     container.appendChild(meta);
-    container.appendChild(statusRow);
-
     absenceListEl.appendChild(container);
+
+
   });
 }
 
-// Geht alle Absenzen durch und setzt Ferien-Flags aus akzeptierten Ferien-Anträgen.
-// Entfernt dabei vorher alle "von Absenzen" gesetzten Ferien-Flags.
+// Setzt Ferien-Flags basierend auf akzeptierten Ferien-Anträgen
 function syncVacationFlagsFromAbsences() {
-  // 1) Alle "ferienFromAbsences" zurücksetzen
+  // 1) Alle ferien flags zurücksetzen
   Object.values(dayStore).forEach((dayData) => {
     if (!dayData.flags) {
       dayData.flags = {};
     }
-    if (typeof dayData.flags.ferienManual !== 'boolean') {
-      dayData.flags.ferienManual = !!dayData.flags.ferien;
-    }
-    dayData.flags.ferienFromAbsences = false;
+    dayData.flags.ferien = false;
   });
 
   // 2) Für jede akzeptierte Ferien-Absenz die passenden Tage markieren
   absenceRequests.forEach((request) => {
     const type = (request.type || '').toLowerCase();
     if (type !== 'ferien') return;
-    if (request.status !== 'accepted') return;
+
+    const st = String(request.status || '').toLowerCase();
+    if (!(st === 'accepted' || st === 'cancel_requested')) return;
+
     if (!request.from || !request.to) return;
 
     let fromDate = new Date(request.from);
@@ -1928,29 +2220,15 @@ function syncVacationFlagsFromAbsences() {
         if (!dayData.flags) {
           dayData.flags = {};
         }
-        if (typeof dayData.flags.ferienManual !== 'boolean') {
-          dayData.flags.ferienManual = !!dayData.flags.ferien;
-        }
-        dayData.flags.ferienFromAbsences = true;
+        dayData.flags.ferien = true;
       }
 
       cursor.setDate(cursor.getDate() + 1);
     }
   });
 
-  // 3) Sichtbares Ferien-Flag neu berechnen (Manual OR Absenz)
-  Object.values(dayStore).forEach((dayData) => {
-    if (!dayData.flags) {
-      dayData.flags = {};
-    }
-    const manual = !!dayData.flags.ferienManual;
-    const fromAbs = !!dayData.flags.ferienFromAbsences;
-    dayData.flags.ferien = manual || fromAbs;
-  });
-
   saveToStorage();
 }
-
 
 
 
@@ -2156,10 +2434,26 @@ function loadSyncStatus() {
 }
 
 
+async function syncMyAbsencesFromServer() {
+  try {
+    const res = await authFetch('/api/absences');
+    if (!res.ok) throw new Error('Absenzen konnten nicht geladen werden');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Absenzen konnten nicht geladen werden');
 
+    // Keep structure compatible with your existing UI
+    absenceRequests = Array.isArray(data.absences) ? data.absences : [];
+    saveAbsenceRequests();
 
+    // Will also sync ferienFromAbsences via syncVacationFlagsFromAbsences()
+    updateOvertimeYearCard();
+    updateDashboardWeekListForCurrentMonth();
+  } catch (e) {
+    console.error(e);
+  }
+}
 
-function updateOvertimeYearCard() {
+async function updateOvertimeYearCard() {
   if (
     !overtimeYearUeZ1El ||
     !overtimeYearUeZ2El ||
@@ -2168,202 +2462,92 @@ function updateOvertimeYearCard() {
   ) {
     return;
   }
-  // Ferien-Flags mit akzeptierten Ferien-Anträgen synchronisieren
+
+  // Keep existing side effect:
+  // accepted vacation absences still sync local "ferien" flags
   syncVacationFlagsFromAbsences();
 
   const { year: selectedYear } = getCurrentDashboardMonthInfo();
 
-  // Soll-Arbeitszeit pro Tag
-  const DAILY_SOLL = 8.0;
-
-  // pro Jahr:
-  // - net       = Summe aller (Über-/Unterstunden nach Ferienregel)
-  // - positive  = nur positive Anteile (für Vorarbeit)
-  const perYear = {}; // year -> { net, positive }
-
-  // --- 1) ÜZ1 + Ferien-Effekt aus dayStore berechnen (für Vorarbeit & Saldo ÜZ1) --- //
-  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
-    const d = new Date(dateKey);
-    if (Number.isNaN(d.getTime())) return;
-
-    const y = d.getFullYear();
-    if (!perYear[y]) {
-      perYear[y] = { net: 0, positive: 0 };
-    }
-
-    let dayTotalUeZ1 = 0;
-
-    // Spezialbuchungen (Regie/Fehler)
-    if (Array.isArray(dayData.specialEntries)) {
-      dayData.specialEntries.forEach((special) => {
-        if (!special) return;
-        const val = special.hours;
-        if (typeof val === 'number' && !Number.isNaN(val)) {
-          dayTotalUeZ1 += val;
-        }
-      });
-    }
-
-    // Kommissionsstunden
-    if (Array.isArray(dayData.entries)) {
-      dayData.entries.forEach((entry) => {
-        if (!entry || !entry.hours) return;
-        Object.values(entry.hours).forEach((val) => {
-          if (typeof val === 'number' && !Number.isNaN(val)) {
-            dayTotalUeZ1 += val;
-          }
-        });
-      });
-    }
-
-    // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
-    if (dayData.dayHours) {
-      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
-      [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === 'number' && !Number.isNaN(val)) {
-          dayTotalUeZ1 += val;
-        }
-      });
-    }
-
-    const flags = dayData.flags || {};
-    const isFerien = !!flags.ferien;
-
-    const hasAnyHours = dayTotalUeZ1 > 0;
-    const hasAnyFlag = Object.values(flags).some(Boolean);
-
-    // Komplett leerer Tag (keine Stunden, keine Flags) → ignorieren
-    if (!hasAnyHours && !hasAnyFlag) {
-      return;
-    }
-
-    let diff = 0;
-
-    if (isFerien) {
-      if (!hasAnyHours) {
-        // Reiner Ferientag → 8h Ferien, keine Über-/Unterzeit (nur für Vorarbeit/Saldo relevant)
-        diff = 0;
-      } else if (dayTotalUeZ1 < DAILY_SOLL) {
-        // Teil gearbeitet, Rest Ferien → keine Minusstunden
-        diff = 0;
-      } else {
-        // Mehr als 8h gearbeitet trotz Ferien → Überzeit 1
-        diff = dayTotalUeZ1 - DAILY_SOLL;
-      }
-    } else {
-      if (hasAnyHours) {
-        // normale Tage ohne Ferien: echte Über-/Unterzeit
-        diff = dayTotalUeZ1 - DAILY_SOLL;
-      } else {
-        diff = 0;
-      }
-    }
-
-    perYear[y].net += diff;
-    if (diff > 0) {
-      perYear[y].positive += diff;
-    }
-  });
-
-  // --- 2) Gesamt-ÜZ1 über alle Jahre + gefüllte Vorarbeit --- //
-  let ueZ1NetAllYears = 0;
-  let vorarbeitFilledAllYears = 0;
-
-  Object.keys(perYear).forEach((yearStr) => {
-    const y = Number(yearStr);
-    if (Number.isNaN(y)) return;
-
-    const data = perYear[y];
-    if (!data) return;
-
-    ueZ1NetAllYears += data.net;
-
-    const cfg = getYearConfig(y) || {};
-    const req = cfg.vorarbeitRequired || 0;
-    const filledYear = Math.min(Math.max(data.positive, 0), req);
-    vorarbeitFilledAllYears += filledYear;
-  });
-
-  const cfgSelected = getYearConfig(selectedYear) || {};
-  const vorarbeitRequiredSelected = cfgSelected.vorarbeitRequired || 0;
-  const ueZ1CarryIn = cfgSelected.ueZ1CarryIn || 0;
-  const ueZ2CarryIn = cfgSelected.ueZ2CarryIn || 0;
-  const ueZ3CarryIn = cfgSelected.ueZ3CarryIn || 0;
-
-  // ÜZ1-Lebenszeit-Saldo
-  const ueZ1Saldo =
-    ueZ1CarryIn + ueZ1NetAllYears - vorarbeitFilledAllYears;
-
-  // --- 3) ÜZ2 & ÜZ3 (lebenszeit) aus pikettStore --- //
-  let ueZ2RawAllYears = 0;
-  let ueZ3RawAllYears = 0;
-
-  pikettStore.forEach((entry) => {
-    if (!entry.date) return;
-    const d = new Date(entry.date);
-    if (Number.isNaN(d.getTime())) return;
-
-    const hours =
-      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
-        ? entry.hours
-        : 0;
-    if (hours <= 0) return;
-
-    if (entry.isOvertime3) {
-      ueZ3RawAllYears += hours;
-    } else {
-      ueZ2RawAllYears += hours;
-    }
-  });
-
-  const ueZ2Saldo = ueZ2CarryIn + ueZ2RawAllYears;
-  const ueZ3Saldo = ueZ3CarryIn + ueZ3RawAllYears;
-
-  // --- 4) Vorarbeit-Fortschritt nur für das aktuell ausgewählte Jahr --- //
-  const selectedYearData = perYear[selectedYear] || { positive: 0 };
-  const posSelected = selectedYearData.positive || 0;
-  const vorarbeitFilledSelected = Math.min(
-    Math.max(posSelected, 0),
-    vorarbeitRequiredSelected
-  );
-
-  // --- 5) Anzeige ÜZ-Salden --- //
-  overtimeYearUeZ1El.textContent = formatHoursSigned(ueZ1Saldo);
-  overtimeYearUeZ2El.textContent = formatHours(ueZ2Saldo);
-  overtimeYearUeZ3El.textContent = formatHours(ueZ3Saldo);
-
-  const vorarbeitFilledText = formatHours(vorarbeitFilledSelected);
-  const vorarbeitRequiredText = formatHours(vorarbeitRequiredSelected);
-  overtimeYearVorarbeitEl.textContent =
-    `${vorarbeitFilledText} / ${vorarbeitRequiredText}`;
-
-    // --- 6) Ferien-Card für das aktuell ausgewählte Jahr (Zählung über Ferien-Flags) --- //
-  if (vacationYearSummaryEl) {
-    // Verbrauch nur anhand der Ferien-Flags im Wochenplan (inkl. Feiertagslogik)
-    const usedVacationDaysSelected =
-      calculateUsedVacationDaysFromFlags(selectedYear);
-
-    const vacationDaysPerYear =
-      cfgSelected.vacationDaysPerYear || 21;
-    const vacationCarryInDays =
-      cfgSelected.vacationCarryInDays || 0;
-
-    const totalEntitlementDays =
-      vacationDaysPerYear + vacationCarryInDays;
-
-    const remainingDays =
-      totalEntitlementDays - usedVacationDaysSelected;
-
-    const remainingStr = formatDays(remainingDays);
-    const totalStr = formatDays(totalEntitlementDays);
-
-    vacationYearSummaryEl.textContent =
-      `${remainingStr} / ${totalStr} Tage`;
+  if (overtimeYearSourceEl) {
+    overtimeYearSourceEl.classList.remove('is-error');
+    overtimeYearSourceEl.textContent = 'Lade offiziellen Stand …';
   }
 
+  try {
+    const serverData = await loadMyKontoFromServer();
+    const konto = serverData?.konto;
 
-  // --- 7) Abwesenheiten-Liste aktualisieren --- //
-  renderAbsenceListForCurrentYear();
+    if (!konto) {
+      throw new Error('NO_KONTO_DATA');
+    }
+
+    const cfgSelected = getYearConfig(selectedYear) || {};
+    const vorarbeitRequired = Number(cfgSelected.vorarbeitRequired) || 0;
+    const vacationDaysPerYear = Number(cfgSelected.vacationDaysPerYear) || 21;
+
+    const officialUeZ1Raw = Number(konto.ueZ1) || 0;
+      const officialUeZ2 = Number(konto.ueZ2) || 0;
+      const officialUeZ3 = Number(konto.ueZ3) || 0;
+      const officialVacationDays = Number(konto.vacationDays) || 0;
+
+      const positiveForSelectedYear =
+        Number(konto.ueZ1PositiveByYear?.[String(selectedYear)]) || 0;
+
+      const vorarbeitFilled = Math.min(
+        Math.max(positiveForSelectedYear, 0),
+        vorarbeitRequired
+      );
+
+      const officialUeZ1AfterVorarbeit = officialUeZ1Raw - vorarbeitFilled;
+
+      overtimeYearUeZ1El.textContent = formatHoursSigned(officialUeZ1AfterVorarbeit);
+      overtimeYearUeZ2El.textContent = formatHours(officialUeZ2);
+      overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
+      overtimeYearVorarbeitEl.textContent =
+            `${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}`;
+
+    if (vacationYearSummaryEl) {
+      vacationYearSummaryEl.textContent =
+        `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
+    }
+
+    if (overtimeYearSourceEl) {
+      const updatedAt = konto.updatedAt ? new Date(konto.updatedAt) : null;
+
+      if (updatedAt && !Number.isNaN(updatedAt.getTime())) {
+        overtimeYearSourceEl.textContent =
+          `Offizieller Stand nach letzter Übertragung: ` +
+          updatedAt.toLocaleString('de-DE', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+      } else {
+        overtimeYearSourceEl.textContent =
+          'Offizieller Stand nach letzter Übertragung';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load official overtime card:', err);
+
+    overtimeYearUeZ1El.textContent = '–';
+    overtimeYearUeZ2El.textContent = '–';
+    overtimeYearUeZ3El.textContent = '–';
+    overtimeYearVorarbeitEl.textContent = '–';
+
+    if (vacationYearSummaryEl) {
+      vacationYearSummaryEl.textContent = '– / – Tage';
+    }
+
+    if (overtimeYearSourceEl) {
+      overtimeYearSourceEl.classList.add('is-error');
+      overtimeYearSourceEl.textContent =
+        'Offizieller Stand konnte nicht geladen werden.';
+    }
+  }
 }
 
 /**
@@ -2824,16 +3008,12 @@ function getOrCreateDayData(dateKey) {
 
   // Migration / Defaults:
   // - Alte Daten: flags.ferien -> als "manual" interpretieren
-  if (typeof data.flags.ferienManual !== 'boolean') {
-    data.flags.ferienManual = !!data.flags.ferien;
-  }
-  if (typeof data.flags.ferienFromAbsences !== 'boolean') {
-    data.flags.ferienFromAbsences = false;
-  }
+
+
 
   // Sichtbares Ferien-Flag: OR aus beiden Quellen
   data.flags.ferien =
-    !!data.flags.ferienManual || !!data.flags.ferienFromAbsences;
+  !!data.flags.ferien;
 
   if (typeof data.flags.schmutzzulage !== 'boolean') {
     data.flags.schmutzzulage = false;
@@ -3038,6 +3218,100 @@ if (anlagenRefreshBtn) {
 
 
 
+
+
+document.addEventListener('click', async (event) => {
+  const t = event.target;
+  if (!t || !t.classList) return;
+
+  if (t.classList.contains('admin-absence-accept') || t.classList.contains('admin-absence-reject')) {
+    const username = t.dataset.username;
+    const id = t.dataset.absenceId;
+    const status = t.classList.contains('admin-absence-accept') ? 'accepted' : 'rejected';
+
+    try {
+      const res = await authFetch('/api/admin/absences/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, id, status }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Entscheid fehlgeschlagen');
+      loadAdminPersonnel();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Fehler');
+    }
+  }
+
+  if (t.classList.contains('admin-konto-save')) {
+    const username = t.dataset.username;
+    const card = t.closest('.admin-konto-card');
+    if (!card) return;
+
+    const inputs = card.querySelectorAll('.admin-konto-input');
+    const body = { username };
+
+    inputs.forEach((inp) => {
+      const field = inp.dataset.field;
+      body[field] = Number(inp.value);
+    });
+
+    try {
+      const res = await authFetch('/api/admin/konten/set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      loadAdminPersonnel();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Fehler');
+    }
+  }
+// Admin: approve or deny cancellation request
+if (t.classList.contains('admin-absence-cancel-approve') || t.classList.contains('admin-absence-cancel-deny')) {
+  const username = t.dataset.username;
+  const id = t.dataset.absenceId;
+  const status = t.classList.contains('admin-absence-cancel-approve') ? 'cancelled' : 'accepted';
+
+  try {
+    const res = await authFetch('/api/admin/absences/decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, id, status }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Entscheid fehlgeschlagen');
+    
+    // Show feedback if vacation days were restored
+    if (data.vacationRestored > 0) {
+      alert(`Storno genehmigt. ${data.vacationRestored} Ferientag(e) wurden dem Konto von ${username} gutgeschrieben.`);
+    }
+    
+    loadAdminPersonnel();
+  } catch (e) {
+    console.error(e);
+    alert(e.message || 'Fehler');
+  }
+}
+});
+
+
+if (adminPersonnelRefreshBtn) {
+  adminPersonnelRefreshBtn.addEventListener('click', () => loadAdminPersonnel());
+}
+if (adminAbsenceStatusFilterEl) {
+  adminAbsenceStatusFilterEl.addEventListener('change', () => loadAdminPersonnel());
+}
+if (adminAbsenceSearchEl) {
+  adminAbsenceSearchEl.addEventListener('input', () => loadAdminPersonnel());
+}
+
+
+
 // --- Total hours for currently active day --- //
 
 function updateDayTotalFromInputs() {
@@ -3133,6 +3407,7 @@ if (loginForm) {
         updateUIForRole();
 
         reloadAllDataForCurrentUser();
+        syncMyAbsencesFromServer();
 
         if (userDisplayEl) {
           userDisplayEl.textContent = user.username || username;
@@ -3197,6 +3472,7 @@ function initAuthView() {
 
   // Load all local data for this user + render UI
   reloadAllDataForCurrentUser();
+  syncMyAbsencesFromServer();
   showApp();
 
   // Enforce default view based on stored role
@@ -3299,10 +3575,18 @@ function initAuthView() {
 }
 
 function operationLabel(opKey) {
+  if (!opKey) return '–';
+
+  // split specials (adapt if your backend keys differ)
+  if (opKey === '_specialRegie') return 'Spezial: Regie';
+  if (opKey === '_specialFehler') return 'Spezial: Fehler';
   if (opKey === '_special') return 'Spezial';
-  if (typeof OPTION_LABELS === 'object' && OPTION_LABELS[opKey]) return OPTION_LABELS[opKey];
-  return opKey || '–';
+
+  // normal options (option1..option6)
+  const label = OPTION_LABELS[opKey];
+  return label || opKey;
 }
+
 
 
 function debounce(fn, ms) {
@@ -3577,6 +3861,18 @@ async function exportAnlagePdf(komNr) {
   const detail = await detailRes.json();
   if (!detail.ok) throw new Error(detail.error || 'Detail konnte nicht geladen werden');
 
+  // Build labels once for PDF (and charts) so everything is consistent
+  const mappedOperations = (detail.operations || []).map((o) => ({
+    ...o,
+    label: operationLabel(o.key), // uses OPTION_LABELS + special buckets
+  }));
+
+  // Use a dedicated object so you don't accidentally mutate cached detail objects
+  const detailForPdf = {
+    ...detail,
+    operations: mappedOperations,
+  };
+
   // 2) Ledger (optional)
   let ledger = null;
   try {
@@ -3591,19 +3887,21 @@ async function exportAnlagePdf(komNr) {
     ledger = null; // optional -> PDF Export soll trotzdem gehen
   }
 
-  // 3) Charts als PNG (SVG -> PNG DataURL)
-  const donutSvg = buildDonutChartSvg(
-    detail.operations || [],
-    Number(detail.totalHours || 0),
-    { title: `Kom.-Nr. ${komNr}` }
-  );
+    const donutSvg = buildDonutChartSvg(detailForPdf.operations || [], Number(detailForPdf.totalHours || 0), {
+      title: `Kom.-Nr. ${komNr}`,
+      width: 500,   // ← Make it smaller and more square
+      height: 500,  // ← Square = no warp in PDF
+    });
 
-  const usersSvg = buildUsersBarsSvg(detail.users || [], {
-    title: 'Stunden nach Benutzer',
-  });
+    const usersSvg = buildUsersBarsSvg(detailForPdf.users || [], {
+  title: '',
+  width: 500,   // ← Match donut chart width
+  height: 500,  // ← Make it taller (square)
+});
 
-  const donutPngDataUrl = await svgToPngDataUrl(donutSvg, 520, 320);
-  const usersPngDataUrl = await svgToPngDataUrl(usersSvg, 520, 320);
+
+  const donutPngDataUrl = await svgToPngDataUrl(donutSvg, 1000, 1000);
+  const usersPngDataUrl = await svgToPngDataUrl(usersSvg, 1000, 1000);
 
   // 4) PDF Export Request (WICHTIG: resp variable!)
   const resp = await authFetch('/api/admin/anlagen-export-pdf', {
@@ -3612,7 +3910,7 @@ async function exportAnlagePdf(komNr) {
     body: JSON.stringify({
       komNr,
       teamId,
-      detail,
+      detail: detailForPdf,
       ledger,
       donutPngDataUrl,
       usersPngDataUrl,
@@ -3664,19 +3962,48 @@ function exportOpColor(opKey) {
     option4: '#76B7B2',
     option5: '#59A14F',
     option6: '#EDC948',
+    Regie:  '#B07AA1',
+    Fehler: '#FF9DA7',
     _special_regie: '#B07AA1',
     _special_fehler: '#FF9DA7',
     _special: '#9C755F',
   };
   return map[opKey] || '#9AA0A6';
 }
+function exportOpLabel(opKey) {
+  // If you already have OPTION_LABELS in your file, reuse it safely:
+  if (typeof OPTION_LABELS === 'object' && OPTION_LABELS && OPTION_LABELS[opKey]) {
+    return OPTION_LABELS[opKey];
+  }
+
+  const map = {
+    option1: 'Montage',
+    option2: 'Demontage',
+    option3: 'Transport',
+    option4: 'Inbetriebnahme',
+    option5: 'Abnahme',
+    option6: 'Werk',
+
+    _regie: 'Regie',
+    _fehler: 'Fehler',
+
+    // legacy / fallback variants
+    Regie: 'Regie',
+    Fehler: 'Fehler',
+    _special_regie: 'Regie',
+    _special_fehler: 'Fehler',
+    _special: 'Spezial',
+  };
+
+  return map[opKey] || opKey;
+}
 
 function buildDonutChartSvg(operations, totalHours, opts = {}) {
   const width = opts.width ?? 900;
   const height = opts.height ?? 420;
 
-  const cx = 170;
-  const cy = 200;
+  const cx = 160;
+  const cy = height / 2;
   const r = 110;
   const strokeW = 44;
   const circ = 2 * Math.PI * r;
@@ -3684,15 +4011,20 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
   const total = Number(totalHours || 0);
   const items = Array.isArray(operations) ? operations : [];
   const normalized = items
-    .map((o) => ({ key: String(o.key || ''), hours: Number(o.hours || 0) }))
-    .filter((o) => o.key && o.hours > 0);
+  .map((it) => ({
+    key: String(it?.key || '').trim(),
+    label: String(it?.label || '').trim(),   // NEW
+    hours: Number(it?.hours || 0),
+  }))
+  .filter((it) => it.key && it.hours > 0);
+
 
   // Empty state (still render something so PDF layout stays consistent)
   if (total <= 0 || normalized.length === 0) {
     return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
   <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
-  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Tätigkeit</text>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111"></text>
   <text x="40" y="110" font-family="Arial" font-size="16" fill="#666">Keine Daten vorhanden</text>
 </svg>`;
   }
@@ -3719,14 +4051,14 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
   }).join('');
 
   // Legend (right side)
-  const legendX = 360;
-  let legendY = 95;
+  const legendX = cx + 135;
+  let legendY = height / 2;
   const legend = normalized.map((it) => {
     const pct = (it.hours / total) * 100;
     const line = `
 <rect x="${legendX}" y="${legendY - 14}" width="14" height="14" fill="${exportOpColor(it.key)}"/>
 <text x="${legendX + 22}" y="${legendY - 2}" font-family="Arial" font-size="16" fill="#111">
-  ${escapeXml(it.key)}: ${it.hours.toFixed(1).replace('.', ',')} h (${pct.toFixed(0)}%)
+ ${escapeXml(it.label || exportOpLabel(it.key))}: ... ${it.hours.toFixed(1).replace('.', ',')} h
 </text>`;
     legendY += 26;
     return line;
@@ -3741,7 +4073,7 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
   <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
-  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Tätigkeit</text>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111"></text>
 
   ${slices}
   ${centerText}
@@ -3762,7 +4094,7 @@ function buildUsersBarsSvg(users, opts = {}) {
     return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
   <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>
-  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111">Stunden nach Benutzer</text>
+  <text x="40" y="60" font-family="Arial" font-size="22" fill="#111"></text>
   <text x="40" y="110" font-family="Arial" font-size="16" fill="#666">Keine Daten vorhanden</text>
 </svg>`;
   }
@@ -3799,9 +4131,9 @@ function buildUsersBarsSvg(users, opts = {}) {
     return `
 <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="#4E79A7"/>
 <text x="${x + barW / 2}" y="${chartY + chartH + 18}" text-anchor="middle"
-  font-family="Arial" font-size="12" fill="#111">${label}</text>
+  font-family="Arial" font-size="16" fill="#111">${label}</text>
 <text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle"
-  font-family="Arial" font-size="12" fill="#111">${hoursLabel}</text>`;
+  font-family="Arial" font-size="16" fill="#111">${hoursLabel}</text>`;
   }).join('');
 
   return `
@@ -3816,45 +4148,52 @@ function buildUsersBarsSvg(users, opts = {}) {
 </svg>`;
 }
 
-function svgToPngDataUrl(svgString, width, height) {
-  return new Promise((resolve, reject) => {
-    try {
-      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
+async function svgToPngDataUrl(svgString, outW, outH) {
+  // Ensure the SVG has a viewBox; otherwise browser may report 0x0 size
+  // (If your SVG builder already sets viewBox + width/height, this is still fine.)
+  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
 
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = url;
 
-          const ctx = canvas.getContext('2d');
-          // white background for PDF
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
+  // Wait until the image is decoded
+  if (img.decode) {
+    await img.decode();
+  } else {
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+  }
 
-          ctx.drawImage(img, 0, 0, width, height);
-          URL.revokeObjectURL(url);
+  // Use natural size (important for SVG)
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
 
-          resolve(canvas.toDataURL('image/png'));
-        } catch (e) {
-          URL.revokeObjectURL(url);
-          reject(e);
-        }
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('SVG image load failed'));
-      };
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
 
-      img.src = url;
-    } catch (e) {
-      reject(e);
-    }
-  });
+  const ctx = canvas.getContext('2d');
+
+  // White background (PDF-friendly)
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, outW, outH);
+
+  // Preserve aspect ratio: "contain" the source image inside the canvas
+  const scale = Math.min(outW / srcW, outH / srcH);
+  const drawW = Math.round(srcW * scale);
+  const drawH = Math.round(srcH * scale);
+  const dx = Math.round((outW - drawW) / 2);
+  const dy = Math.round((outH - drawH) / 2);
+
+  ctx.drawImage(img, dx, dy, drawW, drawH);
+
+  URL.revokeObjectURL(url);
+  return canvas.toDataURL('image/png');
 }
-
 
 
 
@@ -4936,18 +5275,12 @@ document.addEventListener('change', (event) => {
     dayData.flags = {};
   }
 
+// Ferien is now only set via absence requests, skip if somehow triggered
   if (flagKey === 'ferien') {
-    // Benutzer setzt/entfernt manuelles Ferien-Flag
-    if (typeof dayData.flags.ferienFromAbsences !== 'boolean') {
-      dayData.flags.ferienFromAbsences = false;
-    }
-    dayData.flags.ferienManual = target.checked;
-    dayData.flags.ferien =
-      !!dayData.flags.ferienManual || !!dayData.flags.ferienFromAbsences;
-  } else {
-    // andere Flags wie bisher
-    dayData.flags[flagKey] = target.checked;
+    return;
   }
+  
+  dayData.flags[flagKey] = target.checked;
 
   saveToStorage();
 });
@@ -5281,6 +5614,10 @@ adminInnerTabButtons.forEach((btn) => {
     } else if (target === 'anlagen') {
       loadAdminAnlagenSummary({ force: false });
     }
+    else if (target === 'personnel') {
+      loadAdminPersonnel();
+    }
+
   });
 });
 

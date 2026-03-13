@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "updatedAt": "2026-03-13T17:43:50.283Z",
+  "users": {
+    "demo": {
+      "teamId": "montage",
+      "ueZ1": 42,
+      "ueZ2": 0,
+      "ueZ3": 0,
+      "ueZ1PositiveByYear": {
+        "2026": 43
+      },
+      "vacationDays": 21,
+      "vacationDaysPerYear": 21,
+      "creditedYears": {
+        "2026": true
+      },
+      "updatedAt": "2026-03-13T17:43:49.118Z",
+      "updatedBy": "demo"
+    },
+    "chef": {
+      "teamId": "montage",
+      "ueZ1": 0,
+      "ueZ2": 0,
+      "ueZ3": 0,
+      "ueZ1PositiveByYear": {},
+      "vacationDays": 0,
+      "vacationDaysPerYear": 21,
+      "creditedYears": {},
+      "updatedAt": null,
+      "updatedBy": null
+    },
+    "markus": {
+      "teamId": "montage",
+      "ueZ1": 0,
+      "ueZ2": 0,
+      "ueZ3": 0,
+      "ueZ1PositiveByYear": {},
+      "vacationDays": 0,
+      "vacationDaysPerYear": 21,
+      "creditedYears": {},
+      "updatedAt": null,
+      "updatedBy": null
+    }
+  },
+  "snapshots": {
+    "demo": {
+      "2026-03": {
+        "ueZ1": 43,
+        "ueZ1Positive": 43,
+        "ueZ2": 0,
+        "ueZ3": 0,
+        "vacUsed": 0
+      }
+    },
+    "chef": {},
+    "markus": {}
+  }
+}

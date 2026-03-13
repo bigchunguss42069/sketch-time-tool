@@ -1,0 +1,50 @@
+{
+  "year": 2026,
+  "monthIndex": 2,
+  "monthLabel": "März 2026",
+  "days": {
+    "2026-03-09": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 5,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "123123",
+          "hours": {
+            "option1": 4,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    }
+  },
+  "pikett": [],
+  "absences": [],
+  "userId": "demo",
+  "teamId": "montage",
+  "receivedAt": "2026-03-13T14:12:06.852Z",
+  "totals": {
+    "kom": 4,
+    "dayHours": 5,
+    "pikett": 0,
+    "overtime3": 0,
+    "total": 9
+  }
+}

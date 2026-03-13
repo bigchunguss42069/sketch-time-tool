@@ -1146,6 +1146,16 @@ body {
   margin-bottom: 8px;
   color: #ffffff;
 }
+.dashboard-card-note {
+  margin: -2px 0 10px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.dashboard-card-note.is-error {
+  color: #fca5a5;
+}
 
 /* Each metric row: label + value right aligned */
 .dashboard-metric-row {
@@ -2794,7 +2804,7 @@ display: none;
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .anlagen-bar-track {
@@ -2830,4 +2840,209 @@ display: none;
   cursor: pointer;
   white-space: nowrap;
 
+}
+
+.admin-personnel-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.admin-personnel-search {
+  flex: 1;
+  min-width: 220px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+}
+
+.admin-personnel-status,
+.admin-personnel-refresh {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #bdb7b7;
+}
+
+.admin-personnel-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .admin-personnel-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-subheading {
+  margin: 6px 0 10px;
+}
+
+.admin-absence-list .admin-absence-item {
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #fff;
+}
+
+.admin-absence-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-absence-title {
+  font-weight: 600;
+  color: #000;
+}
+
+.admin-absence-meta {
+  margin-top: 6px;
+  opacity: 0.8;
+  font-size: 0.95em;
+  color: #000;
+}
+
+.admin-absence-comment {
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
+.admin-absence-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-absence-accept,
+.admin-absence-reject,
+.admin-konto-save {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  color: #000000;
+  font-weight: 500;
+   border: 1px solid rgba(0, 0, 0, 0.253);
+}
+
+.admin-konten-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 2fr));
+  gap: 12px;
+}
+
+.admin-konto-card {
+  border: 1px solid rgba(0,0,0,0.10);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+
+.admin-konto-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.admin-konto-user {
+  font-weight: 700;
+  color: #000000;
+}
+
+.admin-konto-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.admin-konto-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 1rem;
+  color: #000;
+}
+
+.admin-konto-input {
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(5, 5, 5, 0.308);
+  color: #000000;
+  
+}
+
+.admin-konto-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-error,
+.admin-empty {
+  opacity: 0.8;
+  padding: 10px 0;
+}
+
+.absence-status-badge.cancel_requested {
+  background-color: #f59e0b;
+  color: #fff;
+}
+
+.absence-status-badge.cancelled {
+  background-color: #fa535362;
+  color: #fff;
+}
+
+.absence-cancel-btn {
+  background: #ffecec;
+  color: #b00020;
+  border: 1px solid #f4bcbc;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.absence-cancel-btn:hover {
+  background: #ffd9d9;
+}
+
+.absence-cancel-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.admin-konto-metrics {
+  margin: 8px 0 10px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.10);
+  background: rgba(0,0,0,0.03);
+}
+
+.admin-konto-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  color: #000;
+}
+
+.admin-konto-metric-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #000000;
+}
+
+.admin-konto-metric-value {
+  font-weight: 400;
+  color: #000;
 }

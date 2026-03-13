@@ -29,6 +29,21 @@ const USERS = [
   { id: 'u3', username: 'markus',  password: 'markus',  role: 'user', teamId: 'montage' },
 ];
 
+const OPTION_LABELS = {
+  option1: 'Montage',
+  option2: 'Demontage',
+  option3: 'Transport',
+  option4: 'Inbetreibnahme',
+  option5: 'Abnahme',
+  option6: 'Werk',
+  _regie: 'Regie',
+  _fehler: 'Fehler',
+};
+
+function getOperationLabel(opKey) {
+  return OPTION_LABELS[opKey] || opKey;
+}
+
 const sessions = new Map(); // token -> userId
 
 function findUserByCredentials(username, password) {
@@ -180,7 +195,9 @@ function buildAcceptedAbsenceDaysSet(absencesArray, monthStartKey, monthEndKey) 
   if (!Array.isArray(absencesArray)) return set;
 
   absencesArray.forEach((a) => {
-    if (!a || a.status !== 'accepted') return;
+    const st = String(a.status || '').toLowerCase();
+    if (!a || (st !== 'accepted' && st !== 'cancel_requested')) return;
+
     if (!a.from || !a.to) return;
 
     const fromKey = String(a.from).slice(0, 10);
@@ -209,15 +226,102 @@ function buildAcceptedAbsenceDaysSet(absencesArray, monthStartKey, monthEndKey) 
 }
 
 
+function computeUeZ1NetForMonth(payload, year, monthIndex) {
+  const DAILY_SOLL = 8.0;
+  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+
+  let sum = 0;
+
+  for (const [dateKey, dayData] of Object.entries(daysObj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+
+    const d = new Date(dateKey + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) continue;
+
+    // Safety: ensure it belongs to the month being processed
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+
+    const flags = (dayData && dayData.flags) ? dayData.flags : {};
+    const isFerien = !!flags.ferien;
+
+    const dayTotal = computeNonPikettHours(dayData);
+    const hasAnyHours = dayTotal > 0;
+    const hasAnyFlag = Object.values(flags).some(Boolean);
+
+    // Empty day (no hours, no flags) -> ignore (no -8)
+    if (!hasAnyHours && !hasAnyFlag) continue;
+
+    let diff = 0;
+
+    if (isFerien) {
+      if (!hasAnyHours) diff = 0;
+      else if (dayTotal < DAILY_SOLL) diff = 0;
+      else diff = dayTotal - DAILY_SOLL;
+    } else {
+      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
+      else diff = 0;
+    }
+
+    sum += diff;
+  }
+
+  // Keep same style as totals (1 decimal)
+  return Math.round(sum * 10) / 10;
+}
+
+// Compute only POSITIVE ÜZ1 hours for the month (for Vorarbeit tracking)
+function computeUeZ1PositiveForMonth(payload, year, monthIndex) {
+  const DAILY_SOLL = 8.0;
+  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+
+  let positiveSum = 0;
+
+  for (const [dateKey, dayData] of Object.entries(daysObj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+
+    const d = new Date(dateKey + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) continue;
+
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+
+    const flags = (dayData && dayData.flags) ? dayData.flags : {};
+    const isFerien = !!flags.ferien;
+
+    const dayTotal = computeNonPikettHours(dayData);
+    const hasAnyHours = dayTotal > 0;
+    const hasAnyFlag = Object.values(flags).some(Boolean);
+
+    if (!hasAnyHours && !hasAnyFlag) continue;
+
+    let diff = 0;
+
+    if (isFerien) {
+      if (!hasAnyHours) diff = 0;
+      else if (dayTotal < DAILY_SOLL) diff = 0;
+      else diff = dayTotal - DAILY_SOLL;
+    } else {
+      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
+      else diff = 0;
+    }
+
+    // Only count positive hours
+    if (diff > 0) {
+      positiveSum += diff;
+    }
+  }
+
+  return Math.round(positiveSum * 10) / 10;
+}
+
 
 /**
  * Build month overview from a saved submission file.
  * Missing rule (matches your dashboard):
  * weekday is missing if totalHours==0 AND ferien==false AND no accepted absence on that day
  */
-function buildMonthOverviewFromSubmission(submission, year, monthIndex) {
+function buildMonthOverviewFromSubmission(submission, year, monthIndex, acceptedAbsenceDaysOverride) {
   const monthStart = new Date(year, monthIndex, 1);
-  const monthEnd = new Date(year, monthIndex + 1, 0); // last day in month
+  const monthEnd = new Date(year, monthIndex + 1, 0);
   const monthStartKey = formatDateKey(monthStart);
   const monthEndKey = formatDateKey(monthEnd);
 
@@ -226,7 +330,10 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex) {
     : {};
 
   const pikettByDate = buildPikettHoursByDate(submission?.pikett);
-  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(submission?.absences, monthStartKey, monthEndKey);
+
+  const acceptedAbsenceDays = (acceptedAbsenceDaysOverride instanceof Set)
+    ? acceptedAbsenceDaysOverride
+    : buildAcceptedAbsenceDaysSet(submission?.absences, monthStartKey, monthEndKey);
 
   let monthTotalHours = 0;
 
@@ -383,6 +490,217 @@ app.get('/health', (req, res) => {
 const BASE_DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(BASE_DATA_DIR)) {
   fs.mkdirSync(BASE_DATA_DIR, { recursive: true });
+}
+
+// ---- Absenzen (persistent, per user file) ----
+const ABSENCES_DIR = path.join(BASE_DATA_DIR, 'absences');
+if (!fs.existsSync(ABSENCES_DIR)) fs.mkdirSync(ABSENCES_DIR, { recursive: true });
+
+function absencesFilePath(username) {
+  const safe = String(username).replace(/[^a-zA-Z0-9_-]/g, '_');
+  return path.join(ABSENCES_DIR, `${safe}.json`);
+}
+
+function readUserAbsences(username) {
+  const list = safeReadJson(absencesFilePath(username), []);
+  return Array.isArray(list) ? list : [];
+}
+
+function writeUserAbsences(username, list) {
+  writeJsonAtomic(absencesFilePath(username), Array.isArray(list) ? list : []);
+}
+
+function findAcceptedAbsenceForDate(absences, dateKey) {
+  if (!Array.isArray(absences)) return null;
+
+  return (
+    absences.find((a) => {
+      const st = String(a.status || '').toLowerCase();
+      if (!a || (st !== 'accepted' && st !== 'cancel_requested')) return false;
+
+
+      const fromKey = String(a.from || '').slice(0, 10);
+      const toKey = String(a.to || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) return false;
+
+      const start = fromKey <= toKey ? fromKey : toKey;
+      const end = fromKey <= toKey ? toKey : fromKey;
+
+      return dateKey >= start && dateKey <= end;
+    }) || null
+  );
+}
+
+// ---- Konten (persistent, idempotent by user-month snapshot) ----
+const KONTEN_PATH = path.join(BASE_DATA_DIR, 'konten.json');
+
+function readKonten() {
+  const fallback = { version: 1, updatedAt: null, users: {}, snapshots: {} };
+  const data = safeReadJson(KONTEN_PATH, fallback);
+  if (!data || typeof data !== 'object') return fallback;
+  if (!data.users || typeof data.users !== 'object') data.users = {};
+  if (!data.snapshots || typeof data.snapshots !== 'object') data.snapshots = {};
+  if (!data.version) data.version = 1;
+  if (!('updatedAt' in data)) data.updatedAt = null;
+  return data;
+}
+
+function writeKonten(data) {
+  data.updatedAt = new Date().toISOString();
+  writeJsonAtomic(KONTEN_PATH, data);
+}
+
+function ensureKontenUser(data, username, teamId) {
+  if (!data.users[username]) {
+    data.users[username] = {
+      teamId: teamId || null,
+      ueZ1: 0,
+      ueZ2: 0,
+      ueZ3: 0,
+      ueZ1PositiveByYear: {},      // { "2025": 50, "2026": 20 } - positive hours per year for Vorarbeit
+      vacationDays: 0,
+      vacationDaysPerYear: 21,
+      creditedYears: {},
+      updatedAt: null,
+      updatedBy: null,
+    };
+  }
+  if (!data.snapshots[username]) data.snapshots[username] = {};
+  if (!data.users[username].creditedYears) data.users[username].creditedYears = {};
+  if (!data.users[username].ueZ1PositiveByYear) data.users[username].ueZ1PositiveByYear = {};
+  return data.users[username];
+}
+
+function kontenMonthKey(year, monthIndex) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`; // e.g. 2026-01
+}
+
+// Same holiday list as frontend (extend yearly as needed)
+const BERN_HOLIDAYS = {
+  2025: new Set(['2025-01-01','2025-01-02','2025-04-18','2025-04-20','2025-04-21','2025-05-29','2025-06-09','2025-08-01','2025-09-21','2025-12-25','2025-12-26']),
+  2026: new Set(['2026-01-01','2026-01-02','2026-04-03','2026-04-05','2026-04-06','2026-05-14','2026-05-25','2026-08-01','2026-09-20','2026-12-25','2026-12-26']),
+  2027: new Set(['2027-01-01','2027-01-02','2027-03-26','2027-03-28','2027-03-29','2027-05-06','2027-05-17','2027-08-01','2027-09-19','2027-12-25','2027-12-26']),
+};
+
+function isBernHolidayKey(dateKey) {
+  const year = Number(String(dateKey).slice(0, 4));
+  const set = BERN_HOLIDAYS[year];
+  return !!(set && set.has(dateKey));
+}
+
+
+// Calculate vacation days for an absence (weekdays minus holidays)
+function calculateAbsenceVacationDays(absence) {
+  if (!absence || !absence.from || !absence.to) return 0;
+  
+  const type = String(absence.type || '').toLowerCase();
+  if (type !== 'ferien') return 0; // Only count Ferien type
+  
+  let fromDate = new Date(absence.from + 'T00:00:00');
+  let toDate = new Date(absence.to + 'T00:00:00');
+  
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return 0;
+  
+  // Swap if dates are reversed
+  if (toDate < fromDate) {
+    const tmp = fromDate;
+    fromDate = toDate;
+    toDate = tmp;
+  }
+  
+  let days = 0;
+  const cursor = new Date(fromDate);
+  
+  while (cursor <= toDate) {
+    const weekday = cursor.getDay(); // 0=Sun, 6=Sat
+    const dateKey = formatDateKey(cursor);
+    
+    // Only count weekdays (Mon-Fri) that aren't holidays
+    if (weekday >= 1 && weekday <= 5 && !isBernHolidayKey(dateKey)) {
+      days += 1;
+    }
+    
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  
+  return days;
+}
+
+
+
+
+// Matches your frontend logic: vacation day fraction = max(0, 1 - (hoursWorked/8))
+function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
+  const DAILY_SOLL = 8.0;
+  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+  let used = 0;
+
+  for (const [dateKey, dayData] of Object.entries(daysObj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+
+    const d = new Date(dateKey + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) continue;
+
+    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+
+    const weekday = d.getDay(); // 0..6
+    if (weekday < 1 || weekday > 5) continue;
+
+    const ferien = !!(dayData && dayData.flags && dayData.flags.ferien);
+    if (!ferien) continue;
+
+    if (isBernHolidayKey(dateKey)) continue;
+
+    const worked = computeNonPikettHours(dayData);
+    const fraction = Math.max(0, 1 - (worked / DAILY_SOLL));
+
+    // keep it stable; quarter-day rounding is usually enough
+    const rounded = Math.round(fraction * 4) / 4;
+    used += rounded;
+  }
+
+  return Math.round(used * 100) / 100;
+}
+
+function updateKontenFromSubmission({ username, teamId, year, monthIndex, totals, payload, updatedBy }) {
+  const data = readKonten();
+  const user = ensureKontenUser(data, username, teamId);
+
+  // Auto-credit yearly vacation entitlement once per year (supports carry-over policy)
+  if (!user.creditedYears[String(year)]) {
+    user.vacationDays += Number(user.vacationDaysPerYear) || 0;
+    user.creditedYears[String(year)] = true;
+  }
+
+  const monthKey = kontenMonthKey(year, monthIndex);
+  const prevSnap = data.snapshots[username][monthKey] || { ueZ1: 0, ueZ2: 0, ueZ3: 0, ueZ1Positive: 0, vacUsed: 0 };
+
+  const nextSnap = {
+    ueZ1: computeUeZ1NetForMonth(payload, year, monthIndex),
+    ueZ1Positive: computeUeZ1PositiveForMonth(payload, year, monthIndex),
+    ueZ2: Number(totals?.pikett) || 0,
+    ueZ3: Number(totals?.overtime3) || 0,
+    vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
+  };
+
+  // delta apply (idempotent even if same month is re-submitted daily)
+  user.ueZ1 += (nextSnap.ueZ1 - prevSnap.ueZ1);
+  user.ueZ2 += (nextSnap.ueZ2 - prevSnap.ueZ2);
+  user.ueZ3 += (nextSnap.ueZ3 - prevSnap.ueZ3);
+
+  user.vacationDays -= (nextSnap.vacUsed - prevSnap.vacUsed);
+
+  // Track positive ÜZ1 per year (for Vorarbeit calculation)
+  const yearStr = String(year);
+  if (!user.ueZ1PositiveByYear[yearStr]) user.ueZ1PositiveByYear[yearStr] = 0;
+  user.ueZ1PositiveByYear[yearStr] += (nextSnap.ueZ1Positive - (prevSnap.ueZ1Positive || 0));
+
+  user.updatedAt = new Date().toISOString();
+  user.updatedBy = updatedBy || username;
+
+  data.snapshots[username][monthKey] = nextSnap;
+
+  writeKonten(data);
 }
 
 // ---- Week locks (persistent) ----
@@ -674,16 +992,10 @@ function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function readAnlagenIndex() {
-  return safeReadJson(ANLAGEN_INDEX_PATH, {}); // { [teamId]: { [komNr]: {...} } }
-}
-function writeAnlagenIndex(data) {
-  writeJsonAtomic(ANLAGEN_INDEX_PATH, data);
+function readAnlagenLedger() {
+  return safeReadJson(ANLAGEN_LEDGER_PATH, {});
 }
 
-function readAnlagenLedger() {
-  return safeReadJson(ANLAGEN_LEDGER_PATH, {}); // { [teamId]: { [komNr]: { byUser: { [username]: { byDate: {...} } } } } }
-}
 function writeAnlagenLedger(data) {
   writeJsonAtomic(ANLAGEN_LEDGER_PATH, data);
 }
@@ -880,19 +1192,20 @@ function writeJsonAtomic(filePath, data) {
   fs.renameSync(tmp, filePath);
 }
 
-function normalizeKomNr(v) {
-  const s = String(v || '').trim();
-  if (!s) return '';
-  // keep it permissive; just remove whitespace
-  return s.replace(/\s+/g, '');
+function deepCloneJson(value) {
+  if (value == null) return value;
+  return JSON.parse(JSON.stringify(value));
 }
 
-function addNum(obj, key, val) {
-  const n = typeof val === 'number' ? val : Number(val);
-  if (!Number.isFinite(n) || n === 0) return;
-  if (!obj[key]) obj[key] = 0;
-  obj[key] += n;
+function rollbackTransmissionIndex(indexPath, fileName) {
+  const current = safeReadJson(indexPath, []);
+  const next = Array.isArray(current)
+    ? current.filter((item) => item && item.id !== fileName)
+    : [];
+
+  writeJsonAtomic(indexPath, next);
 }
+
 
 function cleanupZeroish(obj, eps = 1e-9) {
   if (!obj || typeof obj !== 'object') return;
@@ -1123,6 +1436,7 @@ function rebuildAnlagenIndex() {
 }
 
 
+
 // POST /api/admin/anlagen-export-pdf
 // body: { teamId, komNr, donutPngDataUrl?, usersPngDataUrl? }
 app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, (req, res) => {
@@ -1139,7 +1453,11 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   const ledger = readAnlagenLedger();
   const meta = readAnlagenArchive(); // you already have this
 
-  const rec = index?.[teamId]?.[komNr];
+  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
+    ? index.teams[teamId]
+    : {};
+
+  const rec = teamObj[komNr];
   if (!rec) return res.status(404).json({ ok: false, error: 'KomNr not found in index' });
 
   const ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
@@ -1149,6 +1467,8 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   // charts from frontend (optional)
   const donutUrl = req.body?.donutPngDataUrl;
   const usersUrl = req.body?.usersPngDataUrl;
+
+
 
   function dataUrlToPngBuffer(url) {
     if (!url || typeof url !== 'string') return null;
@@ -1185,31 +1505,69 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   // Summary
   doc.fontSize(12).text('Zusammenfassung', { underline: true });
   doc.moveDown(0.3);
-  doc.fontSize(10).text(`Total Stunden: ${(Number(rec.totalHours || 0)).toFixed(1).replace('.', ',')} h`);
+  doc.fontSize(14).text(`Total Stunden: ${(Number(rec.totalHours || 0)).toFixed(1).replace('.', ',')} h`);
   doc.fontSize(10).text(`Letzte Aktivität: ${rec.lastActivity ? rec.lastActivity : '–'}`);
   doc.moveDown(0.6);
 
   // Charts
-  doc.fontSize(12).text('Charts', { underline: true });
+
   doc.moveDown(0.3);
 
   const startX = doc.x;
   const yBefore = doc.y;
 
-  if (donutBuf) {
-    doc.image(donutBuf, startX, yBefore, { width: 240 });
-  } else {
-    doc.fontSize(9).text('Donut Chart nicht vorhanden (Frontend hat kein PNG gesendet).');
-  }
+// --- Charts block (stable layout) ---
+const pageInnerW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+const x = doc.page.margins.left;
 
-  if (usersBuf) {
-    doc.image(usersBuf, startX + 260, yBefore, { width: 260 });
-  } else {
-    doc.fontSize(9).text('', startX + 260, yBefore);
-    doc.fontSize(9).text('User Chart nicht vorhanden.', startX + 260, yBefore + 12);
-  }
+const colGap = 18;
+const colW = (pageInnerW - colGap) / 2;
 
-  doc.moveDown(16); // push below charts
+// Donut should be square
+const donutBoxW = Math.floor(colW);
+const donutBoxH = donutBoxW;
+
+// Bars are usually wider than tall; we still fit them into the same height for alignment
+const usersBoxW = Math.floor(colW);
+const usersBoxH = donutBoxH;
+
+doc.moveDown(0.4);
+
+const chartsTopY = doc.y;
+
+// Optional: light card borders (makes it look cleaner)
+doc.save();
+doc.lineWidth(1).strokeColor('#E5E7EB');
+doc.rect(x, chartsTopY, colW, donutBoxH).stroke();
+doc.rect(x + colW + colGap, chartsTopY, colW, donutBoxH).stroke();
+doc.restore();
+
+// Draw images centered inside their boxes (preserves aspect ratio)
+if (donutBuf) {
+  doc.image(donutBuf, x, chartsTopY, {
+    fit: [donutBoxW, donutBoxH],
+    align: 'center',
+    valign: 'center',
+  });
+} else {
+  doc.fontSize(9).fillColor('#6B7280').text('Donut Chart nicht vorhanden.', x + 10, chartsTopY + 10, { width: colW - 20 });
+  doc.fillColor('black');
+}
+
+if (usersBuf) {
+  doc.image(usersBuf, x + colW + colGap, chartsTopY, {
+    fit: [usersBoxW, usersBoxH],
+    align: 'center',
+    valign: 'center',
+  });
+} else {
+  doc.fontSize(9).fillColor('#6B7280').text('User Chart nicht vorhanden.', x + colW + colGap + 10, chartsTopY + 10, { width: colW - 20 });
+  doc.fillColor('black');
+}
+
+// IMPORTANT: push the cursor below the chart block explicitly
+doc.y = chartsTopY + donutBoxH + 18;
+
 
   // Operations table (from index.byOperation)
   doc.fontSize(12).text('Stunden nach Tätigkeit', { underline: true });
@@ -1221,7 +1579,8 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
     .sort((a, b) => b.hours - a.hours);
 
   ops.forEach((o) => {
-    doc.fontSize(10).text(`${o.key}: ${o.hours.toFixed(1).replace('.', ',')} h`);
+    const label = getOperationLabel(o.key);
+    doc.fontSize(10).text(`${label}: ${o.hours.toFixed(1).replace('.', ',')} h`);
   });
 
   doc.moveDown(0.6);
@@ -1242,7 +1601,7 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   doc.moveDown(0.8);
 
   // Daily ledger appendix (server-side truth)
-  doc.fontSize(12).text('Tagesjournal (Audit)', { underline: true });
+  doc.fontSize(12).text('Tagesjournal', { underline: true });
   doc.moveDown(0.3);
   doc.fontSize(9).text('Pro Mitarbeiter die Tages-Summen für diese Anlage.');
 
@@ -1271,6 +1630,8 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
 
   doc.end();
 });
+
+
 
 
 
@@ -1539,30 +1900,9 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   }
 
 
-  // 1.5) Update global Anlagen index (delta vs previous submission for this month)
-  const anlagenTeamId = req.user.teamId || 'unknown';
-  let _oldAnlagenMap = null;
-  let _newAnlagenMap = null;
-
-  try {
-    _oldAnlagenMap = previousMonthSubmission
-      ? extractAnlagenFromSubmission(previousMonthSubmission, userId)
-      : new Map();
-
-    _newAnlagenMap = extractAnlagenFromSubmission(payloadToSave, userId);
-
-    applyAnlagenDelta(anlagenTeamId, userId, _newAnlagenMap, _oldAnlagenMap);
-  } catch (err) {
-    console.error('Failed to update anlagenIndex.json:', err);
-
-    // keep consistency: remove the just-saved submission file if possible
-    try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-    return res.status(500).json({
-      ok: false,
-      error: 'Could not update Anlagen index. Submission rejected.',
-    });
-  }
+  // 1.5) No persisted side effects here anymore.
+// We handle Anlagen + Konten together later in one strict block,
+// so a failed transmission can be rolled back cleanly.
 
   // 2) Update user's index.json (simple list of transmissions)
   const indexPath = path.join(userDir, 'index.json');
@@ -1594,75 +1934,176 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   try {
     writeJsonAtomic(indexPath, index);
   } catch (err) {
-    console.error('Failed to update index.json:', err);
+  console.error('Failed to update index.json:', err);
 
-    // Roll back Anlagen delta to keep aggregates consistent
-    try {
-      if (_oldAnlagenMap && _newAnlagenMap) {
-        applyAnlagenDelta(anlagenTeamId, userId, _oldAnlagenMap, _newAnlagenMap);
-      }
-    } catch (e) {
-      console.error('Failed to roll back anlagen index (manual rebuild may be required):', e);
-    }
-
-    // Remove the just-saved submission file (best effort)
-    try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
-
-    return res.status(500).json({ ok: false, error: 'Could not persist submission index.json. Submission rejected.' });
+  // Remove the just-saved submission file (best effort)
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (unlinkErr) {
+    console.error('Failed to delete submission file after index.json failure:', unlinkErr);
   }
 
+  return res.status(500).json({
+    ok: false,
+    error: 'Could not persist submission index.json. Submission rejected.',
+  });
+}
 
-  // ---- Update Anlagen global index + daily ledger (idempotent by user-month snapshot) ----
-    try {
-      const teamId = String(req.user.teamId || '');   // important for multi-team future
-      const username = req.user.username;
 
-      if (teamId) {
-        const year = payload.year;
-        const monthIndex = payload.monthIndex;
+ 
+      // ---- Strict persisted side effects: Anlagen + Konten ----
+  const strictTeamId = String(req.user.teamId || '');
+  const strictUsername = req.user.username;
+  const strictYear = payload.year;
+  const strictMonthIndex = payload.monthIndex;
 
-        const oldSnap = readAnlagenSnapshot(username, year, monthIndex);
-        const newSnap = extractAnlagenSnapshotFromPayload(payloadToSave, username);
+  const kontenBackup = deepCloneJson(readKonten());
+  const anlagenIndexBackup = deepCloneJson(readAnlagenIndex());
+  const anlagenLedgerBackup = deepCloneJson(readAnlagenLedger());
+  const anlagenMonthSnapshotBackup = deepCloneJson(
+    readAnlagenSnapshot(strictUsername, strictYear, strictMonthIndex)
+  );
 
-        const index = readAnlagenIndex();
-        const ledger = readAnlagenLedger();
+  try {
+    if (strictTeamId) {
+      const oldSnap = readAnlagenSnapshot(
+        strictUsername,
+        strictYear,
+        strictMonthIndex
+      );
+      const newSnap = extractAnlagenSnapshotFromPayload(
+        payloadToSave,
+        strictUsername
+      );
 
-        const touched = new Set([
-          ...Object.keys(oldSnap || {}),
-          ...Object.keys(newSnap || {}),
-        ]);
+      const index = readAnlagenIndex();
+      const ledger = readAnlagenLedger();
 
-        // subtract old
-        if (oldSnap) {
-          applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap: oldSnap, sign: -1 });
-        }
+      const touched = new Set([
+        ...Object.keys(oldSnap || {}),
+        ...Object.keys(newSnap || {}),
+      ]);
 
-        // add new
-        applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap: newSnap, sign: +1 });
-
-        // recompute lastActivity reliably for touched komNrs
-        recomputeLastActivitiesForTeam(index, ledger, teamId, Array.from(touched));
-
-        // persist
-        writeAnlagenIndex(index);
-        writeAnlagenLedger(ledger);
-        writeAnlagenSnapshot(username, year, monthIndex, newSnap);
+      if (oldSnap) {
+        applySnapshotToIndexAndLedger({
+          index,
+          ledger,
+          teamId: strictTeamId,
+          username: strictUsername,
+          snap: oldSnap,
+          sign: -1,
+        });
       }
-    } catch (e) {
-      console.error('Anlagen update failed:', e);
-      // Decide policy:
-      // - If you want "submission still accepted even if Anlagen fails", keep it non-fatal.
-      // - If you want strict correctness, return 500 and reject.
+
+      applySnapshotToIndexAndLedger({
+        index,
+        ledger,
+        teamId: strictTeamId,
+        username: strictUsername,
+        snap: newSnap,
+        sign: +1,
+      });
+
+      recomputeLastActivitiesForTeam(
+        index,
+        ledger,
+        strictTeamId,
+        Array.from(touched)
+      );
+
+      writeAnlagenIndex(index);
+      writeAnlagenLedger(ledger);
+      writeAnlagenSnapshot(
+        strictUsername,
+        strictYear,
+        strictMonthIndex,
+        newSnap
+      );
     }
 
+    updateKontenFromSubmission({
+      username: strictUsername,
+      teamId: req.user.teamId || null,
+      year: strictYear,
+      monthIndex: strictMonthIndex,
+      totals,
+      payload: payloadToSave,
+      updatedBy: strictUsername,
+    });
+  } catch (e) {
+    console.error('Strict transmission side-effect failed:', e);
 
+    try {
+      writeJsonAtomic(KONTEN_PATH, kontenBackup);
+    } catch (rollbackErr) {
+      console.error('Failed to restore konten backup:', rollbackErr);
+    }
 
-  res.json({
+    try {
+      writeJsonAtomic(ANLAGEN_INDEX_PATH, anlagenIndexBackup);
+    } catch (rollbackErr) {
+      console.error('Failed to restore anlagenIndex backup:', rollbackErr);
+    }
+
+    try {
+      writeJsonAtomic(ANLAGEN_LEDGER_PATH, anlagenLedgerBackup);
+    } catch (rollbackErr) {
+      console.error('Failed to restore anlagenLedger backup:', rollbackErr);
+    }
+
+    try {
+      const snapshotPath = getSnapshotPath(
+        strictUsername,
+        strictYear,
+        strictMonthIndex
+      );
+
+      if (anlagenMonthSnapshotBackup == null) {
+        if (fs.existsSync(snapshotPath)) fs.unlinkSync(snapshotPath);
+      } else {
+        writeJsonAtomic(snapshotPath, anlagenMonthSnapshotBackup);
+      }
+    } catch (rollbackErr) {
+      console.error('Failed to restore anlagen month snapshot backup:', rollbackErr);
+    }
+
+    try {
+      rollbackTransmissionIndex(indexPath, fileName);
+    } catch (rollbackErr) {
+      console.error('Failed to roll back transmission index:', rollbackErr);
+    }
+
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (rollbackErr) {
+      console.error('Failed to delete rolled-back submission file:', rollbackErr);
+    }
+
+    return res.status(500).json({
+      ok: false,
+      error:
+        'Übertragung wurde zurückgerollt, weil Konten oder Anlagen nicht konsistent gespeichert werden konnten.',
+    });
+  }
+
+  return res.json({
     ok: true,
     message: `Month ${payload.monthLabel} received and saved as ${fileName}`,
     submissionId: fileName,
+    totals,
+    lockInfo: payloadToSave?._lockInfo || null,
+    savedPayload: {
+      year: payloadToSave.year,
+      monthIndex: payloadToSave.monthIndex,
+      monthLabel: payloadToSave.monthLabel,
+      days: payloadToSave.days || {},
+      pikett: payloadToSave.pikett || [],
+      absences: payloadToSave.absences || [],
+    },
   });
+
 });
+
 
 // List all transmissions for the logged-in user
 app.get('/api/transmissions', requireAuth, (req, res) => {
@@ -1687,6 +2128,286 @@ app.get('/api/transmissions', requireAuth, (req, res) => {
     transmissions: index,
   });
 });
+
+
+// ---- Absenzen: user APIs ----
+
+// GET /api/absences  -> list my absences
+app.get('/api/absences', requireAuth, (req, res) => {
+  const username = req.user.username;
+  return res.json({ ok: true, absences: readUserAbsences(username) });
+});
+
+// POST /api/absences -> create absence request
+app.post('/api/absences', requireAuth, (req, res) => {
+  const username = req.user.username;
+  const teamId = req.user.teamId || null;
+
+  const type = String(req.body?.type || '').trim();
+  const from = String(req.body?.from || '').slice(0, 10);
+  const to = String(req.body?.to || '').slice(0, 10);
+  const comment = String(req.body?.comment || '').trim();
+  const daysRaw = req.body?.days;
+  const days = (daysRaw === '' || daysRaw == null) ? null : Number(daysRaw);
+
+  if (!type) return res.status(400).json({ ok: false, error: 'Missing type' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return res.status(400).json({ ok: false, error: 'Invalid from/to (YYYY-MM-DD)' });
+  }
+  if (days != null && (!Number.isFinite(days) || days < 0)) {
+    return res.status(400).json({ ok: false, error: 'Invalid days' });
+  }
+
+  const idFromClient = String(req.body?.id || '').trim();
+  const id =
+    (idFromClient && idFromClient.length <= 80)
+      ? idFromClient
+      : `abs-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+
+  const record = {
+    id,
+    username,
+    teamId,
+    type,
+    from,
+    to,
+    days,
+    comment,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    createdBy: username,
+    decidedAt: null,
+    decidedBy: null,
+  };
+
+  const list = readUserAbsences(username);
+  list.push(record);
+  writeUserAbsences(username, list);
+
+  return res.json({ ok: true, absence: record });
+});
+
+// DELETE /api/absences/:id -> user can cancel only if pending
+app.delete('/api/absences/:id', requireAuth, (req, res) => {
+  const username = req.user.username;
+  const id = String(req.params.id || '');
+
+  const list = readUserAbsences(username);
+  const idx = list.findIndex((a) => a && a.id === id);
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'Not found' });
+
+  const item = list[idx];
+  if (item.status !== 'pending') {
+    return res.status(409).json({ ok: false, error: 'Only pending absences can be cancelled' });
+  }
+
+  list.splice(idx, 1);
+  writeUserAbsences(username, list);
+
+  return res.json({ ok: true });
+});
+
+
+// POST /api/absences/:id/cancel
+// - if pending -> cancelled (user self-service)
+// - if accepted -> cancel_requested (admin must approve)
+// - if rejected/cancelled -> no-op or conflict (your choice)
+app.post('/api/absences/:id/cancel', requireAuth, (req, res) => {
+  const username = req.user.username;
+  const id = String(req.params.id || '');
+
+  const list = readUserAbsences(username);
+  const item = list.find((a) => a && a.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: 'Not found' });
+
+  if (item.status === 'pending') {
+    item.status = 'cancelled';
+    item.decidedAt = new Date().toISOString();
+    item.decidedBy = username; // self-cancel
+    writeUserAbsences(username, list);
+    return res.json({ ok: true, absence: item });
+  }
+
+  if (item.status === 'accepted') {
+    item.status = 'cancel_requested';
+    item.cancelRequestedAt = new Date().toISOString();
+    item.cancelRequestedBy = username;
+    writeUserAbsences(username, list);
+    return res.json({ ok: true, absence: item });
+  }
+
+
+  return res.status(409).json({ ok: false, error: 'Cannot cancel in this state' });
+});
+
+
+
+// ---- Absenzen: admin APIs ----
+
+// GET /api/admin/absences?status=pending|accepted|rejected|all
+app.get('/api/admin/absences', requireAuth, requireAdmin, (req, res) => {
+  const status = String(req.query.status || 'pending');
+
+  const all = [];
+  USERS.forEach((u) => {
+    const list = readUserAbsences(u.username);
+    list.forEach((a) => all.push(a));
+  });
+
+  const filtered =
+    (status === 'all')
+      ? all
+      : all.filter((a) => a && a.status === status);
+
+  // sort newest first
+  filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+  res.json({ ok: true, absences: filtered });
+});
+
+// POST /api/admin/absences/decision
+// body: { username, id, status: 'accepted'|'rejected' }
+app.post('/api/admin/absences/decision', requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.body?.username || '');
+  const id = String(req.body?.id || '');
+  const status = String(req.body?.status || '');
+
+  if (!username || !USERS.find((u) => u.username === username)) {
+    return res.status(400).json({ ok: false, error: 'Invalid username' });
+  }
+  if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
+  const allowed = new Set(['accepted', 'rejected', 'cancelled']);
+  if (!allowed.has(status)) {
+  return res.status(400).json({ ok: false, error: 'Invalid status' });
+}
+
+ 
+const list = readUserAbsences(username);
+  const item = list.find((a) => a && a.id === id);
+  if (!item) return res.status(404).json({ ok: false, error: 'Not found' });
+
+  const previousStatus = item.status;
+  
+  item.status = status;
+  item.decidedAt = new Date().toISOString();
+  item.decidedBy = req.user.username;
+
+  writeUserAbsences(username, list);
+
+  // Restore vacation days when cancelling an accepted/cancel_requested Ferien absence
+  let vacationRestored = 0;
+  if (status === 'cancelled' && (previousStatus === 'accepted' || previousStatus === 'cancel_requested')) {
+    const vacDays = calculateAbsenceVacationDays(item);
+    
+    if (vacDays > 0) {
+      // Check if any month in the absence range was transmitted (has a snapshot)
+      const kontenData = readKonten();
+      const userSnapshots = kontenData.snapshots[username] || {};
+      
+      // Get months covered by this absence
+      let fromDate = new Date(item.from + 'T00:00:00');
+      let toDate = new Date(item.to + 'T00:00:00');
+      if (toDate < fromDate) { const tmp = fromDate; fromDate = toDate; toDate = tmp; }
+      
+      const affectedMonths = new Set();
+      const cursor = new Date(fromDate);
+      while (cursor <= toDate) {
+        const mk = kontenMonthKey(cursor.getFullYear(), cursor.getMonth());
+        affectedMonths.add(mk);
+        cursor.setMonth(cursor.getMonth() + 1);
+        cursor.setDate(1);
+      }
+      
+      // Check if any affected month was transmitted
+      const hasTransmittedMonth = Array.from(affectedMonths).some(mk => userSnapshots[mk]);
+      
+      if (hasTransmittedMonth) {
+        const userKonto = ensureKontenUser(kontenData, username, null);
+        userKonto.vacationDays += vacDays;
+        userKonto.updatedAt = new Date().toISOString();
+        userKonto.updatedBy = req.user.username;
+        
+        // Update snapshots to prevent double-restoration on re-transmission
+        Array.from(affectedMonths).forEach(mk => {
+          if (userSnapshots[mk] && userSnapshots[mk].vacUsed > 0) {
+            // Reduce the recorded vacUsed (but not below 0)
+            userSnapshots[mk].vacUsed = Math.max(0, userSnapshots[mk].vacUsed - vacDays);
+          }
+        });
+        
+        writeKonten(kontenData);
+        vacationRestored = vacDays;
+        
+        console.log(`Restored ${vacDays} vacation days for ${username} (absence ${id} cancelled)`);
+      }  
+    }
+  }
+
+  return res.json({ ok: true, absence: item, vacationRestored });
+});
+
+
+
+// ---- Konten APIs ----
+
+// GET /api/konten/me
+app.get('/api/konten/me', requireAuth, (req, res) => {
+  const data = readKonten();
+  const username = req.user.username;
+  const u = ensureKontenUser(data, username, req.user.teamId || null);
+  // ensure persisted structure if it was missing
+  writeKonten(data);
+
+  // Get list of transmitted months (from snapshots)
+  const userSnapshots = data.snapshots[username] || {};
+  const transmittedMonths = Object.keys(userSnapshots); // e.g. ["2025-01", "2025-02"]
+
+  res.json({ 
+    ok: true, 
+    konto: u,
+    transmittedMonths 
+  });
+});
+
+// GET /api/admin/konten
+app.get('/api/admin/konten', requireAuth, requireAdmin, (req, res) => {
+  const data = readKonten();
+
+  USERS.forEach((u) => ensureKontenUser(data, u.username, u.teamId || null));
+  writeKonten(data);
+
+  const rows = USERS.map((u) => ({ username: u.username, teamId: u.teamId || null, konto: data.users[u.username] }));
+  res.json({ ok: true, users: rows });
+});
+
+// POST /api/admin/konten/set
+// body: { username, ueZ1, ueZ2, ueZ3, vacationDays, vacationDaysPerYear }
+app.post('/api/admin/konten/set', requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.body?.username || '');
+  if (!username || !USERS.find((u) => u.username === username)) {
+    return res.status(400).json({ ok: false, error: 'Invalid username' });
+  }
+
+  const data = readKonten();
+  const user = ensureKontenUser(data, username, USERS.find((u) => u.username === username)?.teamId || null);
+
+  const fields = ['ueZ1','ueZ2','ueZ3','vacationDays','vacationDaysPerYear'];
+  fields.forEach((k) => {
+    if (req.body[k] == null) return;
+    const n = Number(req.body[k]);
+    if (Number.isFinite(n)) user[k] = n;
+  });
+
+  user.updatedAt = new Date().toISOString();
+  user.updatedBy = req.user.username;
+
+  writeKonten(data);
+
+  res.json({ ok: true, konto: user });
+});
+
+
+
       // ---- Admin: month overview (per user, month-specific) ----
 app.get(
   '/api/admin/month-overview',
@@ -1795,7 +2516,16 @@ app.get(
         };
       }
 
-      const overview = buildMonthOverviewFromSubmission(submission, year, monthIndex);
+      const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+      const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
+      const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+        readUserAbsences(user.username),
+        monthStartKey,
+        monthEndKey
+      );
+
+      const overview = buildMonthOverviewFromSubmission(submission, year, monthIndex, acceptedAbsenceDays);
+
       const userLocks = (allLocks[user.username] && typeof allLocks[user.username] === 'object')
         ? allLocks[user.username]
         : {};
@@ -1969,19 +2699,12 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
 
   const dayData = (submission.days && submission.days[dateKey]) ? submission.days[dateKey] : null;
 
-  // accepted absence covering this day
-  let acceptedAbsence = null;
-  if (Array.isArray(submission.absences)) {
-    acceptedAbsence = submission.absences.find((a) => {
-      if (!a || a.status !== 'accepted') return false;
-      const fromKey = String(a.from || '').slice(0, 10);
-      const toKey = String(a.to || '').slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) return false;
-      const start = fromKey <= toKey ? fromKey : toKey;
-      const end = fromKey <= toKey ? toKey : fromKey;
-      return dateKey >= start && dateKey <= end;
-    }) || null;
-  }
+  // accepted absence covering this day (authoritative store)
+  const storedAbsences = readUserAbsences(username);
+  const acceptedAbsence = findAcceptedAbsenceForDate(
+    storedAbsences.length ? storedAbsences : submission.absences,
+    dateKey
+  );
 
   // pikett entries for that date
   const pikettEntries = Array.isArray(submission.pikett)

@@ -1,44 +1,19 @@
 {
   "version": 1,
-  "updatedAt": "2025-12-21T21:06:58.978Z",
+  "updatedAt": "2026-03-13T17:43:49.115Z",
   "teams": {
     "montage": {
       "123123": {
-        "totalHours": 8,
+        "totalHours": 4,
         "byOperation": {
-          "option1": 1,
-          "option2": 1,
-          "option3": 1,
-          "option4": 1,
-          "option5": 1,
-          "option6": 1,
-          "Regie": 1,
-          "Fehler": 1
+          "option1": 4
         },
         "byUser": {
-          "demo": 8
+          "demo": 4
         },
-        "lastActivity": "2025-12-15"
+        "lastActivity": "2026-03-09"
       }
     }
   },
-  "montage": {
-    "123123": {
-      "totalHours": 8,
-      "byOperation": {
-        "option1": 1,
-        "option2": 1,
-        "option3": 1,
-        "option4": 1,
-        "option5": 1,
-        "option6": 1,
-        "_regie": 1,
-        "_fehler": 1
-      },
-      "byUser": {
-        "demo": 8
-      },
-      "lastActivity": "2025-12-15"
-    }
-  }
+  "montage": {}
 }

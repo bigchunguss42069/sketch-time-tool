@@ -203,14 +203,7 @@
                 <section class="day-content active" id="montag">
                   <h2 class="day-section-title">Tagesstatus</h2>
                   <div class="flags-grid">
-                    <label class="flag-item">
-                      <input
-                        type="checkbox"
-                        class="day-flag"
-                        data-flag="ferien"
-                      />
-                      <span>Ferien</span>
-                    </label>
+              
 
                     <label class="flag-item">
                       <input
@@ -471,15 +464,7 @@
                 <section class="day-content" id="dienstag">
                   <h2 class="day-section-title">Tagesstatus</h2>
                   <div class="flags-grid">
-                    <label class="flag-item">
-                      <input
-                        type="checkbox"
-                        class="day-flag"
-                        data-flag="ferien"
-                      />
-                      <span>Ferien</span>
-                    </label>
-
+                 
                     <label class="flag-item">
                       <input
                         type="checkbox"
@@ -736,14 +721,7 @@
                 <section class="day-content" id="mittwoch">
                   <h2 class="day-section-title">Tagesstatus</h2>
                   <div class="flags-grid">
-                    <label class="flag-item">
-                      <input
-                        type="checkbox"
-                        class="day-flag"
-                        data-flag="ferien"
-                      />
-                      <span>Ferien</span>
-                    </label>
+                    
 
                     <label class="flag-item">
                       <input
@@ -1001,15 +979,7 @@
                 <section class="day-content" id="donnerstag">
                   <h2 class="day-section-title">Tagesstatus</h2>
                   <div class="flags-grid">
-                    <label class="flag-item">
-                      <input
-                        type="checkbox"
-                        class="day-flag"
-                        data-flag="ferien"
-                      />
-                      <span>Ferien</span>
-                    </label>
-
+                
                     <label class="flag-item">
                       <input
                         type="checkbox"
@@ -1266,14 +1236,7 @@
                 <section class="day-content" id="freitag">
                   <h2 class="day-section-title">Tagesstatus</h2>
                   <div class="flags-grid">
-                    <label class="flag-item">
-                      <input
-                        type="checkbox"
-                        class="day-flag"
-                        data-flag="ferien"
-                      />
-                      <span>Ferien</span>
-                    </label>
+         
 
                     <label class="flag-item">
                       <input
@@ -1731,9 +1694,12 @@
                 <h2 class="dashboard-card-title">
                   Überzeit &amp; Vorarbeit (Jahr)
                 </h2>
+                <p id="overtimeYearSource" class="dashboard-card-note">
+                  Offizieller Stand nach letzter Übertragung
+                </p>
 
                 <div class="dashboard-metric-row">
-                  <span class="metric-label">Überzeit 1</span>
+                  <span class="metric-label">Überzeit 1 (nach Vorarbeit)</span>
                   <span
                     id="overtimeYearUeZ1"
                     class="metric-value"
@@ -1921,6 +1887,13 @@
               >
                 Anlagen
               </button>
+               <button
+                type="button"
+                class="admin-tab-btn"
+                data-admin-tab="personnel"
+              >
+                Absenzen & Konten
+              </button>
               <button
                 type="button"
                 class="admin-tab-btn"
@@ -2006,6 +1979,50 @@
 
         
             </div>
+
+            <!-- Tab: Absenzen & Konten -->
+            <div class="admin-tab-content" data-admin-content="personnel">
+              <div class="admin-section-header">
+                <h3>Absenzen & Konten</h3>
+                <p class="admin-section-subtitle">
+                  Absenzen verwalten und ÜZ/Ferien-Salden pflegen.
+                </p>
+              </div>
+
+              <div class="admin-personnel-toolbar">
+                <input
+                  id="adminAbsenceSearch"
+                  class="admin-personnel-search"
+                  type="text"
+                  placeholder="Suchen (Benutzer, Typ, Kommentar)…"
+                />
+
+                <select id="adminAbsenceStatusFilter" class="admin-personnel-status">
+                  <option value="pending" selected>Offen</option>
+                  <option value="cancel_requested">Storno-Anfragen</option>
+                  <option value="accepted">Akzeptiert</option>
+                  <option value="rejected">Abgelehnt</option>
+                  <option value="all">Alle</option>
+                </select>
+
+                <button id="adminPersonnelRefreshBtn" class="admin-personnel-refresh" type="button">
+                  Aktualisieren
+                </button>
+              </div>
+
+              <div class="admin-personnel-layout">
+                <div class="admin-personnel-col">
+                  <h4 class="admin-subheading">Abwesenheits-Anträge</h4>
+                  <div id="adminAbsenceList" class="admin-absence-list"></div>
+                </div>
+
+                <div class="admin-personnel-col">
+                  <h4 class="admin-subheading">Konten</h4>
+                  <div id="adminKontenGrid" class="admin-konten-grid"></div>
+                </div>
+              </div>
+            </div>
+
 
             <!-- Tab: Lohnabrechnung -->
             <div
