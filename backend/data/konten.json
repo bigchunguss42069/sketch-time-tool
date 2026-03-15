@@ -1,21 +1,21 @@
 {
   "version": 1,
-  "updatedAt": "2026-03-13T17:43:50.283Z",
+  "updatedAt": "2026-03-15T17:12:54.998Z",
   "users": {
     "demo": {
       "teamId": "montage",
-      "ueZ1": 42,
-      "ueZ2": 0,
+      "ueZ1": 1,
+      "ueZ2": 3,
       "ueZ3": 0,
       "ueZ1PositiveByYear": {
-        "2026": 43
+        "2026": 1
       },
       "vacationDays": 21,
       "vacationDaysPerYear": 21,
       "creditedYears": {
         "2026": true
       },
-      "updatedAt": "2026-03-13T17:43:49.118Z",
+      "updatedAt": "2026-03-14T14:58:22.254Z",
       "updatedBy": "demo"
     },
     "chef": {
@@ -46,9 +46,9 @@
   "snapshots": {
     "demo": {
       "2026-03": {
-        "ueZ1": 43,
-        "ueZ1Positive": 43,
-        "ueZ2": 0,
+        "ueZ1": 1,
+        "ueZ1Positive": 1,
+        "ueZ2": 3,
         "ueZ3": 0,
         "vacUsed": 0
       }

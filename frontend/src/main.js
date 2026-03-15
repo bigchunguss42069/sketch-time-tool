@@ -46,6 +46,7 @@ let selectedKomNr = null;
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
 const anlagenDetailCache = new Map();  // key: komNr -> detail
 
+
 // --- Admin: Personnel tab elements ---
 const adminAbsenceListEl = document.getElementById('adminAbsenceList');
 const adminAbsenceStatusFilterEl = document.getElementById('adminAbsenceStatusFilter');
@@ -53,7 +54,11 @@ const adminAbsenceSearchEl = document.getElementById('adminAbsenceSearch');
 const adminPersonnelRefreshBtn = document.getElementById('adminPersonnelRefreshBtn');
 const adminKontenGridEl = document.getElementById('adminKontenGrid');
 
-
+const payrollPeriodFromEl = document.getElementById('payrollPeriodFrom');
+const payrollPeriodToEl = document.getElementById('payrollPeriodTo');
+const payrollRefreshBtn = document.getElementById('payrollRefreshBtn');
+const payrollSummaryBarEl = document.getElementById('payrollSummaryBar');
+const adminPayrollGridEl = document.getElementById('adminPayrollGrid');
 
 
 
@@ -108,8 +113,257 @@ const syncStatusEl = document.getElementById('syncStatus');
 const syncLabelEl = document.getElementById('syncLabel');
 
 
+let payrollUsersCache = null;
+
+function formatDateInputValue(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function ensurePayrollDefaultPeriod() {
+  if (!payrollPeriodFromEl || !payrollPeriodToEl) return;
+
+  if (payrollPeriodFromEl.value && payrollPeriodToEl.value) return;
+
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  payrollPeriodFromEl.value = formatDateInputValue(monthStart);
+  payrollPeriodToEl.value = formatDateInputValue(today);
+}
+
+function getPayrollSelectedPeriod() {
+  ensurePayrollDefaultPeriod();
+
+  return {
+    from: payrollPeriodFromEl?.value || '',
+    to: payrollPeriodToEl?.value || '',
+  };
+}
+
+async function fetchAdminPayrollUsers() {
+  if (payrollUsersCache) return payrollUsersCache;
+
+  const res = await authFetch('/api/admin/payroll-users');
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || 'Mitarbeiter konnten nicht geladen werden');
+  }
+
+  payrollUsersCache = Array.isArray(data.users) ? data.users : [];
+  return payrollUsersCache;
+}
+
+function createPayrollMetric(label, value) {
+  const item = document.createElement('div');
+  item.className = 'admin-payroll-metric';
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'admin-payroll-metric-label';
+  labelEl.textContent = label;
+
+  const valueEl = document.createElement('span');
+  valueEl.className = 'admin-payroll-metric-value';
+  valueEl.textContent = value;
+
+  item.appendChild(labelEl);
+  item.appendChild(valueEl);
+  return item;
+}
+
+function formatPayrollSignedHours(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0,0 h';
+
+  const abs = Math.abs(n).toFixed(1).replace('.', ',');
+  if (n > 0) return `+${abs} h`;
+  if (n < 0) return `-${abs} h`;
+  return '0,0 h';
+}
+
+function formatPayrollCounterHours(current, total) {
+  const a = Number.isFinite(Number(current))
+    ? Number(current).toFixed(1).replace('.', ',')
+    : '0,0';
+
+  const b = Number.isFinite(Number(total))
+    ? Number(total).toFixed(1).replace('.', ',')
+    : '0,0';
+
+  return `${a} / ${b} h`;
+}
 
 
+
+function renderAdminPayrollCards(rows) {
+  if (!adminPayrollGridEl) return;
+
+  adminPayrollGridEl.innerHTML = '';
+
+  if (!Array.isArray(rows) || !rows.length) {
+    adminPayrollGridEl.innerHTML =
+      '<div class="admin-payroll-empty">Keine Mitarbeiter gefunden.</div>';
+    return;
+  }
+
+  const { from, to } = getPayrollSelectedPeriod();
+  const fromLabel = formatDateDisplayEU(from);
+  const toLabel = formatDateDisplayEU(to);
+
+  rows.forEach((row) => {
+    const totals = row?.totals || {};
+    const overtime = row?.overtime || {};
+    const vorarbeit = row?.vorarbeit || {};
+
+    const card = document.createElement('div');
+    card.className = 'admin-payroll-card';
+
+    const head = document.createElement('div');
+    head.className = 'admin-payroll-card-head';
+
+    const left = document.createElement('div');
+
+    const title = document.createElement('h4');
+    title.className = 'admin-payroll-card-title';
+    title.textContent = row.displayName || row.username || '–';
+
+    const period = document.createElement('div');
+    period.className = 'admin-payroll-card-period';
+    period.textContent = `Zeitraum: ${fromLabel} – ${toLabel}`;
+
+    left.appendChild(title);
+    left.appendChild(period);
+    head.appendChild(left);
+
+    const metrics = document.createElement('div');
+    metrics.className = 'admin-payroll-metrics';
+
+    metrics.appendChild(createPayrollMetric('Arzt / Krank', formatPayrollHours(totals.arztKrankHours)));
+    metrics.appendChild(createPayrollMetric('Ferien', formatPayrollDays(totals.ferienDays)));
+    metrics.appendChild(createPayrollMetric('Stunden', formatPayrollHours(totals.stunden)));
+    metrics.appendChild(createPayrollMetric('Morgenessen', formatPayrollCount(totals.morgenessenCount)));
+    metrics.appendChild(createPayrollMetric('Mittagessen', formatPayrollCount(totals.mittagessenCount)));
+    metrics.appendChild(createPayrollMetric('Abendessen', formatPayrollCount(totals.abendessenCount)));
+    metrics.appendChild(createPayrollMetric('Schmutzzulage', formatPayrollCount(totals.schmutzzulageCount)));
+    metrics.appendChild(createPayrollMetric('Nebenauslagen', formatPayrollCount(totals.nebenauslagenCount)));
+    metrics.appendChild(createPayrollMetric('Pikett', formatPayrollHours(totals.pikettHours)));
+
+    const overtimeDivider = document.createElement('div');
+    overtimeDivider.className = 'admin-payroll-divider';
+
+    const overtimeTitle = document.createElement('div');
+    overtimeTitle.className = 'admin-payroll-subtitle';
+    overtimeTitle.textContent = 'Überzeit in dieser Lohnperiode';
+
+    const overtimeMetrics = document.createElement('div');
+    overtimeMetrics.className =
+      'admin-payroll-metrics admin-payroll-metrics--secondary';
+
+    overtimeMetrics.appendChild(
+      createPayrollMetric('ÜZ1 roh', formatPayrollSignedHours(overtime.ueZ1Raw))
+    );
+    overtimeMetrics.appendChild(
+      createPayrollMetric(
+        'Vorarbeit angerechnet',
+        formatPayrollSignedHours(overtime.vorarbeitApplied)
+      )
+    );
+    overtimeMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ1 nach Vorarbeit',
+        formatPayrollSignedHours(overtime.ueZ1AfterVorarbeit)
+      )
+    );
+    overtimeMetrics.appendChild(
+      createPayrollMetric('ÜZ2', formatPayrollSignedHours(overtime.ueZ2))
+    );
+    overtimeMetrics.appendChild(
+      createPayrollMetric('ÜZ3', formatPayrollSignedHours(overtime.ueZ3))
+    );
+
+    const vorarbeitDivider = document.createElement('div');
+    vorarbeitDivider.className = 'admin-payroll-divider';
+
+    const vorarbeitTitle = document.createElement('div');
+    vorarbeitTitle.className = 'admin-payroll-subtitle';
+    vorarbeitTitle.textContent = `Vorarbeitszeit (${vorarbeit.year || '–'})`;
+
+    const vorarbeitMetrics = document.createElement('div');
+    vorarbeitMetrics.className =
+      'admin-payroll-metrics admin-payroll-metrics--secondary';
+
+    vorarbeitMetrics.appendChild(
+      createPayrollMetric(
+        'Stand per Periodenende',
+        formatPayrollCounterHours(vorarbeit.filled, vorarbeit.required)
+      )
+    );
+    vorarbeitMetrics.appendChild(
+      createPayrollMetric(
+        'Änderung im Zeitraum',
+        formatPayrollSignedHours(vorarbeit.changeInPeriod)
+      )
+    );
+
+    card.appendChild(head);
+    card.appendChild(metrics);
+    card.appendChild(overtimeDivider);
+    card.appendChild(overtimeTitle);
+    card.appendChild(overtimeMetrics);
+    card.appendChild(vorarbeitDivider);
+    card.appendChild(vorarbeitTitle);
+    card.appendChild(vorarbeitMetrics);
+
+    adminPayrollGridEl.appendChild(card);
+  });
+}
+
+async function loadAdminPayroll() {
+  if (!payrollSummaryBarEl || !adminPayrollGridEl) return;
+
+  const { from, to } = getPayrollSelectedPeriod();
+
+  if (!from || !to) {
+    payrollSummaryBarEl.textContent = 'Bitte Zeitraum auswählen.';
+    adminPayrollGridEl.innerHTML =
+      '<div class="admin-payroll-empty">Bitte Zeitraum auswählen.</div>';
+    return;
+  }
+
+  payrollSummaryBarEl.textContent = 'Lade Lohndaten …';
+  adminPayrollGridEl.innerHTML =
+    '<div class="admin-payroll-empty">Lohndaten werden geladen …</div>';
+
+  try {
+    const res = await authFetch(
+      `/api/admin/payroll-period?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || 'Lohndaten konnten nicht geladen werden');
+    }
+
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    const summary = data.summary || {};
+
+    payrollSummaryBarEl.textContent =
+    `${summary.usersCount || rows.length} Mitarbeiter · ` +
+    `Zeitraum ${formatDateDisplayEU(data.period?.from || from)} – ${formatDateDisplayEU(data.period?.to || to)} · ` +
+    `Nur übertragene Daten berücksichtigt`;
+
+    renderAdminPayrollCards(rows);
+  } catch (err) {
+    console.error(err);
+    payrollSummaryBarEl.textContent = 'Lohndaten konnten nicht geladen werden.';
+    adminPayrollGridEl.innerHTML =
+      `<div class="admin-payroll-empty">${err.message || 'Fehler beim Laden.'}</div>`;
+  }
+}
 // --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
 
 topNavTabs.forEach((tab) => {
@@ -128,7 +382,7 @@ topNavTabs.forEach((tab) => {
     // Wenn Dashboard aktiv wird: Monatswerte neu berechnen
     if (view === 'dashboard') {
       updateDashboardForCurrentMonth();
-      updateOvertimeYearCard();
+      syncMyAbsencesFromServer();
       loadSyncStatus();
     }
     else if (view === 'admin') {
@@ -409,6 +663,20 @@ function createAbsenceId() {
     '-' +
     Math.random().toString(36).slice(2, 8)
   );
+}
+
+function absenceTypeLabel(type) {
+  const key = String(type || '').trim().toLowerCase();
+
+  const map = {
+    ferien: 'Ferien',
+    unfall: 'Unfall',
+    militaer: 'Militär',
+    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+    vaterschaft: 'Vaterschaftsurlaub',
+  };
+
+  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '–');
 }
 
 
@@ -1573,6 +1841,24 @@ function formatHoursSafe(v) {
   return n.toFixed(1).replace('.', ',') + ' h';
 }
 
+function formatPayrollHours(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0,0 h';
+  return `${n.toFixed(1).replace('.', ',')} h`;
+}
+
+function formatPayrollDays(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0';
+  return `${String(n).replace('.', ',')} Tage`;
+}
+
+function formatPayrollCount(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '0';
+  return String(Math.round(n));
+}
+
 
 // --- Dashboard month info + aggregation --- //
 function getCurrentDashboardMonthInfo() {
@@ -1619,6 +1905,14 @@ function parseDateKeyToDate(dateKey) {
 function formatShortDateFromKey(dateKey) {
   const d = parseDateKeyToDate(dateKey);
   return formatShortDate(d); // your existing dd.mm.yy
+}
+
+function formatDateDisplayEU(dateStr) {
+  const raw = String(dateStr || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return String(dateStr || '–');
+
+  const [yyyy, mm, dd] = raw.split('-');
+  return `${dd}.${mm}.${yyyy}`;
 }
 
 function formatDayLabelFromKey(dateKey, weekdayNum) {
@@ -1735,6 +2029,19 @@ function renderAdminAbsenceList(absences) {
     return;
   }
 
+  const formatDaysValue = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n).replace('.', ',') : '–';
+  };
+
+  const statusText = {
+    pending: 'Offen',
+    accepted: 'Akzeptiert',
+    rejected: 'Abgelehnt',
+    cancel_requested: 'Storno angefragt',
+    cancelled: 'Storniert',
+  };
+
   absences.forEach((a) => {
     const item = document.createElement('div');
     item.className = 'admin-absence-item';
@@ -1744,35 +2051,45 @@ function renderAdminAbsenceList(absences) {
 
     const title = document.createElement('div');
     title.className = 'admin-absence-title';
-    title.textContent = `${a.username} · ${a.type}`;
+    title.textContent = `${a.username || '–'} · ${absenceTypeLabel(a.type)}`;
 
     const badge = document.createElement('span');
     badge.className = `absence-status-badge ${a.status}`;
-    const statusText = {
-    pending: 'Offen',
-    accepted: 'Akzeptiert',
-    rejected: 'Abgelehnt',
-    cancel_requested: 'Storno angefragt',
-    cancelled: 'Storniert',
-    };
-
-    badge.textContent = statusText[String(a.status || '').toLowerCase()] || 'Offen';
-
+    badge.textContent =
+      statusText[String(a.status || '').toLowerCase()] || 'Offen';
 
     top.appendChild(title);
     top.appendChild(badge);
 
     const meta = document.createElement('div');
     meta.className = 'admin-absence-meta';
-    meta.textContent = `${a.from} → ${a.to}` + (a.days != null ? ` · ${a.days} Tage` : '');
+
+    const rangeRow = document.createElement('div');
+    const fromLabel = formatDateDisplayEU(a.from);
+    const toLabel = formatDateDisplayEU(a.to);
+
+    rangeRow.textContent = `Zeitraum: ${fromLabel} → ${toLabel}`;
+
+    const currentYear =
+    Number(String(a.from || '').slice(0, 4)) || new Date().getFullYear();
+
+    const displayDays = computeAbsenceDaysForYear(a, currentYear);
+
+    const daysRow = document.createElement('div');
+    daysRow.textContent = `Tage: ${String(displayDays).replace('.', ',')}`;
+
+    meta.appendChild(rangeRow);
+    meta.appendChild(daysRow);
 
     const comment = document.createElement('div');
     comment.className = 'admin-absence-comment';
-    comment.textContent = a.comment || '';
+    comment.textContent = a.comment
+      ? `Kommentar: ${a.comment}`
+      : 'Kommentar: –';
 
     item.appendChild(top);
     item.appendChild(meta);
-    if (a.comment) item.appendChild(comment);
+    item.appendChild(comment);
 
     if (a.status === 'pending') {
       const actions = document.createElement('div');
@@ -1820,11 +2137,9 @@ function renderAdminAbsenceList(absences) {
       item.appendChild(actions);
     }
 
-
     adminAbsenceListEl.appendChild(item);
   });
 }
-
 
 
 function renderAdminKontenGrid(rows) {
@@ -2118,9 +2433,9 @@ function renderAbsenceListForCurrentYear() {
     const daysForYear = computeAbsenceDaysForYear(req, year);
     const daysText = formatDays(daysForYear);
 
-    titleSpan.textContent = `${
-      req.type || 'Abwesenheit'
-    } · ${fromStr} – ${toStr} (${daysText} Tage)`;
+    const typeLabel = absenceTypeLabel(req.type);
+
+    titleSpan.textContent = `${typeLabel} · ${fromStr} – ${toStr} (${daysText} Tage)`;
 
     const meta = document.createElement('div');
     meta.className = 'absence-meta';
@@ -2433,20 +2748,24 @@ function loadSyncStatus() {
     });
 }
 
-
 async function syncMyAbsencesFromServer() {
   try {
     const res = await authFetch('/api/absences');
     if (!res.ok) throw new Error('Absenzen konnten nicht geladen werden');
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Absenzen konnten nicht geladen werden');
 
-    // Keep structure compatible with your existing UI
+    const data = await res.json();
+    if (!data.ok) {
+      throw new Error(data.error || 'Absenzen konnten nicht geladen werden');
+    }
+
     absenceRequests = Array.isArray(data.absences) ? data.absences : [];
     saveAbsenceRequests();
 
-    // Will also sync ferienFromAbsences via syncVacationFlagsFromAbsences()
-    updateOvertimeYearCard();
+    // Render the list immediately from the freshly synced server data
+    renderAbsenceListForCurrentYear();
+
+    // Keep the rest of the dashboard in sync too
+    await updateOvertimeYearCard();
     updateDashboardWeekListForCurrentMonth();
   } catch (e) {
     console.error(e);
@@ -3216,6 +3535,23 @@ if (anlagenRefreshBtn) {
   });
 }
 
+if (payrollRefreshBtn) {
+  payrollRefreshBtn.addEventListener('click', () => {
+    loadAdminPayroll();
+  });
+}
+
+if (payrollPeriodFromEl) {
+  payrollPeriodFromEl.addEventListener('change', () => {
+    loadAdminPayroll();
+  });
+}
+
+if (payrollPeriodToEl) {
+  payrollPeriodToEl.addEventListener('change', () => {
+    loadAdminPayroll();
+  });
+}
 
 
 
@@ -5594,6 +5930,7 @@ function showDay(dayId) {
   updateDayTitleWithDate();
 }
 
+
 adminInnerTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.adminTab;
@@ -5608,17 +5945,26 @@ adminInnerTabButtons.forEach((btn) => {
       c.classList.remove('active');
       if (c.dataset.adminContent === target) c.classList.add('active');
     });
-
     if (target === 'overview') {
       loadAdminSummary();
     } else if (target === 'anlagen') {
-      loadAdminAnlagenSummary({ force: false });
-    }
-    else if (target === 'personnel') {
-      loadAdminPersonnel();
-    }
+      const previouslySelectedKomNr = selectedKomNr;
 
-  });
+      anlagenSummaryCache.clear();
+      anlagenDetailCache.clear();
+
+      loadAdminAnlagenSummary({ force: true });
+
+      if (previouslySelectedKomNr) {
+        selectedKomNr = previouslySelectedKomNr;
+        loadAdminAnlagenDetail(previouslySelectedKomNr, { force: true });
+      }
+    } else if (target === 'personnel') {
+      loadAdminPersonnel();
+    } else if (target === 'payroll') {
+      loadAdminPayroll();
+    }
+      });
 });
 
 

@@ -1692,7 +1692,7 @@
 
               <div class="dashboard-card">
                 <h2 class="dashboard-card-title">
-                  Überzeit &amp; Vorarbeit (Jahr)
+                  Überzeit &amp; Vorarbeit Jahr
                 </h2>
                 <p id="overtimeYearSource" class="dashboard-card-note">
                   Offizieller Stand nach letzter Übertragung
@@ -2029,18 +2029,39 @@
               class="admin-tab-content"
               data-admin-content="payroll"
             >
-              <div class="admin-section-header">
-                <h3>Lohnabrechnung</h3>
-                <p class="admin-section-subtitle">
-                  Aggregierte Daten für HR, mit Export in Excel/PDF.
-                </p>
-              </div>
-              <div class="admin-placeholder">
-                <p>
-                  Hier kommen später die Lohn-Übersichten und
-                  Exports rein.
-                </p>
-              </div>
+            <div class="admin-section-header">
+            <h3>Lohnabrechnung</h3>
+            <p class="admin-section-subtitle">
+              Zeitraum auswählen und Lohndaten pro Mitarbeiter anzeigen.
+              Nur übertragene Daten werden berücksichtigt.
+            </p>
+          </div>
+
+          <div class="admin-payroll-toolbar">
+            <label class="admin-payroll-filter">
+              <span>Von</span>
+              <input id="payrollPeriodFrom" type="date" class="admin-payroll-date" />
+            </label>
+
+            <label class="admin-payroll-filter">
+              <span>Bis</span>
+              <input id="payrollPeriodTo" type="date" class="admin-payroll-date" />
+            </label>
+
+            <button id="payrollRefreshBtn" class="admin-payroll-refresh" type="button">
+              Aktualisieren
+            </button>
+          </div>
+
+          <div id="payrollSummaryBar" class="admin-payroll-summary">
+            Zeitraum noch nicht geladen.
+          </div>
+
+          <div id="adminPayrollGrid" class="admin-payroll-grid">
+            <div class="admin-placeholder">
+              <p>Die Lohndaten werden geladen …</p>
+            </div>
+          </div>
             </div>
           </div>
         </div>

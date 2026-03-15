@@ -120,6 +120,14 @@ function formatDateKey(date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function formatDateDisplayEU(dateKey) {
+  const raw = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return String(dateKey || '–');
+
+  const [yyyy, mm, dd] = raw.split('-');
+  return `${dd}.${mm}.${yyyy}`;
+}
+
 // Same ISO week logic as your frontend (UTC-based)
 function getISOWeekInfo(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -312,6 +320,77 @@ function computeUeZ1PositiveForMonth(payload, year, monthIndex) {
 
   return Math.round(positiveSum * 10) / 10;
 }
+
+const PAYROLL_YEAR_CONFIG = {
+  2025: { vorarbeitRequired: 39 },
+  2026: { vorarbeitRequired: 39 },
+};
+
+function getPayrollYearConfig(year) {
+  return PAYROLL_YEAR_CONFIG[year] || { vorarbeitRequired: 0 };
+}
+
+function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey) {
+  const DAILY_SOLL = 8.0;
+  const daysObj =
+    submission && submission.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
+
+  let ueZ1Raw = 0;
+  let ueZ1Positive = 0;
+  let ueZ2 = 0;
+  let ueZ3 = 0;
+
+  for (const [dateKey, dayData] of Object.entries(daysObj)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+    if (dateKey < fromKey || dateKey > toKey) continue;
+
+    const flags = (dayData && dayData.flags) ? dayData.flags : {};
+    const isFerien = !!flags.ferien;
+
+    const dayTotal = computeNonPikettHours(dayData);
+    const hasAnyHours = dayTotal > 0;
+    const hasAnyFlag = Object.values(flags).some(Boolean);
+
+    if (!hasAnyHours && !hasAnyFlag) continue;
+
+    let diff = 0;
+
+    if (isFerien) {
+      if (!hasAnyHours) diff = 0;
+      else if (dayTotal < DAILY_SOLL) diff = 0;
+      else diff = dayTotal - DAILY_SOLL;
+    } else {
+      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
+      else diff = 0;
+    }
+
+    ueZ1Raw += diff;
+    if (diff > 0) ueZ1Positive += diff;
+  }
+
+  const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
+  for (const entry of pikettList) {
+    const dateKey = String(entry?.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+    if (dateKey < fromKey || dateKey > toKey) continue;
+
+    const h = toNumber(entry?.hours);
+    if (entry?.isOvertime3) ueZ3 += h;
+    else ueZ2 += h;
+  }
+
+  const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+
+  return {
+    ueZ1Raw: r1(ueZ1Raw),
+    ueZ1Positive: r1(ueZ1Positive),
+    ueZ2: r1(ueZ2),
+    ueZ3: r1(ueZ3),
+  };
+}
+
 
 
 /**
@@ -819,6 +898,191 @@ function loadLatestMonthSubmission(username, year, monthIndex) {
   return safeReadJson(filePath, null);
 }
 
+
+function parseIsoDateOnly(value) {
+  const raw = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+
+  const d = new Date(raw + 'T00:00:00');
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function monthKeyOf(year, monthIndex) {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+}
+
+function getMonthRangeBetween(startDate, endDate) {
+  const out = [];
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+
+  while (cursor <= endMonth) {
+    out.push({
+      year: cursor.getFullYear(),
+      monthIndex: cursor.getMonth(),
+      monthKey: monthKeyOf(cursor.getFullYear(), cursor.getMonth()),
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return out;
+}
+
+function isDateKeyInClosedRange(dateKey, fromKey, toKey) {
+  const raw = String(dateKey || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  return raw >= fromKey && raw <= toKey;
+}
+
+function computeAbsenceDaysInPeriod(absence, periodStart, periodEnd) {
+  if (!absence || !absence.from || !absence.to) return 0;
+
+  const rawStart = parseIsoDateOnly(absence.from);
+  const rawEnd = parseIsoDateOnly(absence.to);
+  if (!rawStart || !rawEnd) return 0;
+
+  const start = rawStart <= rawEnd ? rawStart : rawEnd;
+  const end = rawStart <= rawEnd ? rawEnd : rawStart;
+
+  if (end < periodStart || start > periodEnd) return 0;
+
+  // Manual override only wins if the full request lies inside the selected period
+  // and the explicit days value is valid.
+  if (
+    typeof absence.days === 'number' &&
+    Number.isFinite(absence.days) &&
+    absence.days > 0 &&
+    start >= periodStart &&
+    end <= periodEnd
+  ) {
+    return absence.days;
+  }
+
+  const overlapStart = start > periodStart ? start : periodStart;
+  const overlapEnd = end < periodEnd ? end : periodEnd;
+
+  let total = 0;
+  const cursor = new Date(overlapStart);
+
+  while (cursor <= overlapEnd) {
+    const weekday = cursor.getDay(); // 0=So, 6=Sa
+    if (weekday >= 1 && weekday <= 5) {
+      total += 1;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return total;
+}
+
+function round1(n) {
+  return Math.round((Number(n) || 0) * 10) / 10;
+}
+
+function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById) {
+  const result = {
+    stunden: 0,
+    arztKrankHours: 0,
+    ferienDays: 0,
+    morgenessenCount: 0,
+    mittagessenCount: 0,
+    abendessenCount: 0,
+    schmutzzulageCount: 0,
+    nebenauslagenCount: 0,
+    pikettHours: 0,
+  };
+
+  const daysObj =
+    submission && submission.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
+
+  for (const [dateKey, dayData] of Object.entries(daysObj)) {
+    if (!isDateKeyInClosedRange(dateKey, fromKey, toKey)) continue;
+    if (!dayData || typeof dayData !== 'object') continue;
+
+    // Stunden = all non-pikett / non-ÜZ3 hours in the selected period
+    if (Array.isArray(dayData.entries)) {
+      for (const entry of dayData.entries) {
+        if (!entry || !entry.hours || typeof entry.hours !== 'object') continue;
+        for (const v of Object.values(entry.hours)) {
+          result.stunden += toNumber(v);
+        }
+      }
+    }
+
+    if (Array.isArray(dayData.specialEntries)) {
+      for (const special of dayData.specialEntries) {
+        if (!special) continue;
+        result.stunden += toNumber(special.hours);
+      }
+    }
+
+    const dayHours =
+      dayData.dayHours && typeof dayData.dayHours === 'object'
+        ? dayData.dayHours
+        : {};
+
+    const arztKrank = toNumber(dayHours.arztKrank);
+    const schulung = toNumber(dayHours.schulung);
+    const sitzungKurs = toNumber(dayHours.sitzungKurs);
+
+    result.arztKrankHours += arztKrank;
+    result.stunden += arztKrank + schulung + sitzungKurs;
+
+    const meal =
+      dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
+        ? dayData.mealAllowance
+        : {};
+
+    if (meal['1']) result.morgenessenCount += 1;
+    if (meal['2']) result.mittagessenCount += 1;
+    if (meal['3']) result.abendessenCount += 1;
+
+    const flags =
+      dayData.flags && typeof dayData.flags === 'object'
+        ? dayData.flags
+        : {};
+
+    if (flags.schmutzzulage) result.schmutzzulageCount += 1;
+    if (flags.nebenauslagen) result.nebenauslagenCount += 1;
+  }
+
+  const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
+  for (const entry of pikettList) {
+    const dateKey = String(entry?.date || '').slice(0, 10);
+    if (!isDateKeyInClosedRange(dateKey, fromKey, toKey)) continue;
+
+    if (entry?.isOvertime3) continue;
+    result.pikettHours += toNumber(entry?.hours);
+  }
+
+  const absences = Array.isArray(submission?.absences) ? submission.absences : [];
+  for (const abs of absences) {
+    const id =
+      abs && abs.id
+        ? String(abs.id)
+        : [
+            String(abs?.type || '').toLowerCase(),
+            String(abs?.from || ''),
+            String(abs?.to || ''),
+            String(abs?.comment || ''),
+          ].join('|');
+
+    if (!absencesById.has(id)) {
+      absencesById.set(id, abs);
+    }
+  }
+
+  result.stunden = round1(result.stunden);
+  result.arztKrankHours = round1(result.arztKrankHours);
+  result.pikettHours = round1(result.pikettHours);
+
+  return result;
+}
+
+
+
 function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys) {
   const merged = { ...newPayload };
 
@@ -1117,18 +1381,31 @@ function getMaxDateFromKomLedger(komLedger) {
 
 function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, sign }) {
   // sign: +1 add, -1 subtract
-  if (!index[teamId]) index[teamId] = {};
-  if (!ledger[teamId]) ledger[teamId] = {};
+  if (!index.teams || typeof index.teams !== 'object') index.teams = {};
+  if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') {
+    index.teams[teamId] = {};
+  }
+  if (!ledger[teamId] || typeof ledger[teamId] !== 'object') {
+    ledger[teamId] = {};
+  }
+
+  const teamIndex = index.teams[teamId];
 
   for (const [komNr, rec] of Object.entries(snap || {})) {
     // ---- index ----
-    if (!index[teamId][komNr]) {
-      index[teamId][komNr] = { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null };
+    if (!teamIndex[komNr]) {
+      teamIndex[komNr] = {
+        totalHours: 0,
+        byOperation: {},
+        byUser: {},
+        lastActivity: null,
+      };
     }
-    const gi = index[teamId][komNr];
 
+    const gi = teamIndex[komNr];
     const total = Number(rec.totalHours || 0);
-    gi.totalHours += sign * total;
+
+    gi.totalHours = round1((Number(gi.totalHours || 0)) + sign * total);
 
     // byOperation
     for (const [k, v] of Object.entries(rec.byOperation || {})) {
@@ -1136,14 +1413,18 @@ function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, 
       if (sign > 0) addNum(gi.byOperation, k, h);
       else subNum(gi.byOperation, k, h);
     }
+    cleanupZeroish(gi.byOperation);
 
     // byUser total (store totals only)
     if (sign > 0) addNum(gi.byUser, username, total);
     else subNum(gi.byUser, username, total);
+    cleanupZeroish(gi.byUser);
 
     // ---- ledger ----
     if (!ledger[teamId][komNr]) ledger[teamId][komNr] = { byUser: {} };
-    if (!ledger[teamId][komNr].byUser[username]) ledger[teamId][komNr].byUser[username] = { byDate: {} };
+    if (!ledger[teamId][komNr].byUser[username]) {
+      ledger[teamId][komNr].byUser[username] = { byDate: {} };
+    }
 
     const lu = ledger[teamId][komNr].byUser[username];
     for (const [dateKey, v] of Object.entries(rec.byDate || {})) {
@@ -1164,7 +1445,7 @@ function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, 
 
     // cleanup empty kom in index if totals are gone
     if (!(gi.totalHours > 0)) {
-      delete index[teamId][komNr];
+      delete teamIndex[komNr];
     }
   }
 }
@@ -1621,11 +1902,13 @@ doc.y = chartsTopY + donutBoxH + 18;
     doc.fontSize(10).text(uname, { underline: true });
 
     for (const dk of dates) {
-      const h = Number(byDate[dk]) || 0;
-      if (!(h > 0)) continue;
-      if (doc.y > 780) doc.addPage();
-      doc.fontSize(9).text(`${dk}: ${h.toFixed(1).replace('.', ',')} h`);
-    }
+    const h = Number(byDate[dk]) || 0;
+    if (!(h > 0)) continue;
+    if (doc.y > 780) doc.addPage();
+
+    const dateLabel = formatDateDisplayEU(dk);
+    doc.fontSize(9).text(`${dateLabel}: ${h.toFixed(1).replace('.', ',')} h`);
+  }
   }
 
   doc.end();
@@ -2774,6 +3057,252 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
   });
 });
 
+app.get('/api/admin/payroll-users', requireAuth, requireAdmin, (req, res) => {
+  const teamId = String(req.user.teamId || '');
+
+  const users = USERS
+    .filter((u) => u.role === 'user')
+    .filter((u) => !teamId || u.teamId === teamId)
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      displayName: u.username,
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'de'));
+
+  res.json({
+    ok: true,
+    users,
+  });
+});
+
+app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
+  const fromRaw = String(req.query?.from || '').slice(0, 10);
+  const toRaw = String(req.query?.to || '').slice(0, 10);
+
+  const fromDate = parseIsoDateOnly(fromRaw);
+  const toDate = parseIsoDateOnly(toRaw);
+
+  if (!fromDate || !toDate) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
+    });
+  }
+
+  const periodStart = fromDate <= toDate ? fromDate : toDate;
+  const periodEnd = fromDate <= toDate ? toDate : fromDate;
+
+  const fromKey = formatDateKey(periodStart);
+  const toKey = formatDateKey(periodEnd);
+
+  const monthRange = getMonthRangeBetween(periodStart, periodEnd);
+  const teamId = String(req.user.teamId || '');
+
+  const users = USERS
+    .filter((u) => u.role === 'user')
+    .filter((u) => !teamId || u.teamId === teamId)
+    .sort((a, b) => String(a.username).localeCompare(String(b.username), 'de'));
+
+  const rows = users.map((user) => {
+    const absencesById = new Map();
+
+    const totals = {
+      stunden: 0,
+      arztKrankHours: 0,
+      ferienDays: 0,
+      morgenessenCount: 0,
+      mittagessenCount: 0,
+      abendessenCount: 0,
+      schmutzzulageCount: 0,
+      nebenauslagenCount: 0,
+      pikettHours: 0,
+    };
+
+    const overtime = {
+      ueZ1Raw: 0,
+      ueZ2: 0,
+      ueZ3: 0,
+    };
+
+    const selectedYear = periodEnd.getFullYear();
+    const yearCfg = getPayrollYearConfig(selectedYear);
+    const vorarbeitRequired = Number(yearCfg.vorarbeitRequired) || 0;
+
+    let ytdPositiveUntilEnd = 0;
+    let ytdPositiveBeforePeriod = 0;
+
+   
+    const transmittedMonths = [];
+    const missingMonths = [];
+
+    for (const month of monthRange) {
+      const submission = loadLatestMonthSubmission(
+        user.username,
+        month.year,
+        month.monthIndex
+      );
+
+      if (!submission) {
+        missingMonths.push(month.monthKey);
+        continue;
+      }
+
+      transmittedMonths.push(month.monthKey);
+
+      const partial = aggregatePayrollFromSubmission(
+        submission,
+        fromKey,
+        toKey,
+        absencesById
+      );
+
+      const partialOvertime = computePayrollPeriodOvertimeFromSubmission(
+        submission,
+        fromKey,
+        toKey
+      );
+
+      totals.stunden += partial.stunden;
+      totals.arztKrankHours += partial.arztKrankHours;
+      totals.morgenessenCount += partial.morgenessenCount;
+      totals.mittagessenCount += partial.mittagessenCount;
+      totals.abendessenCount += partial.abendessenCount;
+      totals.schmutzzulageCount += partial.schmutzzulageCount;
+      totals.nebenauslagenCount += partial.nebenauslagenCount;
+      totals.pikettHours += partial.pikettHours;
+      overtime.ueZ1Raw += partialOvertime.ueZ1Raw;
+      overtime.ueZ2 += partialOvertime.ueZ2;
+      overtime.ueZ3 += partialOvertime.ueZ3;
+    }
+
+    const selectedYearStart = new Date(selectedYear, 0, 1);
+    const selectedYearStartKey = formatDateKey(selectedYearStart);
+
+    const vorarbeitPeriodStart =
+      periodStart > selectedYearStart ? periodStart : selectedYearStart;
+    const vorarbeitPeriodStartKey = formatDateKey(vorarbeitPeriodStart);
+
+    const dayBeforeVorarbeitPeriodStart = new Date(vorarbeitPeriodStart);
+    dayBeforeVorarbeitPeriodStart.setDate(dayBeforeVorarbeitPeriodStart.getDate() - 1);
+
+    const hasPriorVorarbeitWindow = dayBeforeVorarbeitPeriodStart >= selectedYearStart;
+    const priorVorarbeitEndKey = hasPriorVorarbeitWindow
+      ? formatDateKey(dayBeforeVorarbeitPeriodStart)
+      : null;
+
+    const ytdMonthRange = getMonthRangeBetween(selectedYearStart, periodEnd);
+
+    for (const month of ytdMonthRange) {
+      const submission = loadLatestMonthSubmission(
+        user.username,
+        month.year,
+        month.monthIndex
+      );
+
+      if (!submission) continue;
+
+      const ytdPartial = computePayrollPeriodOvertimeFromSubmission(
+        submission,
+        selectedYearStartKey,
+        toKey
+      );
+      ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
+
+      if (hasPriorVorarbeitWindow) {
+        const beforePartial = computePayrollPeriodOvertimeFromSubmission(
+          submission,
+          selectedYearStartKey,
+          priorVorarbeitEndKey
+        );
+        ytdPositiveBeforePeriod += beforePartial.ueZ1Positive;
+      }
+    }
+
+    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+
+    overtime.ueZ1Raw = r1(overtime.ueZ1Raw);
+    overtime.ueZ2 = r1(overtime.ueZ2);
+    overtime.ueZ3 = r1(overtime.ueZ3);
+
+    const vorarbeitFilledAtPeriodEnd = r1(
+      Math.min(vorarbeitRequired, Math.max(0, ytdPositiveUntilEnd))
+    );
+
+    const vorarbeitFilledBeforePeriod = r1(
+      Math.min(vorarbeitRequired, Math.max(0, ytdPositiveBeforePeriod))
+    );
+
+    const vorarbeitAppliedInPeriod = r1(
+      Math.max(0, vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod)
+    );
+
+    const ueZ1AfterVorarbeitInPeriod = r1(
+      overtime.ueZ1Raw - vorarbeitAppliedInPeriod
+    );
+
+    for (const abs of absencesById.values()) {
+      const type = String(abs?.type || '').trim().toLowerCase();
+      const status = String(abs?.status || '').trim().toLowerCase();
+
+      if (type !== 'ferien') continue;
+      if (status !== 'accepted') continue;
+
+      totals.ferienDays += computeAbsenceDaysInPeriod(
+        abs,
+        periodStart,
+        periodEnd
+      );
+    }
+
+    totals.stunden = round1(totals.stunden);
+    totals.arztKrankHours = round1(totals.arztKrankHours);
+    totals.ferienDays = round1(totals.ferienDays);
+    totals.pikettHours = round1(totals.pikettHours);
+    overtime.ueZ2 = Math.round(overtime.ueZ2 * 10) / 10;
+    overtime.ueZ3 = Math.round(overtime.ueZ3 * 10) / 10;
+
+    return {
+      username: user.username,
+      displayName: user.username,
+      coverage: {
+        expectedMonths: monthRange.map((m) => m.monthKey),
+        transmittedMonths,
+        missingMonths,
+      },
+      totals,
+      overtime: {
+        ueZ1Raw: overtime.ueZ1Raw,
+        vorarbeitApplied: vorarbeitAppliedInPeriod,
+        ueZ1AfterVorarbeit: ueZ1AfterVorarbeitInPeriod,
+        ueZ2: overtime.ueZ2,
+        ueZ3: overtime.ueZ3,
+      },
+      vorarbeit: {
+        year: selectedYear,
+        filled: vorarbeitFilledAtPeriodEnd,
+        required: vorarbeitRequired,
+        changeInPeriod: vorarbeitAppliedInPeriod,
+      },
+    };
+  });
+
+  const summary = {
+    usersCount: rows.length,
+    completeUsers: rows.filter((r) => r.coverage.missingMonths.length === 0).length,
+    incompleteUsers: rows.filter((r) => r.coverage.missingMonths.length > 0).length,
+  };
+
+  return res.json({
+    ok: true,
+    period: {
+      from: fromKey,
+      to: toKey,
+    },
+    summary,
+    rows,
+  });
+});
 
 
 // ---- Admin: summary of transmissions per user ----
@@ -2866,6 +3395,7 @@ app.get(
     });
   }
 );
+
 
 // ---- Start server ----
 app.listen(PORT, () => {

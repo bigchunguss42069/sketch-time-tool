@@ -1,19 +1,29 @@
 {
   "version": 1,
-  "updatedAt": "2026-03-13T17:43:49.115Z",
+  "updatedAt": "2026-03-14T14:58:22.250Z",
   "teams": {
     "montage": {
       "123123": {
-        "totalHours": 4,
+        "totalHours": 8,
         "byOperation": {
-          "option1": 4
+          "option1": 5,
+          "option2": 3
         },
         "byUser": {
-          "demo": 4
+          "demo": 8
         },
-        "lastActivity": "2026-03-09"
+        "lastActivity": null
+      },
+      "123456": {
+        "totalHours": 5,
+        "byOperation": {
+          "option1": 5
+        },
+        "byUser": {
+          "demo": 5
+        },
+        "lastActivity": null
       }
     }
-  },
-  "montage": {}
+  }
 }

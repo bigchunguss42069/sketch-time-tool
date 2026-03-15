@@ -1,1 +1,23 @@
-{}
+{
+  "123123": {
+    "totalHours": 8,
+    "byOperation": {
+      "option1": 5,
+      "option2": 3
+    },
+    "byDate": {
+      "2026-03-10": 8
+    },
+    "lastActivity": "2026-03-10"
+  },
+  "123456": {
+    "totalHours": 5,
+    "byOperation": {
+      "option1": 5
+    },
+    "byDate": {
+      "2026-03-09": 5
+    },
+    "lastActivity": "2026-03-09"
+  }
+}

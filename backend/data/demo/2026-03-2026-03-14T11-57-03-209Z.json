@@ -1,0 +1,573 @@
+{
+  "year": 2026,
+  "monthIndex": 2,
+  "monthLabel": "März 2026",
+  "days": {
+    "2026-03-09": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-16": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-17": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-18": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-19": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-20": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-10": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-11": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-12": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-13": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-02": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-03": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-04": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-05": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-06": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    },
+    "2026-03-23": {
+      "flags": {
+        "ferien": false,
+        "schmutzzulage": false,
+        "nebenauslagen": false
+      },
+      "dayHours": {
+        "schulung": 0,
+        "sitzungKurs": 0,
+        "arztKrank": 0
+      },
+      "entries": [
+        {
+          "komNr": "",
+          "hours": {
+            "option1": 0,
+            "option2": 0,
+            "option3": 0,
+            "option4": 0,
+            "option5": 0,
+            "option6": 0
+          }
+        }
+      ],
+      "mealAllowance": {
+        "1": false,
+        "2": false,
+        "3": false
+      },
+      "specialEntries": []
+    }
+  },
+  "pikett": [
+    {
+      "date": "2026-03-13",
+      "komNr": "",
+      "hours": 0,
+      "note": "",
+      "isOvertime3": false
+    }
+  ],
+  "absences": [
+    {
+      "id": "abs-1773432137676-47d66c",
+      "username": "demo",
+      "teamId": "montage",
+      "type": "ferien",
+      "from": "2026-03-16",
+      "to": "2026-03-22",
+      "days": null,
+      "comment": "",
+      "status": "cancelled",
+      "createdAt": "2026-03-13T20:02:17.682Z",
+      "createdBy": "demo",
+      "decidedAt": "2026-03-13T22:13:00.393Z",
+      "decidedBy": "chef",
+      "cancelRequestedAt": "2026-03-13T22:08:47.772Z",
+      "cancelRequestedBy": "demo"
+    },
+    {
+      "id": "abs-1773433194808-4c6dc8",
+      "username": "demo",
+      "teamId": "montage",
+      "type": "unfall",
+      "from": "2026-03-23",
+      "to": "2026-03-29",
+      "days": null,
+      "comment": "",
+      "status": "cancelled",
+      "createdAt": "2026-03-13T20:19:54.812Z",
+      "createdBy": "demo",
+      "decidedAt": "2026-03-13T22:12:58.976Z",
+      "decidedBy": "chef",
+      "cancelRequestedAt": "2026-03-13T22:08:48.468Z",
+      "cancelRequestedBy": "demo"
+    },
+    {
+      "id": "abs-1773440501214-1eae51",
+      "username": "demo",
+      "teamId": "montage",
+      "type": "ferien",
+      "from": "2026-03-23",
+      "to": "2026-03-29",
+      "days": null,
+      "comment": "",
+      "status": "cancelled",
+      "createdAt": "2026-03-13T22:21:41.218Z",
+      "createdBy": "demo",
+      "decidedAt": "2026-03-13T22:21:42.964Z",
+      "decidedBy": "demo"
+    }
+  ],
+  "userId": "demo",
+  "teamId": "montage",
+  "receivedAt": "2026-03-14T11:57:03.209Z",
+  "totals": {
+    "kom": 0,
+    "dayHours": 0,
+    "pikett": 0,
+    "overtime3": 0,
+    "total": 0
+  }
+}
