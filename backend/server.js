@@ -708,7 +708,7 @@ function calculateAbsenceVacationDays(absence) {
 
 
 
-// Matches your frontend logic: vacation day fraction = max(0, 1 - (hoursWorked/8))
+// vacation day fraction = max(0, 1 - (hoursWorked/8))
 function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
   const DAILY_SOLL = 8.0;
   const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
@@ -733,7 +733,7 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
     const worked = computeNonPikettHours(dayData);
     const fraction = Math.max(0, 1 - (worked / DAILY_SOLL));
 
-    // keep it stable; quarter-day rounding is usually enough
+    
     const rounded = Math.round(fraction * 4) / 4;
     used += rounded;
   }
@@ -1139,7 +1139,7 @@ function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys)
 
 
 // Helper: get (and create) the folder for a given user
-// We use username as the folder id (consistent with existing files)
+
 function getUserDir(userId) {
   const safeId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
   const dir = path.join(BASE_DATA_DIR, safeId);
@@ -1658,8 +1658,7 @@ function applyAnlagenDelta(teamId, username, newMap, oldMap) {
   return index;
 }
 
-// Optional: full rebuild from stored transmission files (latest per user/month).
-// Useful if anlagenIndex.json is missing or you want to verify consistency.
+
 function rebuildAnlagenIndex() {
   const index = { version: 1, updatedAt: null, teams: {} };
 
@@ -1727,12 +1726,11 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
   if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
-  // Optional: enforce team scoping (recommended when you add more teams)
-  // if (req.user.teamId !== teamId) return res.status(403).json({ ok:false, error:'Wrong team' });
+ 
 
   const index = readAnlagenIndex();
   const ledger = readAnlagenLedger();
-  const meta = readAnlagenArchive(); // you already have this
+  const meta = readAnlagenArchive(); 
 
   const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
     ? index.teams[teamId]
@@ -1745,7 +1743,7 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   const teamMeta = (meta?.[teamId] && typeof meta[teamId] === 'object') ? meta[teamId] : {};
   const m = teamMeta[komNr] || null;
 
-  // charts from frontend (optional)
+  // charts from frontend 
   const donutUrl = req.body?.donutPngDataUrl;
   const usersUrl = req.body?.usersPngDataUrl;
 
@@ -1804,11 +1802,11 @@ const x = doc.page.margins.left;
 const colGap = 18;
 const colW = (pageInnerW - colGap) / 2;
 
-// Donut should be square
+
 const donutBoxW = Math.floor(colW);
 const donutBoxH = donutBoxW;
 
-// Bars are usually wider than tall; we still fit them into the same height for alignment
+
 const usersBoxW = Math.floor(colW);
 const usersBoxH = donutBoxH;
 
@@ -1816,7 +1814,7 @@ doc.moveDown(0.4);
 
 const chartsTopY = doc.y;
 
-// Optional: light card borders (makes it look cleaner)
+
 doc.save();
 doc.lineWidth(1).strokeColor('#E5E7EB');
 doc.rect(x, chartsTopY, colW, donutBoxH).stroke();
@@ -2069,7 +2067,7 @@ app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, (req, res) => 
   });
 });
 
-// ---- Admin: rebuild Anlagen index (optional maintenance) ----
+// ---- Admin: rebuild Anlagen index  ----
 // POST /api/admin/anlagen-rebuild
 app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, (req, res) => {
   try {
@@ -2183,9 +2181,7 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   }
 
 
-  // 1.5) No persisted side effects here anymore.
-// We handle Anlagen + Konten together later in one strict block,
-// so a failed transmission can be rolled back cleanly.
+
 
   // 2) Update user's index.json (simple list of transmissions)
   const indexPath = path.join(userDir, 'index.json');
@@ -2219,7 +2215,7 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
   } catch (err) {
   console.error('Failed to update index.json:', err);
 
-  // Remove the just-saved submission file (best effort)
+  // Remove the just-saved submission file 
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch (unlinkErr) {
@@ -3076,6 +3072,358 @@ app.get('/api/admin/payroll-users', requireAuth, requireAdmin, (req, res) => {
   });
 });
 
+
+function getPayrollAbsenceTypeLabel(type) {
+  const key = String(type || '').trim().toLowerCase();
+
+  const map = {
+    ferien: 'Ferien',
+    unfall: 'Unfall',
+    militaer: 'Militär',
+    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+    vaterschaft: 'Vaterschaftsurlaub',
+    sonstiges: 'Sonstiges',
+  };
+
+  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Abwesenheit');
+}
+
+function isWeekdayDateKey(dateKey) {
+  const d = new Date(String(dateKey).slice(0, 10) + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return false;
+  const wd = d.getDay();
+  return wd >= 1 && wd <= 5;
+}
+
+function ensurePayrollAuditRow(rowMap, dateKey) {
+  if (!rowMap.has(dateKey)) {
+    rowMap.set(dateKey, {
+      dateKey,
+      stunden: 0,
+      arztKrankHours: 0,
+      ferien: false,
+      morgenessen: false,
+      mittagessen: false,
+      abendessen: false,
+      schmutzzulage: false,
+      nebenauslagen: false,
+      pikettHours: 0,
+      overtime3Hours: 0,
+      absenceLabels: [],
+    });
+  }
+  return rowMap.get(dateKey);
+}
+
+function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+
+  const fromKey = formatDateKey(periodStart);
+  const toKey = formatDateKey(periodEnd);
+  const monthRange = getMonthRangeBetween(periodStart, periodEnd);
+
+  const absencesById = new Map();
+  const auditRowMap = new Map();
+
+  const totals = {
+    stunden: 0,
+    arztKrankHours: 0,
+    ferienDays: 0,
+    morgenessenCount: 0,
+    mittagessenCount: 0,
+    abendessenCount: 0,
+    schmutzzulageCount: 0,
+    nebenauslagenCount: 0,
+    pikettHours: 0,
+  };
+
+  const overtime = {
+    ueZ1Raw: 0,
+    ueZ2: 0,
+    ueZ3: 0,
+  };
+
+  const selectedYear = periodEnd.getFullYear();
+  const yearCfg = getPayrollYearConfig(selectedYear);
+  const vorarbeitRequired = Number(yearCfg.vorarbeitRequired) || 0;
+
+  let ytdPositiveUntilEnd = 0;
+  let ytdPositiveBeforePeriod = 0;
+
+  const transmittedMonths = [];
+  const missingMonths = [];
+
+  for (const month of monthRange) {
+    const submission = loadLatestMonthSubmission(
+      user.username,
+      month.year,
+      month.monthIndex
+    );
+
+    if (!submission) {
+      missingMonths.push(month.monthKey);
+      continue;
+    }
+
+    transmittedMonths.push(month.monthKey);
+
+    const partial = aggregatePayrollFromSubmission(
+      submission,
+      fromKey,
+      toKey,
+      absencesById
+    );
+
+    const partialOvertime = computePayrollPeriodOvertimeFromSubmission(
+      submission,
+      fromKey,
+      toKey
+    );
+
+    totals.stunden += partial.stunden;
+    totals.arztKrankHours += partial.arztKrankHours;
+    totals.morgenessenCount += partial.morgenessenCount;
+    totals.mittagessenCount += partial.mittagessenCount;
+    totals.abendessenCount += partial.abendessenCount;
+    totals.schmutzzulageCount += partial.schmutzzulageCount;
+    totals.nebenauslagenCount += partial.nebenauslagenCount;
+    totals.pikettHours += partial.pikettHours;
+
+    overtime.ueZ1Raw += partialOvertime.ueZ1Raw;
+    overtime.ueZ2 += partialOvertime.ueZ2;
+    overtime.ueZ3 += partialOvertime.ueZ3;
+
+    const daysObj =
+      submission && submission.days && typeof submission.days === 'object'
+        ? submission.days
+        : {};
+
+    for (const [dateKey, dayData] of Object.entries(daysObj)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      if (dateKey < fromKey || dateKey > toKey) continue;
+      if (!dayData || typeof dayData !== 'object') continue;
+
+      const row = ensurePayrollAuditRow(auditRowMap, dateKey);
+      row.stunden += num(computeNonPikettHours(dayData));
+
+      const dayHours =
+        dayData.dayHours && typeof dayData.dayHours === 'object'
+          ? dayData.dayHours
+          : {};
+
+      row.arztKrankHours += num(dayHours.arztKrank);
+
+      const meal =
+        dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
+          ? dayData.mealAllowance
+          : {};
+
+      if (meal['1']) row.morgenessen = true;
+      if (meal['2']) row.mittagessen = true;
+      if (meal['3']) row.abendessen = true;
+
+      const flags =
+        dayData.flags && typeof dayData.flags === 'object'
+          ? dayData.flags
+          : {};
+
+      if (flags.ferien) row.ferien = true;
+      if (flags.schmutzzulage) row.schmutzzulage = true;
+      if (flags.nebenauslagen) row.nebenauslagen = true;
+    }
+
+    const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
+    for (const entry of pikettList) {
+      const dateKey = String(entry?.date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+      if (dateKey < fromKey || dateKey > toKey) continue;
+
+      const row = ensurePayrollAuditRow(auditRowMap, dateKey);
+      const h = num(entry?.hours);
+
+      if (entry?.isOvertime3) row.overtime3Hours += h;
+      else row.pikettHours += h;
+    }
+
+    const absences = Array.isArray(submission?.absences) ? submission.absences : [];
+    for (const abs of absences) {
+      const id =
+        abs && abs.id
+          ? String(abs.id)
+          : [
+              String(abs?.type || '').toLowerCase(),
+              String(abs?.from || ''),
+              String(abs?.to || ''),
+              String(abs?.comment || ''),
+            ].join('|');
+
+      if (!absencesById.has(id)) {
+        absencesById.set(id, abs);
+      }
+    }
+  }
+
+  for (const abs of absencesById.values()) {
+    const type = String(abs?.type || '').trim().toLowerCase();
+    const status = String(abs?.status || '').trim().toLowerCase();
+
+    if (type === 'ferien' && status === 'accepted') {
+      totals.ferienDays += computeAbsenceDaysInPeriod(abs, periodStart, periodEnd);
+    }
+
+    if (status !== 'accepted') continue;
+    if (!abs?.from || !abs?.to) continue;
+
+    const labelBase = getPayrollAbsenceTypeLabel(abs.type);
+    const comment = String(abs.comment || '').trim();
+    const label = comment ? `${labelBase} – ${comment}` : labelBase;
+
+    const fromAbs = parseIsoDateOnly(abs.from);
+    const toAbs = parseIsoDateOnly(abs.to);
+    if (!fromAbs || !toAbs) continue;
+
+    const start = fromAbs <= toAbs ? fromAbs : toAbs;
+    const end = fromAbs <= toAbs ? toAbs : fromAbs;
+
+    const overlapStart = start > periodStart ? start : periodStart;
+    const overlapEnd = end < periodEnd ? end : periodEnd;
+
+    if (overlapEnd < overlapStart) continue;
+
+    const cursor = new Date(overlapStart);
+    while (cursor <= overlapEnd) {
+      const dk = formatDateKey(cursor);
+      if (isWeekdayDateKey(dk)) {
+        const row = ensurePayrollAuditRow(auditRowMap, dk);
+        if (!row.absenceLabels.includes(label)) {
+          row.absenceLabels.push(label);
+        }
+        if (type === 'ferien') {
+          row.ferien = true;
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  const selectedYearStart = new Date(selectedYear, 0, 1);
+  const selectedYearStartKey = formatDateKey(selectedYearStart);
+
+  const vorarbeitPeriodStart =
+    periodStart > selectedYearStart ? periodStart : selectedYearStart;
+
+  const dayBeforeVorarbeitPeriodStart = new Date(vorarbeitPeriodStart);
+  dayBeforeVorarbeitPeriodStart.setDate(dayBeforeVorarbeitPeriodStart.getDate() - 1);
+
+  const hasPriorVorarbeitWindow = dayBeforeVorarbeitPeriodStart >= selectedYearStart;
+  const priorVorarbeitEndKey = hasPriorVorarbeitWindow
+    ? formatDateKey(dayBeforeVorarbeitPeriodStart)
+    : null;
+
+  const ytdMonthRange = getMonthRangeBetween(selectedYearStart, periodEnd);
+
+  for (const month of ytdMonthRange) {
+    const submission = loadLatestMonthSubmission(
+      user.username,
+      month.year,
+      month.monthIndex
+    );
+
+    if (!submission) continue;
+
+    const ytdPartial = computePayrollPeriodOvertimeFromSubmission(
+      submission,
+      selectedYearStartKey,
+      toKey
+    );
+    ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
+
+    if (hasPriorVorarbeitWindow) {
+      const beforePartial = computePayrollPeriodOvertimeFromSubmission(
+        submission,
+        selectedYearStartKey,
+        priorVorarbeitEndKey
+      );
+      ytdPositiveBeforePeriod += beforePartial.ueZ1Positive;
+    }
+  }
+
+  totals.stunden = r1(totals.stunden);
+  totals.arztKrankHours = r1(totals.arztKrankHours);
+  totals.ferienDays = r1(totals.ferienDays);
+  totals.pikettHours = r1(totals.pikettHours);
+
+  overtime.ueZ1Raw = r1(overtime.ueZ1Raw);
+  overtime.ueZ2 = r1(overtime.ueZ2);
+  overtime.ueZ3 = r1(overtime.ueZ3);
+
+  const vorarbeitFilledAtPeriodEnd = r1(
+    Math.min(vorarbeitRequired, Math.max(0, ytdPositiveUntilEnd))
+  );
+
+  const vorarbeitFilledBeforePeriod = r1(
+    Math.min(vorarbeitRequired, Math.max(0, ytdPositiveBeforePeriod))
+  );
+
+  const vorarbeitAppliedInPeriod = r1(
+    Math.max(0, vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod)
+  );
+
+  const ueZ1AfterVorarbeitInPeriod = r1(
+    overtime.ueZ1Raw - vorarbeitAppliedInPeriod
+  );
+
+  const auditRows = Array.from(auditRowMap.values())
+    .map((row) => ({
+      dateKey: row.dateKey,
+      dateLabel: formatDateDisplayEU(row.dateKey),
+      stunden: r1(row.stunden),
+      arztKrankHours: r1(row.arztKrankHours),
+      ferien: !!row.ferien,
+      morgenessen: !!row.morgenessen,
+      mittagessen: !!row.mittagessen,
+      abendessen: !!row.abendessen,
+      schmutzzulage: !!row.schmutzzulage,
+      nebenauslagen: !!row.nebenauslagen,
+      pikettHours: r1(row.pikettHours),
+      overtime3Hours: r1(row.overtime3Hours),
+      absenceLabels: row.absenceLabels || [],
+      absencesText: (row.absenceLabels || []).join(' | '),
+    }))
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  return {
+    username: user.username,
+    displayName: user.username,
+    coverage: {
+      expectedMonths: monthRange.map((m) => m.monthKey),
+      transmittedMonths,
+      missingMonths,
+    },
+    totals,
+    overtime: {
+      ueZ1Raw: overtime.ueZ1Raw,
+      vorarbeitApplied: vorarbeitAppliedInPeriod,
+      ueZ1AfterVorarbeit: ueZ1AfterVorarbeitInPeriod,
+      ueZ2: overtime.ueZ2,
+      ueZ3: overtime.ueZ3,
+    },
+    vorarbeit: {
+      year: selectedYear,
+      filled: vorarbeitFilledAtPeriodEnd,
+      required: vorarbeitRequired,
+      changeInPeriod: vorarbeitAppliedInPeriod,
+    },
+    auditRows,
+  };
+}
+
+
+
 app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
   const fromRaw = String(req.query?.from || '').slice(0, 10);
   const toRaw = String(req.query?.to || '').slice(0, 10);
@@ -3104,188 +3452,9 @@ app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
     .filter((u) => !teamId || u.teamId === teamId)
     .sort((a, b) => String(a.username).localeCompare(String(b.username), 'de'));
 
-  const rows = users.map((user) => {
-    const absencesById = new Map();
-
-    const totals = {
-      stunden: 0,
-      arztKrankHours: 0,
-      ferienDays: 0,
-      morgenessenCount: 0,
-      mittagessenCount: 0,
-      abendessenCount: 0,
-      schmutzzulageCount: 0,
-      nebenauslagenCount: 0,
-      pikettHours: 0,
-    };
-
-    const overtime = {
-      ueZ1Raw: 0,
-      ueZ2: 0,
-      ueZ3: 0,
-    };
-
-    const selectedYear = periodEnd.getFullYear();
-    const yearCfg = getPayrollYearConfig(selectedYear);
-    const vorarbeitRequired = Number(yearCfg.vorarbeitRequired) || 0;
-
-    let ytdPositiveUntilEnd = 0;
-    let ytdPositiveBeforePeriod = 0;
-
-   
-    const transmittedMonths = [];
-    const missingMonths = [];
-
-    for (const month of monthRange) {
-      const submission = loadLatestMonthSubmission(
-        user.username,
-        month.year,
-        month.monthIndex
-      );
-
-      if (!submission) {
-        missingMonths.push(month.monthKey);
-        continue;
-      }
-
-      transmittedMonths.push(month.monthKey);
-
-      const partial = aggregatePayrollFromSubmission(
-        submission,
-        fromKey,
-        toKey,
-        absencesById
-      );
-
-      const partialOvertime = computePayrollPeriodOvertimeFromSubmission(
-        submission,
-        fromKey,
-        toKey
-      );
-
-      totals.stunden += partial.stunden;
-      totals.arztKrankHours += partial.arztKrankHours;
-      totals.morgenessenCount += partial.morgenessenCount;
-      totals.mittagessenCount += partial.mittagessenCount;
-      totals.abendessenCount += partial.abendessenCount;
-      totals.schmutzzulageCount += partial.schmutzzulageCount;
-      totals.nebenauslagenCount += partial.nebenauslagenCount;
-      totals.pikettHours += partial.pikettHours;
-      overtime.ueZ1Raw += partialOvertime.ueZ1Raw;
-      overtime.ueZ2 += partialOvertime.ueZ2;
-      overtime.ueZ3 += partialOvertime.ueZ3;
-    }
-
-    const selectedYearStart = new Date(selectedYear, 0, 1);
-    const selectedYearStartKey = formatDateKey(selectedYearStart);
-
-    const vorarbeitPeriodStart =
-      periodStart > selectedYearStart ? periodStart : selectedYearStart;
-    const vorarbeitPeriodStartKey = formatDateKey(vorarbeitPeriodStart);
-
-    const dayBeforeVorarbeitPeriodStart = new Date(vorarbeitPeriodStart);
-    dayBeforeVorarbeitPeriodStart.setDate(dayBeforeVorarbeitPeriodStart.getDate() - 1);
-
-    const hasPriorVorarbeitWindow = dayBeforeVorarbeitPeriodStart >= selectedYearStart;
-    const priorVorarbeitEndKey = hasPriorVorarbeitWindow
-      ? formatDateKey(dayBeforeVorarbeitPeriodStart)
-      : null;
-
-    const ytdMonthRange = getMonthRangeBetween(selectedYearStart, periodEnd);
-
-    for (const month of ytdMonthRange) {
-      const submission = loadLatestMonthSubmission(
-        user.username,
-        month.year,
-        month.monthIndex
-      );
-
-      if (!submission) continue;
-
-      const ytdPartial = computePayrollPeriodOvertimeFromSubmission(
-        submission,
-        selectedYearStartKey,
-        toKey
-      );
-      ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
-
-      if (hasPriorVorarbeitWindow) {
-        const beforePartial = computePayrollPeriodOvertimeFromSubmission(
-          submission,
-          selectedYearStartKey,
-          priorVorarbeitEndKey
-        );
-        ytdPositiveBeforePeriod += beforePartial.ueZ1Positive;
-      }
-    }
-
-    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
-
-    overtime.ueZ1Raw = r1(overtime.ueZ1Raw);
-    overtime.ueZ2 = r1(overtime.ueZ2);
-    overtime.ueZ3 = r1(overtime.ueZ3);
-
-    const vorarbeitFilledAtPeriodEnd = r1(
-      Math.min(vorarbeitRequired, Math.max(0, ytdPositiveUntilEnd))
-    );
-
-    const vorarbeitFilledBeforePeriod = r1(
-      Math.min(vorarbeitRequired, Math.max(0, ytdPositiveBeforePeriod))
-    );
-
-    const vorarbeitAppliedInPeriod = r1(
-      Math.max(0, vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod)
-    );
-
-    const ueZ1AfterVorarbeitInPeriod = r1(
-      overtime.ueZ1Raw - vorarbeitAppliedInPeriod
-    );
-
-    for (const abs of absencesById.values()) {
-      const type = String(abs?.type || '').trim().toLowerCase();
-      const status = String(abs?.status || '').trim().toLowerCase();
-
-      if (type !== 'ferien') continue;
-      if (status !== 'accepted') continue;
-
-      totals.ferienDays += computeAbsenceDaysInPeriod(
-        abs,
-        periodStart,
-        periodEnd
-      );
-    }
-
-    totals.stunden = round1(totals.stunden);
-    totals.arztKrankHours = round1(totals.arztKrankHours);
-    totals.ferienDays = round1(totals.ferienDays);
-    totals.pikettHours = round1(totals.pikettHours);
-    overtime.ueZ2 = Math.round(overtime.ueZ2 * 10) / 10;
-    overtime.ueZ3 = Math.round(overtime.ueZ3 * 10) / 10;
-
-    return {
-      username: user.username,
-      displayName: user.username,
-      coverage: {
-        expectedMonths: monthRange.map((m) => m.monthKey),
-        transmittedMonths,
-        missingMonths,
-      },
-      totals,
-      overtime: {
-        ueZ1Raw: overtime.ueZ1Raw,
-        vorarbeitApplied: vorarbeitAppliedInPeriod,
-        ueZ1AfterVorarbeit: ueZ1AfterVorarbeitInPeriod,
-        ueZ2: overtime.ueZ2,
-        ueZ3: overtime.ueZ3,
-      },
-      vorarbeit: {
-        year: selectedYear,
-        filled: vorarbeitFilledAtPeriodEnd,
-        required: vorarbeitRequired,
-        changeInPeriod: vorarbeitAppliedInPeriod,
-      },
-    };
-  });
+ const rows = users.map((user) =>
+  buildPayrollPeriodDataForUser(user, periodStart, periodEnd)
+);
 
   const summary = {
     usersCount: rows.length,
@@ -3302,6 +3471,174 @@ app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
     summary,
     rows,
   });
+});
+
+
+app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, (req, res) => {
+  const username = String(req.query?.username || '').trim();
+  const fromRaw = String(req.query?.from || '').slice(0, 10);
+  const toRaw = String(req.query?.to || '').slice(0, 10);
+
+  if (!username) {
+    return res.status(400).json({ ok: false, error: 'Benutzername fehlt.' });
+  }
+
+  const fromDate = parseIsoDateOnly(fromRaw);
+  const toDate = parseIsoDateOnly(toRaw);
+
+  if (!fromDate || !toDate) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
+    });
+  }
+
+  const periodStart = fromDate <= toDate ? fromDate : toDate;
+  const periodEnd = fromDate <= toDate ? toDate : fromDate;
+  const teamId = String(req.user.teamId || '');
+
+  const targetUser = USERS.find(
+    (u) =>
+      u.role === 'user' &&
+      u.username === username &&
+      (!teamId || u.teamId === teamId)
+  );
+
+  if (!targetUser) {
+    return res.status(404).json({
+      ok: false,
+      error: 'Mitarbeiter wurde nicht gefunden.',
+    });
+  }
+
+  const row = buildPayrollPeriodDataForUser(targetUser, periodStart, periodEnd);
+
+  const fmtHours = (v) => `${(Number(v) || 0).toFixed(1).replace('.', ',')} h`;
+  const fmtSignedHours = (v) => {
+    const n = Number(v) || 0;
+    const abs = Math.abs(n).toFixed(1).replace('.', ',');
+    if (n > 0) return `+${abs} h`;
+    if (n < 0) return `-${abs} h`;
+    return '0,0 h';
+  };
+  const fmtDays = (v) => `${String(Number(v) || 0).replace('.', ',')} Tage`;
+  const fmtCount = (v) => String(Math.round(Number(v) || 0));
+
+  const safeUser = String(targetUser.username).replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const filename = `Lohnabrechnung_${safeUser}_${formatDateKey(periodStart)}_${formatDateKey(periodEnd)}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  const doc = new PDFDocument({
+    margin: 42,
+    size: 'A4',
+    info: {
+      Title: `Lohnabrechnung ${targetUser.username} ${formatDateKey(periodStart)}-${formatDateKey(periodEnd)}`,
+      Author: 'Hours App',
+    },
+  });
+
+  doc.pipe(res);
+
+  function ensurePdfSpace(height = 24) {
+    if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
+      doc.addPage();
+    }
+  }
+
+  function sectionTitle(text) {
+    ensurePdfSpace(28);
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(11).text(text);
+    doc.moveDown(0.25);
+  }
+
+  function writeMetricLines(items) {
+    items.forEach(([label, value]) => {
+      ensurePdfSpace(16);
+      doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
+      doc.font('Helvetica').fontSize(9).text(value);
+    });
+  }
+
+  doc.font('Helvetica-Bold').fontSize(16).text('Lohnabrechnung – Audit Export');
+  doc.moveDown(0.4);
+
+  doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
+  doc.text(`Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`);
+  doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
+  doc.text(`Exportiert von: ${req.user.username}`);
+  doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
+
+  sectionTitle('Lohndaten im Zeitraum');
+  writeMetricLines([
+    ['Arzt / Krank', fmtHours(row.totals.arztKrankHours)],
+    ['Ferien', fmtDays(row.totals.ferienDays)],
+    ['Stunden', fmtHours(row.totals.stunden)],
+    ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
+    ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
+    ['Abendessen', fmtCount(row.totals.abendessenCount)],
+    ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
+    ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
+    ['Pikett', fmtHours(row.totals.pikettHours)],
+  ]);
+
+  sectionTitle('Überzeit in dieser Lohnperiode');
+  writeMetricLines([
+    ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
+    ['Vorarbeit angerechnet', fmtSignedHours(row.overtime.vorarbeitApplied)],
+    ['ÜZ1 nach Vorarbeit', fmtSignedHours(row.overtime.ueZ1AfterVorarbeit)],
+    ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
+    ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
+  ]);
+
+  sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
+  writeMetricLines([
+    ['Stand per Periodenende', `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`],
+    ['Änderung im Zeitraum', fmtSignedHours(row.vorarbeit.changeInPeriod)],
+  ]);
+
+  sectionTitle('Berücksichtigte Übertragungen');
+  writeMetricLines([
+    ['Monate berücksichtigt', (row.coverage.transmittedMonths || []).join(', ') || '–'],
+    ['Monate fehlend', (row.coverage.missingMonths || []).join(', ') || '–'],
+  ]);
+
+  sectionTitle('Tagesdetails');
+  if (!row.auditRows.length) {
+    doc.font('Helvetica').fontSize(9).text('Keine relevanten Einträge im ausgewählten Zeitraum.');
+  } else {
+    row.auditRows.forEach((entry) => {
+      ensurePdfSpace(42);
+
+      doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+
+      doc.font('Helvetica').fontSize(8.5).text(
+        `Stunden: ${fmtHours(entry.stunden)}   |   Arzt/Krank: ${fmtHours(entry.arztKrankHours)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
+      );
+
+      doc.text(
+        `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
+      );
+
+      doc.text(
+        `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
+      );
+
+      doc.text(
+        `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
+      );
+
+      if (entry.absencesText) {
+        doc.text(`Abwesenheiten / Bemerkungen: ${entry.absencesText}`);
+      }
+
+      doc.moveDown(0.35);
+    });
+  }
+
+  doc.end();
 });
 
 

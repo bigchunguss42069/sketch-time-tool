@@ -38,7 +38,7 @@ const adminAnlagenList = document.getElementById('adminAnlagenList');
 const adminAnlagenDetail = document.getElementById('adminAnlagenDetail');
 
 // --- Anlagen tab state ---
-let adminActiveInnerTab = 'overview'; // keep this in sync with your inner tab clicks
+let adminActiveInnerTab = 'overview'; 
 let anlagenStatusFilter = 'active';
 let anlagenSearchTerm = '';
 let selectedKomNr = null;
@@ -198,6 +198,40 @@ function formatPayrollCounterHours(current, total) {
 
 
 
+async function exportPayrollPdf(username, displayName) {
+  const { from, to } = getPayrollSelectedPeriod();
+
+  if (!from || !to) {
+    throw new Error('Bitte zuerst einen Zeitraum auswählen.');
+  }
+
+  const resp = await authFetch(
+    `/api/admin/payroll-export-pdf?username=${encodeURIComponent(username)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
+
+  if (!resp.ok) {
+    let msg = 'PDF Export fehlgeschlagen';
+    try {
+      const j = await resp.json();
+      msg = j?.error || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Lohnabrechnung_${username}_${from}_${to}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+
 function renderAdminPayrollCards(rows) {
   if (!adminPayrollGridEl) return;
 
@@ -236,7 +270,34 @@ function renderAdminPayrollCards(rows) {
 
     left.appendChild(title);
     left.appendChild(period);
+
+    const actions = document.createElement('div');
+
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'anlagen-export-btn';
+    exportBtn.textContent = 'Export PDF';
+
+    exportBtn.addEventListener('click', async () => {
+      exportBtn.disabled = true;
+      const prevText = exportBtn.textContent;
+      exportBtn.textContent = 'Export läuft…';
+
+      try {
+        await exportPayrollPdf(row.username, row.displayName);
+      } catch (err) {
+        console.error(err);
+        alert(err?.message || 'PDF Export fehlgeschlagen');
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = prevText;
+      }
+    });
+
+    actions.appendChild(exportBtn);
+
     head.appendChild(left);
+    head.appendChild(actions);
 
     const metrics = document.createElement('div');
     metrics.className = 'admin-payroll-metrics';
@@ -320,6 +381,7 @@ function renderAdminPayrollCards(rows) {
     adminPayrollGridEl.appendChild(card);
   });
 }
+
 
 async function loadAdminPayroll() {
   if (!payrollSummaryBarEl || !adminPayrollGridEl) return;
