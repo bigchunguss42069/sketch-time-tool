@@ -579,7 +579,8 @@ function saveToStorage() {
 /**
  * Auth and API helpers
  */
-const BACKEND_BASE_URL = window.location.origin;
+const BACKEND_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || window.location.origin;
 const AUTH_SESSION_KEY = "authSession";
 
 // session = { token: string, user: { id, username, role, ... } }
@@ -3944,60 +3945,64 @@ if (loginForm) {
 
     // Call backend
     fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    })
-      .then((res) => {
-        // Optional: handle non-2xx differently
-        return res.json();
-      })
-      .then((data) => {
-        console.log("Login response JSON:", data);
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username, password }),
+})
+  .then(async (res) => {
+    const text = await res.text();
+    let data = null;
 
-        if (!data.ok || !data.token) {
-          throw new Error(data.error || "Login fehlgeschlagen");
-        }
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      throw new Error(`Login-Antwort war kein JSON (${res.status})`);
+    }
 
-        const user = data.user || { username };
+    if (!res.ok) {
+      throw new Error(data?.error || `Login fehlgeschlagen (${res.status})`);
+    }
 
-        setAuthSession(data.token, user);
+    return data;
+  })
+  .then((data) => {
+    if (!data?.ok || !data?.token) {
+      throw new Error(data?.error || "Login fehlgeschlagen");
+    }
 
-        // Configure UI based on role (hides/shows tabs, and for admin switches to admin)
-        updateUIForRole();
+    const user = data.user || { username };
+    setAuthSession(data.token, user);
+    updateUIForRole();
+    reloadAllDataForCurrentUser();
+    syncMyAbsencesFromServer();
 
-        reloadAllDataForCurrentUser();
-        syncMyAbsencesFromServer();
+    if (userDisplayEl) {
+      userDisplayEl.textContent = user.username || username;
+    }
 
-        if (userDisplayEl) {
-          userDisplayEl.textContent = user.username || username;
-        }
+    if (loginErrorEl) {
+      loginErrorEl.textContent = "";
+      loginErrorEl.style.display = "none";
+    }
 
-        if (loginErrorEl) {
-          loginErrorEl.textContent = "";
-          loginErrorEl.style.display = "none";
-        }
+    loginPasswordInput.value = "";
+    showApp();
 
-        loginPasswordInput.value = "";
-        showApp();
+    if (user.role === "admin") {
+      switchToView("admin");
+    } else {
+      switchToView("wochenplan");
+    }
 
-        // For safety, enforce default view: admin → admin, others → wochenplan
-        if (user.role === "admin") {
-          switchToView("admin");
-        } else {
-          switchToView("wochenplan");
-        }
-
-        loadSyncStatus();
-      })
-      .catch((err) => {
-        console.error("Login error", err);
-        if (loginErrorEl) {
-          loginErrorEl.textContent =
-            err.message || "Login fehlgeschlagen. Bitte erneut versuchen.";
-          loginErrorEl.style.display = "block";
-        }
-      });
+    loadSyncStatus();
+  })
+  .catch((err) => {
+    console.error("Login error", err);
+    if (loginErrorEl) {
+      loginErrorEl.textContent = err.message || "Login fehlgeschlagen.";
+      loginErrorEl.style.display = "block";
+    }
+  });
   });
 }
 
