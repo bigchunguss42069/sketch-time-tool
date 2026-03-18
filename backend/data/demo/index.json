@@ -703,5 +703,20 @@
       "overtime3": 0,
       "total": 20
     }
+  },
+  {
+    "id": "2026-03-2026-03-18T09-42-35-960Z.json",
+    "year": 2026,
+    "monthIndex": 2,
+    "monthLabel": "März 2026",
+    "sentAt": "2026-03-18T09:42:35.960Z",
+    "sizeBytes": 11770,
+    "totals": {
+      "kom": 13,
+      "dayHours": 4,
+      "pikett": 3,
+      "overtime3": 0,
+      "total": 20
+    }
   }
 ]

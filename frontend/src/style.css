@@ -1,3 +1,4 @@
+/* Theme */
 :root {
   --bg: #020617;
   --panel: #020617;
@@ -8,8 +9,7 @@
   --muted: #9ca3af;
 }
 
-/* Base reset */
-
+/* Base */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -29,25 +29,22 @@ body {
   color: var(--text);
 }
 
-/* App layout: mobile-first, stacked */
-
+/* App shell */
 #app {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   padding: 12px 12px 20px;
-  max-width: 480px; /* nice width on phones / small screens */
-  margin: 0 auto; /* center horizontally on large screens */
+  max-width: 480px;
+  margin: 0 auto;
   gap: 12px;
 }
 
-/* SIDEBAR (Wochenplan) */
-
+/* Wochenplan */
 .sidebar {
   width: 100%;
 }
 
-/* remove default summary marker */
 .sidebar-header::-webkit-details-marker {
   display: none;
 }
@@ -68,8 +65,6 @@ body {
   );
 }
 
-/* Header row you click to open/close */
-
 .sidebar-header {
   list-style: none;
   padding: 12px 14px;
@@ -89,7 +84,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  align-items: flex-start; /* main title & pill stay left */
+  align-items: flex-start;
 }
 
 .sidebar-title {
@@ -113,12 +108,9 @@ body {
   transition: transform 0.18s ease;
 }
 
-/* chevron rotation when closed */
 .sidebar-group:not([open]) .chevron {
   transform: rotate(-90deg);
 }
-
-/* Buttons inside Wochenplan */
 
 .sidebar-body {
   padding: 8px 8px 10px;
@@ -178,8 +170,7 @@ body {
   color: #fffffffa;
 }
 
-/* MAIN CONTENT */
-
+/* Main card */
 .main {
   width: 100%;
   background: radial-gradient(
@@ -193,8 +184,6 @@ body {
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.85);
 }
 
-/* Title "Montag – Wochenstart" etc. */
-
 #dayTitle {
   font-size: 1.2rem;
   font-weight: 600;
@@ -206,8 +195,6 @@ body {
   font-weight: 400;
   opacity: 0.8;
 }
-
-/* Day content sections */
 
 .day-content {
   display: none;
@@ -237,8 +224,6 @@ body {
   margin-top: 4px;
 }
 
-/* Day name + date in one row */
-
 .day-name-row {
   display: flex;
   justify-content: space-between;
@@ -250,13 +235,11 @@ body {
   color: var(--muted);
 }
 
-/* layout for < KW XX > */
 .week-control {
   display: inline-flex;
-  align-items: center; /* center KW + arrows in its own mini-row */
+  align-items: center;
   gap: 4px;
 
-  /* make the whole thing a pill */
   padding: 4px 12px;
   border-radius: 999px;
   background: linear-gradient(135deg, #020617, #0f172a);
@@ -267,7 +250,6 @@ body {
   transform-origin: center;
 }
 
-/* KW badge itself */
 .week-label {
   font-size: 0.75rem;
   line-height: 1;
@@ -275,7 +257,6 @@ body {
   align-items: center;
 }
 
-/* arrow buttons on each side */
 .week-arrow {
   border: none;
   padding: 2px 6px;
@@ -289,7 +270,7 @@ body {
   justify-content: center;
 
   position: relative;
-  top: -3px; /* nudge arrow slightly up */
+  top: -3px;
 
   transform: scale(1.5);
   transform-origin: center;
@@ -299,16 +280,12 @@ body {
   color: #bae6fd;
 }
 
-/* ----- Weekday content card layout ----- */
-
 .day-section-title {
   font-size: 0.9rem;
   font-weight: 600;
   margin-bottom: 6px;
   color: #e0f2fe;
 }
-
-/* Flags (Tagesstatus) */
 
 .day-flags {
   margin-bottom: 12px;
@@ -338,8 +315,6 @@ body {
   width: 14px;
   height: 14px;
 }
-
-/* Kommissions-Bereich */
 
 .kom-section {
   margin-top: 8px;
@@ -415,8 +390,6 @@ body {
   color: #e5e7eb;
 }
 
-/* Stunden-Optionen grid (3 Spalten × 2 Reihen für 6 Optionen) */
-
 .kom-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -447,8 +420,6 @@ body {
   color: rgba(148, 163, 184, 0.7);
 }
 
-/* Add-Kom.Nummer button */
-
 .kom-add-wrapper {
   margin-top: 4px;
 }
@@ -468,8 +439,6 @@ body {
   background: rgba(15, 23, 42, 0.9);
 }
 
-/* Header row inside the content card:
-   left = day title, right = total hours */
 .main-header {
   display: flex;
   justify-content: space-between;
@@ -477,14 +446,12 @@ body {
   margin-bottom: 10px;
 }
 
-/* remove extra gap now that the row handles spacing */
 #dayTitle {
   font-size: 1.5rem;
   font-weight: 600;
   margin-bottom: 0;
 }
 
-/* total hours block on the right */
 .day-total {
   display: flex;
   flex-direction: column;
@@ -504,7 +471,7 @@ body {
   color: var(--text);
 }
 
-/* Views (Wochenplan / Pikett / Dashboard / Dokumente) */
+/* Views */
 .app-view {
   display: none;
 }
@@ -513,7 +480,7 @@ body {
   display: block;
 }
 
-/* Top navigation bar */
+/* Navigation */
 .top-nav {
   display: flex;
   align-items: center;
@@ -527,7 +494,6 @@ body {
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.9);
 }
 
-/* Individual nav tabs */
 .top-nav-tab {
   flex: 1;
   text-align: center;
@@ -546,7 +512,6 @@ body {
     box-shadow 0.18s ease;
 }
 
-/* keep your active style as before */
 .top-nav-tab.active {
   background: linear-gradient(
     135deg,
@@ -558,13 +523,11 @@ body {
   transform: translateY(-1px);
 }
 
-/* --- Pikett Tab --- */
-
 .pikett-wrapper {
   margin-top: 8px;
 }
 
-/* Header card at the top of the Pikett view */
+/* Pikett */
 .pikett-header-card {
   border-radius: 18px;
   background: rgba(4, 5, 7, 0.96);
@@ -590,7 +553,6 @@ body {
   color: var(--muted);
 }
 
-/* Add button row */
 .pikett-actions {
   display: flex;
   justify-content: flex-end;
@@ -619,14 +581,12 @@ body {
   box-shadow: 0 4px 10px rgba(18, 24, 39, 0.9);
 }
 
-/* List of Pikett cards */
 .pikett-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* One Pikett-Einsatz card */
 .pikett-card {
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.96);
@@ -641,7 +601,6 @@ body {
   gap: 8px;
 }
 
-/* Header: date + kom + remove */
 .pikett-card-header {
   display: flex;
   align-items: flex-end;
@@ -657,7 +616,6 @@ body {
   min-width: 0;
 }
 
-/* Generic label+input for Pikett */
 .pikett-label {
   display: flex;
   flex-direction: column;
@@ -681,19 +639,16 @@ body {
   font-size: 0.85rem;
 }
 
-/* Hours input a bit narrower on small screens */
 .pikett-label input.pikett-hours {
   max-width: 120px;
 }
 
-/* Body: hours + note */
 .pikett-card-body {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-/* Clean click area */
 .pikett-card .pikett-label {
   pointer-events: none;
 }
@@ -706,7 +661,6 @@ body {
   pointer-events: auto;
 }
 
-/* Remove button */
 .pikett-remove-btn {
   border: none;
   border-radius: 999px;
@@ -735,13 +689,11 @@ body {
   width: 100%;
 }
 
-/* Remove button active state */
 .pikett-remove-btn:active {
   transform: translateY(1px);
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
 }
 
-/* Top row inside Pikett header: title + month selector */
 .pikett-header-top {
   display: flex;
   align-items: center;
@@ -777,7 +729,6 @@ body {
   color: #e0f2fe;
 }
 
-/* Monthly summary row */
 .pikett-summary-row {
   display: flex;
   align-items: baseline;
@@ -794,8 +745,6 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
 }
-
-/* --- Verpflegungspauschale --- */
 
 .meal-section {
   margin-top: 10px;
@@ -839,7 +788,6 @@ body {
   margin-bottom: 6px;
 }
 
-/* when .meal-section has .open-info, show the box */
 .meal-section.open-info .meal-info-box {
   display: block;
 }
@@ -861,14 +809,12 @@ body {
   cursor: pointer;
 }
 
-/* Active (selected) pill */
 .meal-pill.active {
   background: linear-gradient(135deg, #6498b3, #171661);
   color: #dee8ff;
   border-color: rgba(107, 130, 139, 0.9);
 }
 
-/* Inline Bestätigungszeile in der Kom-Karte */
 .kom-confirm-row {
   margin-top: 8px;
   padding-top: 6px;
@@ -886,7 +832,6 @@ body {
   opacity: 0.9;
 }
 
-/* Buttons in der Bestätigungszeile */
 .kom-confirm-cancel,
 .kom-confirm-delete {
   border-radius: 999px;
@@ -898,13 +843,11 @@ body {
   cursor: pointer;
 }
 
-/* Delete-Button leicht hervorgehoben */
 .kom-confirm-delete {
   border-color: rgba(248, 113, 113, 0.8);
   color: #fecaca;
 }
 
-/* Inline Bestätigungszeile in der Pikett-Karte */
 .pikett-confirm-row {
   margin-top: 8px;
   padding-top: 6px;
@@ -970,8 +913,6 @@ body {
   color: #ffffff;
 }
 
-/* --- Überzeit 3 section inside Pikett cards --- */
-
 .pikett-overtime3-section {
   margin-top: 12px;
   padding-top: 8px;
@@ -1019,7 +960,6 @@ body {
   transition: max-height 0.2s ease, opacity 0.2s ease;
 }
 
-/* Show info box when the card has this class */
 .pikett-card.open-overtime3-info .pikett-overtime3-info-box {
   max-height: 200px;
   opacity: 1;
@@ -1042,8 +982,6 @@ body {
   accent-color: #dd2222;
 }
 
-/* ==== Dashboard view ==== */
-
 .dashboard-wrapper {
   width: 100%;
   max-width: 600px;
@@ -1051,7 +989,7 @@ body {
   padding: 0 1px;
 }
 
-/* Header card similar to Pikett header */
+/* Dashboard */
 .dashboard-header-card {
   border-radius: 18px;
   padding: 12px 14px;
@@ -1086,7 +1024,6 @@ body {
   color: #e5e7eb;
 }
 
-/* Month selector pill (similar to KW / Pikett) */
 .dashboard-month-control {
   display: inline-flex;
   align-items: center;
@@ -1118,7 +1055,6 @@ body {
   transform: translateY(1px);
 }
 
-/* Small subtitle text */
 .dashboard-subtitle {
   margin-top: 6px;
   font-size: 0.8rem;
@@ -1126,7 +1062,6 @@ body {
   color: var(--muted);
 }
 
-/* Main dashboard card */
 .dashboard-card {
   margin-top: 12px;
   border-radius: 18px;
@@ -1157,7 +1092,6 @@ body {
   color: #fca5a5;
 }
 
-/* Each metric row: label + value right aligned */
 .dashboard-metric-row {
   display: flex;
   align-items: baseline;
@@ -1182,13 +1116,11 @@ body {
   color: #bac2c7;
 }
 
-/* thin separator between detail rows and total */
 .dashboard-metric-separator {
   margin: 6px 0;
   border-top: 1px solid rgba(77, 81, 94, 0.836);
 }
 
-/* total row a bit more prominent */
 .dashboard-metric-row.total-row {
   padding-top: 6px;
 }
@@ -1204,8 +1136,6 @@ body {
   padding-right: 8px;
 }
 
-/* --- Wochenstatus im Dashboard --- */
-
 .dashboard-week-list {
   margin-top: 20px;
   display: flex;
@@ -1214,7 +1144,6 @@ body {
   font-size: 0.8rem;
 }
 
-/* One row per KW */
  .dashboard-week-row {
   display: flex;
   flex-wrap: wrap;
@@ -1252,14 +1181,12 @@ body {
 }
 
 .dashboard-week-status.status-ok {
-  color: #4ade80; /* grün */
+  color: #4ade80;
 }
 
 .dashboard-week-status.status-missing {
-  color: #f97373; /* rötlich */
+  color: #f97373;
 }
-
-/* --- Spezialbuchungen (Regie / Fehler) --- */
 
 .special-section {
   margin-top: 10px;
@@ -1282,7 +1209,6 @@ body {
   opacity: 0.9;
 }
 
-/* Eine Spezialbuchung-Zeile / -Karte */
 .special-row {
   border-radius: 12px;
   background: linear-gradient(135deg, #10173b, #0b1120);
@@ -1333,17 +1259,14 @@ body {
   max-width: 110px;
 }
 
-/* Typ-Auswahl */
 .special-type-select {
   width: 100%;
 }
 
-/* Stundenfeld */
 .special-hours-input {
   text-align: left;
 }
 
-/* Remove-Button für Spezialbuchung */
 .special-remove-btn {
   border: none;
   border-radius: 999px;
@@ -1366,7 +1289,6 @@ body {
   transform: translateY(1px);
 }
 
-/* Add-Button */
 .special-add-btn {
   width: 100%;
   border-radius: 999px;
@@ -1412,8 +1334,7 @@ body {
   color: #fecaca;
 }
 
-/* --- Abwesenheiten / Ferien-Übersicht --- */
-
+/* Abwesenheiten */
 .absence-list {
   margin-top: 8px;
   display: flex;
@@ -1495,8 +1416,6 @@ body {
   padding: 3px 8px;
   cursor: pointer;
 }
-
-/* Eingabe-Formular für Abwesenheits-Antrag */
 
 .absence-form {
   display: flex;
@@ -1613,7 +1532,7 @@ body {
   display: none !important;
 }
 
-/* Fullscreen center for login */
+/* Login */
 .login-view {
   min-height: 100vh;
   display: flex;
@@ -1701,7 +1620,7 @@ body {
   filter: brightness(1.05);
 }
 
-/* Header bar for logged-in app */
+/* Header */
 .app-header-bar {
   display: flex;
   justify-content: space-between;
@@ -1754,7 +1673,6 @@ body {
   border-radius: 999px;
 }
 
-/* Default / unknown */
 .sync-age-unknown {
   background: #ffffff;
   border-color: #e0e0e0;
@@ -1764,7 +1682,6 @@ body {
   background: #9e9e9e;
 }
 
-/* OK (<= 24h) */
 .sync-age-ok {
   background: #e3f7e5;
   border-color: #b9e2be;
@@ -1774,7 +1691,6 @@ body {
   background: #2e7d32;
 }
 
-/* Warn (<= 7 Tage) */
 .sync-age-warn {
   background: #fff5d6;
   border-color: #ffe4a3;
@@ -1784,7 +1700,6 @@ body {
   background: #ffb300;
 }
 
-/* Bad (> 7 Tage) */
 .sync-age-bad {
   background: #fde0e0;
   border-color: #f6b0b0;
@@ -1794,8 +1709,7 @@ body {
   background: #d32f2f;
 }
 
-/* ===== ADMIN VIEW ===== */
-
+/* Admin */
 #view-admin {
   padding: 24px;
   max-width: 1200px;
@@ -1803,7 +1717,6 @@ body {
   box-sizing: border-box;
 }
 
-/* Inner tab bar on top (Übersicht / Anlagen / Payroll) */
 .admin-tabs {
   display: flex;
   align-items: center;
@@ -1840,7 +1753,6 @@ body {
   color: rgb(255, 255, 255);
 }
 
-/* Content panels */
 .admin-tab-content {
   display: none;
   margin-top: 5px;
@@ -1850,7 +1762,6 @@ body {
   display: block;
 }
 
-/* Summary grid for user cards */
 #adminSummaryContainer {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
@@ -1858,7 +1769,6 @@ body {
   align-items: start;
 }
 
-/* Desktop layout */
 @media (min-width: 960px) {
   #view-admin {
     padding: 32px 40px;
@@ -1870,7 +1780,6 @@ body {
   }
 }
 
-/* User “cards” */
 .admin-user-card {
   background: #ffffff;
   border-radius: 12px;
@@ -1892,7 +1801,6 @@ body {
   justify-content: space-between;
 }
 
-/* Optional: highlight admins / teams */
 .admin-user-title::after {
   content: attr(data-role);
   font-size: 11px;
@@ -1919,7 +1827,6 @@ body {
   gap: 8px;
 }
 
-/* Small muted text helper */
 .admin-muted {
   font-size: 12px;
   color: #9ca3af;
@@ -1933,22 +1840,19 @@ body {
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.85);
 }
 
-
 .admin-user-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
-  
+
 }
 
 .admin-user-title-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  
-
 
 }
 
@@ -1963,13 +1867,10 @@ body {
   color: var(--muted);
 }
 
-/* Make the admin sync pill a bit smaller than the main header pill */
 .admin-user-header .sync-chip {
   font-size: 0.75rem;
   padding: 0.15rem 0.55rem;
 }
-
-/* --- Admin: Monatsübersicht (Mitarbeiter) --- */
 
 .admin-month-header {
   display: flex;
@@ -1984,14 +1885,12 @@ body {
   color: #e5e7eb;
 }
 
-/* Container where all employee cards live */
 .admin-user-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* Employee card */
 .admin-user-card {
   border-radius: 16px;
   background: linear-gradient(
@@ -2004,7 +1903,6 @@ body {
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
 }
 
-/* Header with name/team + existing sync pill */
 .admin-user-header {
   display: flex;
   align-items: center;
@@ -2014,37 +1912,22 @@ body {
   margin-top: 8px;
 }
 
-.admin-user-title-block {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-
-}
-
 .admin-user-title {
   font-size: 1.4rem;
   font-weight: 600;
   color: #f9fafb;
 }
 
-.admin-user-team {
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-/* Body below the header */
 .admin-user-body {
   font-size: 0.8rem;
   color: #d1d5db;
 }
 
-/* Small loading text */
 .admin-loading-text {
   font-size: 0.8rem;
   color: var(--muted);
 }
 
-/* Row: Monat + Gesamtstunden */
 .admin-user-meta-row {
   display: flex;
   align-items: baseline;
@@ -2063,7 +1946,6 @@ body {
   color: #e5e7eb;
 }
 
-/* Row with vacation chip (optional) */
 .admin-user-info-row {
   margin-bottom: 4px;
 }
@@ -2079,7 +1961,6 @@ body {
   color: #e0f2fe;
 }
 
-/* KW list inside card */
 .admin-user-week-list {
   display: flex;
   flex-direction: column;
@@ -2102,7 +1983,6 @@ body {
   box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.5);
 }
 
-/* Left side: KW + range + vacation icon */
 .admin-user-week-main {
   flex: 1 1 auto;
   display: flex;
@@ -2122,7 +2002,6 @@ body {
   opacity: 0.9;
 }
 
-/* Middle: status text */
 .admin-user-week-status {
   flex: 0 0 auto;
   font-size: 0.75rem;
@@ -2137,7 +2016,6 @@ body {
   color: #f97373;
 }
 
-/* Right: hours + lock button */
 .admin-user-week-right {
   margin-left: auto;
   display: inline-flex;
@@ -2149,7 +2027,7 @@ body {
   font-size: 0.9rem;
   font-weight: 600;
   color: #e5e7eb;
-  
+
 }
 
 .admin-user-week-lock-btn {
@@ -2167,17 +2045,15 @@ body {
   background: rgba(37, 99, 235, 0.25);
 }
 
-/* Placeholder row when there are no weeks for that month */
 .admin-user-week-empty {
   font-size: 0.78rem;
   color: var(--muted);
 }
 
-/* Admin-only: remove the global mobile width constraint */
 body.admin-only #app {
   max-width: none;
   margin: 0;
-  padding: 12px 12px 20px; /* keep your spacing, but not phone width */
+  padding: 12px 12px 20px;
 }
 
 body.in-admin-only .top-nav,
@@ -2185,19 +2061,16 @@ body.admin-only .top-nav {
   display: none !important;
 }
 
-/* Admin view: remove the global mobile max-width constraint */
 body.in-admin-view #app {
   max-width: none;
   margin: 0;
 }
 
-/* Optional: allow admin content to grow wider than 1200px if you want more columns */
 body.in-admin-view #view-admin {
-  max-width: 1600px; /* was 1200px */
+  max-width: 1600px;
   width: 100%;
 }
 
-/* --- Admin toolbar (month selector) --- */
 .admin-toolbar {
   display: flex;
   justify-content: flex-end;
@@ -2234,7 +2107,6 @@ body.in-admin-view #view-admin {
   text-align: center;
 }
 
-/* --- Admin user card v2 --- */
 .admin-user-month-row {
   display: flex;
   align-items: center;
@@ -2246,7 +2118,7 @@ body.in-admin-view #view-admin {
   font-size: 17px;
   font-weight: 500;
   color: white;
-  
+
 }
 
 .admin-month-badge {
@@ -2269,7 +2141,6 @@ body.in-admin-view #view-admin {
   opacity: 0.85;
 }
 
-/* Weeks list */
 .admin-week-list {
   margin-top: 12px;
   display: flex;
@@ -2304,7 +2175,6 @@ body.in-admin-view #view-admin {
   font-weight: 600;
 }
 
-/* Day rows (always visible) */
 .admin-day-list {
   margin-top: 8px;
   display: flex;
@@ -2328,13 +2198,10 @@ body.in-admin-view #view-admin {
   grid-template-columns: 55px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: 0;      /* was 6px 8px */
-  min-width: 0;    /* reinforce shrink */
+  padding: 0;
+  min-width: 0;
 }
 
-
-
-/* Option A: tiny progress bar next to hours */
 .admin-hours-bar {
   height: 7px;
   width: 80px;
@@ -2350,7 +2217,6 @@ body.in-admin-view #view-admin {
   background: rgba(255,255,255,0.55);
 }
 
-/* Status dot + text */
 .admin-status {
   display: inline-flex;
   align-items: center;
@@ -2367,21 +2233,18 @@ body.in-admin-view #view-admin {
   background: rgba(255,255,255,0.55);
 }
 
-/* Stronger markers */
 .admin-status.missing .admin-status-dot { background: #ff4d4f; }
 .admin-status.ok .admin-status-dot      { background: #2ecc71; }
 .admin-status.ferien .admin-status-dot  { background: #4aa3ff; }
 .admin-status.absence .admin-status-dot { background: #4aa3ff; }
 
-/* Optional: slightly dim neutral days */
 .admin-day-row.is-ferien,
 .admin-day-row.is-absence {
   opacity: 0.92;
 }
 
-
-#view-admin *, 
-#view-admin *::before, 
+#view-admin *,
+#view-admin *::before,
 #view-admin *::after {
   box-sizing: border-box;
 }
@@ -2413,8 +2276,8 @@ body.in-admin-view #view-admin {
 .admin-week-status.status-missing {
 display: none !important;
 }
-.admin-user-title::after { 
-display: none; 
+.admin-user-title::after {
+display: none;
 }
 
 .admin-day-row {
@@ -2457,8 +2320,8 @@ display: none;
 .admin-week-header-left {
   flex: 1 1 auto;
   min-width: 0;
-  min-width: 0;              
-  white-space: nowrap;       
+  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 15px;
@@ -2469,7 +2332,7 @@ display: none;
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  white-space: nowrap; 
+  white-space: nowrap;
 }
 
 .admin-week-lock-btn {
@@ -2563,7 +2426,7 @@ display: none;
   border-radius: 10px;
   background: #5763cf0a;
   margin-bottom: 10px;
-  
+
 }
 
 .admin-day-kv {
@@ -2584,7 +2447,7 @@ display: none;
 }
 .admin-day-mini-title { font-weight: 700; margin-bottom: 4px; color: white; font-size: 13px;}
 
-.admin-day-section { 
+.admin-day-section {
  display: grid;
 
   gap: 6px 12px;
@@ -2602,7 +2465,7 @@ display: none;
 .admin-day-list-left { min-width: 90px; font-weight: 700; }
 .admin-day-list-right { opacity: 0.9; }
 
-
+/* Anlagen */
 .anlagen-layout {
   display: grid;
   grid-template-columns: 360px 1fr;
@@ -2634,7 +2497,7 @@ display: none;
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(32, 31, 31, 0.781);
-  
+
 }
 
 .anlagen-status,
@@ -2661,7 +2524,7 @@ display: none;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px 10px;
-  
+
 }
 
 .anlagen-row:last-child {
@@ -2785,7 +2648,7 @@ display: none;
   align-items: center;
   font-size: 13px;
   font-weight: 500;
-  
+
 }
 
 .anlagen-legend-dot {
@@ -2977,7 +2840,7 @@ display: none;
   border-radius: 10px;
   border: 1px solid rgba(5, 5, 5, 0.308);
   color: #000000;
-  
+
 }
 
 .admin-konto-actions {
@@ -3118,6 +2981,7 @@ display: none;
   font-size: 0.85rem;
 }
 
+/* Payroll */
 .admin-payroll-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3210,25 +3074,6 @@ display: none;
 .admin-payroll-card-badge.is-incomplete {
   background: rgba(245, 158, 11, 0.14);
   color: #fcd34d;
-}
-
-.admin-payroll-divider {
-  height: 1px;
-  margin: 14px 0 12px;
-  background: rgba(148, 163, 184, 0.18);
-}
-
-.admin-payroll-subtitle {
-  margin-bottom: 10px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.admin-payroll-metrics--secondary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .admin-payroll-divider {

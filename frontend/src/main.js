@@ -1,127 +1,153 @@
-import './style.css';
-
-// --- DOM references (common) --- //
-
-const dayButtons = document.querySelectorAll('.day-button');
-const daySections = document.querySelectorAll('.day-content');
-const titleEl = document.getElementById('dayTitle');
-const weekLabelEl = document.getElementById('weekLabel');
-const dayDateSpans = document.querySelectorAll('.day-date');
-const weekPrevBtn = document.getElementById('weekPrev');
-const weekNextBtn = document.getElementById('weekNext');
-const dayTotalEl = document.getElementById('dayTotal');
-
-let STORAGE_KEY = 'wochenplan-v1';
-let PIKETT_STORAGE_KEY = 'pikett-v1';
-let ABSENCE_STORAGE_KEY = 'absenceRequests-v1';
 
 
-const topNavTabs = document.querySelectorAll('.top-nav-tab');
-const appViews = document.querySelectorAll('.app-view');
+import "./style.css";
 
-const adminTab = document.getElementById('adminTab');
-const adminSummaryContainer = document.getElementById('adminSummaryContainer');
-const adminInnerTabButtons = document.querySelectorAll('.admin-tab-btn');
-const adminTabContents = document.querySelectorAll('.admin-tab-content');
-const adminMonthPrevBtn = document.getElementById('adminMonthPrev');
-const adminMonthNextBtn = document.getElementById('adminMonthNext');
-const adminMonthLabelEl = document.getElementById('adminMonthLabel');
+/**
+ * DOM references and top-level UI handles
+ */
+
+const dayButtons = document.querySelectorAll(".day-button");
+const daySections = document.querySelectorAll(".day-content");
+const titleEl = document.getElementById("dayTitle");
+const weekLabelEl = document.getElementById("weekLabel");
+const dayDateSpans = document.querySelectorAll(".day-date");
+const weekPrevBtn = document.getElementById("weekPrev");
+const weekNextBtn = document.getElementById("weekNext");
+const dayTotalEl = document.getElementById("dayTotal");
+
+let STORAGE_KEY = "wochenplan-v1";
+let PIKETT_STORAGE_KEY = "pikett-v1";
+let ABSENCE_STORAGE_KEY = "absenceRequests-v1";
+
+const topNavTabs = document.querySelectorAll(".top-nav-tab");
+const appViews = document.querySelectorAll(".app-view");
+
+const adminTab = document.getElementById("adminTab");
+const adminSummaryContainer = document.getElementById("adminSummaryContainer");
+const adminInnerTabButtons = document.querySelectorAll(".admin-tab-btn");
+const adminTabContents = document.querySelectorAll(".admin-tab-content");
+const adminMonthPrevBtn = document.getElementById("adminMonthPrev");
+const adminMonthNextBtn = document.getElementById("adminMonthNext");
+const adminMonthLabelEl = document.getElementById("adminMonthLabel");
 const adminDayDetailCache = new Map(); // key: username|year|monthIndex|dateKey
 let adminMonthOffset = 0;
 
+/**
+ * Admin / Anlagen tab DOM handles
+ */
+const anlagenSearchInput = document.getElementById("anlagenSearchInput");
+const anlagenStatusSelect = document.getElementById("anlagenStatusSelect");
+const anlagenRefreshBtn = document.getElementById("anlagenRefreshBtn");
+const adminAnlagenList = document.getElementById("adminAnlagenList");
+const adminAnlagenDetail = document.getElementById("adminAnlagenDetail");
 
-// --- Anlagen tab elements ---
-const anlagenSearchInput = document.getElementById('anlagenSearchInput');
-const anlagenStatusSelect = document.getElementById('anlagenStatusSelect');
-const anlagenRefreshBtn = document.getElementById('anlagenRefreshBtn');
-const adminAnlagenList = document.getElementById('adminAnlagenList');
-const adminAnlagenDetail = document.getElementById('adminAnlagenDetail');
-
-// --- Anlagen tab state ---
-let adminActiveInnerTab = 'overview'; 
-let anlagenStatusFilter = 'active';
-let anlagenSearchTerm = '';
+/**
+ * Admin / Anlagen tab state and caches
+ */
+let adminActiveInnerTab = "overview";
+let anlagenStatusFilter = "active";
+let anlagenSearchTerm = "";
 let selectedKomNr = null;
 
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
-const anlagenDetailCache = new Map();  // key: komNr -> detail
+const anlagenDetailCache = new Map(); // key: komNr -> detail
 
+/**
+ * Admin / Personnel and payroll DOM handles
+ */
+const adminAbsenceListEl = document.getElementById("adminAbsenceList");
+const adminAbsenceStatusFilterEl = document.getElementById(
+  "adminAbsenceStatusFilter",
+);
+const adminAbsenceSearchEl = document.getElementById("adminAbsenceSearch");
+const adminPersonnelRefreshBtn = document.getElementById(
+  "adminPersonnelRefreshBtn",
+);
+const adminKontenGridEl = document.getElementById("adminKontenGrid");
 
-// --- Admin: Personnel tab elements ---
-const adminAbsenceListEl = document.getElementById('adminAbsenceList');
-const adminAbsenceStatusFilterEl = document.getElementById('adminAbsenceStatusFilter');
-const adminAbsenceSearchEl = document.getElementById('adminAbsenceSearch');
-const adminPersonnelRefreshBtn = document.getElementById('adminPersonnelRefreshBtn');
-const adminKontenGridEl = document.getElementById('adminKontenGrid');
+const payrollPeriodFromEl = document.getElementById("payrollPeriodFrom");
+const payrollPeriodToEl = document.getElementById("payrollPeriodTo");
+const payrollRefreshBtn = document.getElementById("payrollRefreshBtn");
+const payrollSummaryBarEl = document.getElementById("payrollSummaryBar");
+const adminPayrollGridEl = document.getElementById("adminPayrollGrid");
 
-const payrollPeriodFromEl = document.getElementById('payrollPeriodFrom');
-const payrollPeriodToEl = document.getElementById('payrollPeriodTo');
-const payrollRefreshBtn = document.getElementById('payrollRefreshBtn');
-const payrollSummaryBarEl = document.getElementById('payrollSummaryBar');
-const adminPayrollGridEl = document.getElementById('adminPayrollGrid');
+const pikettAddBtn = document.getElementById("pikettAddBtn");
+const pikettMonthLabelEl = document.getElementById("pikettMonthLabel");
+const pikettMonthPrevBtn = document.getElementById("pikettMonthPrev");
+const pikettMonthNextBtn = document.getElementById("pikettMonthNext");
+const pikettMonthTotalEl = document.getElementById("pikettMonthTotal");
 
+const dashboardMonthLabelEl = document.getElementById("dashboardMonthLabel");
+const dashboardMonthPrevBtn = document.getElementById("dashboardMonthPrev");
+const dashboardMonthNextBtn = document.getElementById("dashboardMonthNext");
 
+const dashTotalKomEl = document.getElementById("dashTotalKom");
+const dashTotalDayhoursEl = document.getElementById("dashTotalDayhours");
+const dashTotalPikettEl = document.getElementById("dashTotalPikett");
+const dashTotalOvertime3El = document.getElementById("dashTotalOvertime3");
+const dashTotalHoursEl = document.getElementById("dashTotalHours");
 
-const pikettAddBtn = document.getElementById('pikettAddBtn');
-const pikettMonthLabelEl = document.getElementById('pikettMonthLabel');
-const pikettMonthPrevBtn = document.getElementById('pikettMonthPrev');
-const pikettMonthNextBtn = document.getElementById('pikettMonthNext');
-const pikettMonthTotalEl = document.getElementById('pikettMonthTotal');
+/**
+ * Dashboard / yearly overtime and Vorarbeit cards
+ */
+const overtimeYearUeZ1El = document.getElementById("overtimeYearUeZ1");
+const overtimeYearUeZ2El = document.getElementById("overtimeYearUeZ2");
+const overtimeYearUeZ3El = document.getElementById("overtimeYearUeZ3");
+const overtimeYearVorarbeitEl = document.getElementById(
+  "overtimeYearVorarbeit",
+);
 
-const dashboardMonthLabelEl = document.getElementById('dashboardMonthLabel');
-const dashboardMonthPrevBtn = document.getElementById('dashboardMonthPrev');
-const dashboardMonthNextBtn = document.getElementById('dashboardMonthNext');
+const overtimeYearSourceEl = document.getElementById("overtimeYearSource");
 
-const dashTotalKomEl = document.getElementById('dashTotalKom');
-const dashTotalDayhoursEl = document.getElementById('dashTotalDayhours');
-const dashTotalPikettEl = document.getElementById('dashTotalPikett');
-const dashTotalOvertime3El = document.getElementById('dashTotalOvertime3');
-const dashTotalHoursEl = document.getElementById('dashTotalHours');
-
-// Dashboard: Überzeit & Vorarbeit (Jahr)
-const overtimeYearUeZ1El = document.getElementById('overtimeYearUeZ1');
-const overtimeYearUeZ2El = document.getElementById('overtimeYearUeZ2');
-const overtimeYearUeZ3El = document.getElementById('overtimeYearUeZ3');
-const overtimeYearVorarbeitEl = document.getElementById('overtimeYearVorarbeit');
-
-const overtimeYearSourceEl = document.getElementById('overtimeYearSource');
-
-// Ferien-Card (Jahr)
-const vacationYearSummaryEl = document.getElementById('vacationYearSummary');
+/**
+ * Dashboard / vacation and absences DOM handles
+ */
+const vacationYearSummaryEl = document.getElementById("vacationYearSummary");
 // Abwesenheiten (Ferien-Card & Formular)
-const absenceListEl = document.getElementById('absenceList');
-const absenceTypeEl = document.getElementById('absenceType');
-const absenceFromEl = document.getElementById('absenceFrom');
-const absenceToEl = document.getElementById('absenceTo');
-const absenceDaysEl = document.getElementById('absenceDays');
-const absenceCommentEl = document.getElementById('absenceComment');
-const absenceSaveBtn = document.getElementById('absenceSaveBtn');
-// Send Button
-const dashboardTransmitBtn = document.getElementById('dashboardTransmitBtn');
-// Login
-const loginView = document.getElementById('loginView');
-const mainApp = document.getElementById('mainApp');
-const loginForm = document.getElementById('loginForm');
-const loginUsernameInput = document.getElementById('loginUsername');
-const loginPasswordInput = document.getElementById('loginPassword');
-const loginErrorEl = document.getElementById('loginError');
-const userDisplayEl = document.getElementById('userDisplay');
-const logoutBtn = document.getElementById('logoutBtn');
+const absenceListEl = document.getElementById("absenceList");
+const absenceTypeEl = document.getElementById("absenceType");
+const absenceFromEl = document.getElementById("absenceFrom");
+const absenceToEl = document.getElementById("absenceTo");
+const absenceDaysEl = document.getElementById("absenceDays");
+const absenceCommentEl = document.getElementById("absenceComment");
+const absenceSaveBtn = document.getElementById("absenceSaveBtn");
+/**
+ * Dashboard / transmission controls
+ */
+const dashboardTransmitBtn = document.getElementById("dashboardTransmitBtn");
+/**
+ * Auth / login and app shell DOM handles
+ */
+const loginView = document.getElementById("loginView");
+const mainApp = document.getElementById("mainApp");
+const loginForm = document.getElementById("loginForm");
+const loginUsernameInput = document.getElementById("loginUsername");
+const loginPasswordInput = document.getElementById("loginPassword");
+const loginErrorEl = document.getElementById("loginError");
+const userDisplayEl = document.getElementById("userDisplay");
+const logoutBtn = document.getElementById("logoutBtn");
 
-// Login Sync Pill
-const syncStatusEl = document.getElementById('syncStatus');
-const syncLabelEl = document.getElementById('syncLabel');
+/**
+ * Auth / sync status pill
+ */
+const syncStatusEl = document.getElementById("syncStatus");
+const syncLabelEl = document.getElementById("syncLabel");
 
-
+/**
+ * Admin / payroll helpers and card rendering
+ */
 let payrollUsersCache = null;
 
 function formatDateInputValue(date) {
   const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
+/**
+ * Seed the payroll period picker with the current month start and today when empty.
+ */
 function ensurePayrollDefaultPeriod() {
   if (!payrollPeriodFromEl || !payrollPeriodToEl) return;
 
@@ -138,19 +164,22 @@ function getPayrollSelectedPeriod() {
   ensurePayrollDefaultPeriod();
 
   return {
-    from: payrollPeriodFromEl?.value || '',
-    to: payrollPeriodToEl?.value || '',
+    from: payrollPeriodFromEl?.value || "",
+    to: payrollPeriodToEl?.value || "",
   };
 }
 
+/**
+ * Load and cache the payroll user list for admin payroll UI helpers.
+ */
 async function fetchAdminPayrollUsers() {
   if (payrollUsersCache) return payrollUsersCache;
 
-  const res = await authFetch('/api/admin/payroll-users');
+  const res = await authFetch("/api/admin/payroll-users");
   const data = await res.json().catch(() => null);
 
   if (!res.ok || !data?.ok) {
-    throw new Error(data?.error || 'Mitarbeiter konnten nicht geladen werden');
+    throw new Error(data?.error || "Mitarbeiter konnten nicht geladen werden");
   }
 
   payrollUsersCache = Array.isArray(data.users) ? data.users : [];
@@ -158,15 +187,15 @@ async function fetchAdminPayrollUsers() {
 }
 
 function createPayrollMetric(label, value) {
-  const item = document.createElement('div');
-  item.className = 'admin-payroll-metric';
+  const item = document.createElement("div");
+  item.className = "admin-payroll-metric";
 
-  const labelEl = document.createElement('span');
-  labelEl.className = 'admin-payroll-metric-label';
+  const labelEl = document.createElement("span");
+  labelEl.className = "admin-payroll-metric-label";
   labelEl.textContent = label;
 
-  const valueEl = document.createElement('span');
-  valueEl.className = 'admin-payroll-metric-value';
+  const valueEl = document.createElement("span");
+  valueEl.className = "admin-payroll-metric-value";
   valueEl.textContent = value;
 
   item.appendChild(labelEl);
@@ -176,41 +205,42 @@ function createPayrollMetric(label, value) {
 
 function formatPayrollSignedHours(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
+  if (!Number.isFinite(n)) return "0,0 h";
 
-  const abs = Math.abs(n).toFixed(1).replace('.', ',');
+  const abs = Math.abs(n).toFixed(1).replace(".", ",");
   if (n > 0) return `+${abs} h`;
   if (n < 0) return `-${abs} h`;
-  return '0,0 h';
+  return "0,0 h";
 }
 
 function formatPayrollCounterHours(current, total) {
   const a = Number.isFinite(Number(current))
-    ? Number(current).toFixed(1).replace('.', ',')
-    : '0,0';
+    ? Number(current).toFixed(1).replace(".", ",")
+    : "0,0";
 
   const b = Number.isFinite(Number(total))
-    ? Number(total).toFixed(1).replace('.', ',')
-    : '0,0';
+    ? Number(total).toFixed(1).replace(".", ",")
+    : "0,0";
 
   return `${a} / ${b} h`;
 }
 
-
-
+/**
+ * Download the server-generated payroll PDF for one employee and the currently selected period.
+ */
 async function exportPayrollPdf(username, displayName) {
   const { from, to } = getPayrollSelectedPeriod();
 
   if (!from || !to) {
-    throw new Error('Bitte zuerst einen Zeitraum auswählen.');
+    throw new Error("Bitte zuerst einen Zeitraum auswählen.");
   }
 
   const resp = await authFetch(
-    `/api/admin/payroll-export-pdf?username=${encodeURIComponent(username)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    `/api/admin/payroll-export-pdf?username=${encodeURIComponent(username)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
   );
 
   if (!resp.ok) {
-    let msg = 'PDF Export fehlgeschlagen';
+    let msg = "PDF Export fehlgeschlagen";
     try {
       const j = await resp.json();
       msg = j?.error || msg;
@@ -221,7 +251,7 @@ async function exportPayrollPdf(username, displayName) {
   const blob = await resp.blob();
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = `Lohnabrechnung_${username}_${from}_${to}.pdf`;
   document.body.appendChild(a);
@@ -231,11 +261,10 @@ async function exportPayrollPdf(username, displayName) {
   URL.revokeObjectURL(url);
 }
 
-
 function renderAdminPayrollCards(rows) {
   if (!adminPayrollGridEl) return;
 
-  adminPayrollGridEl.innerHTML = '';
+  adminPayrollGridEl.innerHTML = "";
 
   if (!Array.isArray(rows) || !rows.length) {
     adminPayrollGridEl.innerHTML =
@@ -252,42 +281,42 @@ function renderAdminPayrollCards(rows) {
     const overtime = row?.overtime || {};
     const vorarbeit = row?.vorarbeit || {};
 
-    const card = document.createElement('div');
-    card.className = 'admin-payroll-card';
+    const card = document.createElement("div");
+    card.className = "admin-payroll-card";
 
-    const head = document.createElement('div');
-    head.className = 'admin-payroll-card-head';
+    const head = document.createElement("div");
+    head.className = "admin-payroll-card-head";
 
-    const left = document.createElement('div');
+    const left = document.createElement("div");
 
-    const title = document.createElement('h4');
-    title.className = 'admin-payroll-card-title';
-    title.textContent = row.displayName || row.username || '–';
+    const title = document.createElement("h4");
+    title.className = "admin-payroll-card-title";
+    title.textContent = row.displayName || row.username || "–";
 
-    const period = document.createElement('div');
-    period.className = 'admin-payroll-card-period';
+    const period = document.createElement("div");
+    period.className = "admin-payroll-card-period";
     period.textContent = `Zeitraum: ${fromLabel} – ${toLabel}`;
 
     left.appendChild(title);
     left.appendChild(period);
 
-    const actions = document.createElement('div');
+    const actions = document.createElement("div");
 
-    const exportBtn = document.createElement('button');
-    exportBtn.type = 'button';
-    exportBtn.className = 'anlagen-export-btn';
-    exportBtn.textContent = 'Export PDF';
+    const exportBtn = document.createElement("button");
+    exportBtn.type = "button";
+    exportBtn.className = "anlagen-export-btn";
+    exportBtn.textContent = "Export PDF";
 
-    exportBtn.addEventListener('click', async () => {
+    exportBtn.addEventListener("click", async () => {
       exportBtn.disabled = true;
       const prevText = exportBtn.textContent;
-      exportBtn.textContent = 'Export läuft…';
+      exportBtn.textContent = "Export läuft…";
 
       try {
         await exportPayrollPdf(row.username, row.displayName);
       } catch (err) {
         console.error(err);
-        alert(err?.message || 'PDF Export fehlgeschlagen');
+        alert(err?.message || "PDF Export fehlgeschlagen");
       } finally {
         exportBtn.disabled = false;
         exportBtn.textContent = prevText;
@@ -299,74 +328,113 @@ function renderAdminPayrollCards(rows) {
     head.appendChild(left);
     head.appendChild(actions);
 
-    const metrics = document.createElement('div');
-    metrics.className = 'admin-payroll-metrics';
+    const metrics = document.createElement("div");
+    metrics.className = "admin-payroll-metrics";
 
-    metrics.appendChild(createPayrollMetric('Arzt / Krank', formatPayrollHours(totals.arztKrankHours)));
-    metrics.appendChild(createPayrollMetric('Ferien', formatPayrollDays(totals.ferienDays)));
-    metrics.appendChild(createPayrollMetric('Stunden', formatPayrollHours(totals.stunden)));
-    metrics.appendChild(createPayrollMetric('Morgenessen', formatPayrollCount(totals.morgenessenCount)));
-    metrics.appendChild(createPayrollMetric('Mittagessen', formatPayrollCount(totals.mittagessenCount)));
-    metrics.appendChild(createPayrollMetric('Abendessen', formatPayrollCount(totals.abendessenCount)));
-    metrics.appendChild(createPayrollMetric('Schmutzzulage', formatPayrollCount(totals.schmutzzulageCount)));
-    metrics.appendChild(createPayrollMetric('Nebenauslagen', formatPayrollCount(totals.nebenauslagenCount)));
-    metrics.appendChild(createPayrollMetric('Pikett', formatPayrollHours(totals.pikettHours)));
+    metrics.appendChild(
+      createPayrollMetric(
+        "Arzt / Krank",
+        formatPayrollHours(totals.arztKrankHours),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric("Ferien", formatPayrollDays(totals.ferienDays)),
+    );
+    metrics.appendChild(
+      createPayrollMetric("Stunden", formatPayrollHours(totals.stunden)),
+    );
+    metrics.appendChild(
+      createPayrollMetric(
+        "Morgenessen",
+        formatPayrollCount(totals.morgenessenCount),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric(
+        "Mittagessen",
+        formatPayrollCount(totals.mittagessenCount),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric(
+        "Abendessen",
+        formatPayrollCount(totals.abendessenCount),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric(
+        "Schmutzzulage",
+        formatPayrollCount(totals.schmutzzulageCount),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric(
+        "Nebenauslagen",
+        formatPayrollCount(totals.nebenauslagenCount),
+      ),
+    );
+    metrics.appendChild(
+      createPayrollMetric("Pikett", formatPayrollHours(totals.pikettHours)),
+    );
 
-    const overtimeDivider = document.createElement('div');
-    overtimeDivider.className = 'admin-payroll-divider';
+    const overtimeDivider = document.createElement("div");
+    overtimeDivider.className = "admin-payroll-divider";
 
-    const overtimeTitle = document.createElement('div');
-    overtimeTitle.className = 'admin-payroll-subtitle';
-    overtimeTitle.textContent = 'Überzeit in dieser Lohnperiode';
+    const overtimeTitle = document.createElement("div");
+    overtimeTitle.className = "admin-payroll-subtitle";
+    overtimeTitle.textContent = "Überzeit in dieser Lohnperiode";
 
-    const overtimeMetrics = document.createElement('div');
+    const overtimeMetrics = document.createElement("div");
     overtimeMetrics.className =
-      'admin-payroll-metrics admin-payroll-metrics--secondary';
+      "admin-payroll-metrics admin-payroll-metrics--secondary";
 
     overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ1 roh', formatPayrollSignedHours(overtime.ueZ1Raw))
+      createPayrollMetric(
+        "ÜZ1 roh",
+        formatPayrollSignedHours(overtime.ueZ1Raw),
+      ),
     );
     overtimeMetrics.appendChild(
       createPayrollMetric(
-        'Vorarbeit angerechnet',
-        formatPayrollSignedHours(overtime.vorarbeitApplied)
-      )
+        "Vorarbeit angerechnet",
+        formatPayrollSignedHours(overtime.vorarbeitApplied),
+      ),
     );
     overtimeMetrics.appendChild(
       createPayrollMetric(
-        'ÜZ1 nach Vorarbeit',
-        formatPayrollSignedHours(overtime.ueZ1AfterVorarbeit)
-      )
+        "ÜZ1 nach Vorarbeit",
+        formatPayrollSignedHours(overtime.ueZ1AfterVorarbeit),
+      ),
     );
     overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ2', formatPayrollSignedHours(overtime.ueZ2))
+      createPayrollMetric("ÜZ2", formatPayrollSignedHours(overtime.ueZ2)),
     );
     overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ3', formatPayrollSignedHours(overtime.ueZ3))
+      createPayrollMetric("ÜZ3", formatPayrollSignedHours(overtime.ueZ3)),
     );
 
-    const vorarbeitDivider = document.createElement('div');
-    vorarbeitDivider.className = 'admin-payroll-divider';
+    const vorarbeitDivider = document.createElement("div");
+    vorarbeitDivider.className = "admin-payroll-divider";
 
-    const vorarbeitTitle = document.createElement('div');
-    vorarbeitTitle.className = 'admin-payroll-subtitle';
-    vorarbeitTitle.textContent = `Vorarbeitszeit (${vorarbeit.year || '–'})`;
+    const vorarbeitTitle = document.createElement("div");
+    vorarbeitTitle.className = "admin-payroll-subtitle";
+    vorarbeitTitle.textContent = `Vorarbeitszeit (${vorarbeit.year || "–"})`;
 
-    const vorarbeitMetrics = document.createElement('div');
+    const vorarbeitMetrics = document.createElement("div");
     vorarbeitMetrics.className =
-      'admin-payroll-metrics admin-payroll-metrics--secondary';
+      "admin-payroll-metrics admin-payroll-metrics--secondary";
 
     vorarbeitMetrics.appendChild(
       createPayrollMetric(
-        'Stand per Periodenende',
-        formatPayrollCounterHours(vorarbeit.filled, vorarbeit.required)
-      )
+        "Stand per Periodenende",
+        formatPayrollCounterHours(vorarbeit.filled, vorarbeit.required),
+      ),
     );
     vorarbeitMetrics.appendChild(
       createPayrollMetric(
-        'Änderung im Zeitraum',
-        formatPayrollSignedHours(vorarbeit.changeInPeriod)
-      )
+        "Änderung im Zeitraum",
+        formatPayrollSignedHours(vorarbeit.changeInPeriod),
+      ),
     );
 
     card.appendChild(head);
@@ -382,83 +450,87 @@ function renderAdminPayrollCards(rows) {
   });
 }
 
-
+/**
+ * Load the payroll period summary from the server and render one card per employee.
+ */
 async function loadAdminPayroll() {
   if (!payrollSummaryBarEl || !adminPayrollGridEl) return;
 
   const { from, to } = getPayrollSelectedPeriod();
 
   if (!from || !to) {
-    payrollSummaryBarEl.textContent = 'Bitte Zeitraum auswählen.';
+    payrollSummaryBarEl.textContent = "Bitte Zeitraum auswählen.";
     adminPayrollGridEl.innerHTML =
       '<div class="admin-payroll-empty">Bitte Zeitraum auswählen.</div>';
     return;
   }
 
-  payrollSummaryBarEl.textContent = 'Lade Lohndaten …';
+  payrollSummaryBarEl.textContent = "Lade Lohndaten …";
   adminPayrollGridEl.innerHTML =
     '<div class="admin-payroll-empty">Lohndaten werden geladen …</div>';
 
   try {
     const res = await authFetch(
-      `/api/admin/payroll-period?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      `/api/admin/payroll-period?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     );
 
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
-      throw new Error(data?.error || 'Lohndaten konnten nicht geladen werden');
+      throw new Error(data?.error || "Lohndaten konnten nicht geladen werden");
     }
 
     const rows = Array.isArray(data.rows) ? data.rows : [];
     const summary = data.summary || {};
 
     payrollSummaryBarEl.textContent =
-    `${summary.usersCount || rows.length} Mitarbeiter · ` +
-    `Zeitraum ${formatDateDisplayEU(data.period?.from || from)} – ${formatDateDisplayEU(data.period?.to || to)} · ` +
-    `Nur übertragene Daten berücksichtigt`;
+      `${summary.usersCount || rows.length} Mitarbeiter · ` +
+      `Zeitraum ${formatDateDisplayEU(data.period?.from || from)} – ${formatDateDisplayEU(data.period?.to || to)} · ` +
+      `Nur übertragene Daten berücksichtigt`;
 
     renderAdminPayrollCards(rows);
   } catch (err) {
     console.error(err);
-    payrollSummaryBarEl.textContent = 'Lohndaten konnten nicht geladen werden.';
-    adminPayrollGridEl.innerHTML =
-      `<div class="admin-payroll-empty">${err.message || 'Fehler beim Laden.'}</div>`;
+    payrollSummaryBarEl.textContent = "Lohndaten konnten nicht geladen werden.";
+    adminPayrollGridEl.innerHTML = `<div class="admin-payroll-empty">${err.message || "Fehler beim Laden."}</div>`;
   }
 }
-// --- Top navigation (Wochenplan / Pikett / Dashboard / Dokumente) --- //
+/**
+ * Top-level navigation
+ * Switches the active main view and triggers view-specific refreshes.
+ */
 
 topNavTabs.forEach((tab) => {
-  tab.addEventListener('click', () => {
+  tab.addEventListener("click", () => {
     const view = tab.dataset.view; // "wochenplan", "pikett", "dashboard", "dokumente"
 
     // Switch active tab
-    topNavTabs.forEach((t) => t.classList.remove('active'));
-    tab.classList.add('active');
+    topNavTabs.forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
 
     // Switch active view
     appViews.forEach((v) => {
-      v.classList.toggle('active', v.id === `view-${view}`);
+      v.classList.toggle("active", v.id === `view-${view}`);
     });
 
     // Wenn Dashboard aktiv wird: Monatswerte neu berechnen
-    if (view === 'dashboard') {
+    if (view === "dashboard") {
       updateDashboardForCurrentMonth();
       syncMyAbsencesFromServer();
       loadSyncStatus();
-    }
-    else if (view === 'admin') {
+    } else if (view === "admin") {
       loadAdminSummary();
-      
     }
-
   });
 });
 
-// --- Wochenplan state + storage --- //
+/**
+ * Wochenplan runtime state
+ * Per-user draft data continues to live in localStorage until a month is transmitted.
+ */
 
 let weekOffset = 0; // 0 = current week, -1 = previous, +1 = next, etc.
-let currentDayId = 'montag'; // active weekday
+let currentDayId = "montag"; // active weekday
 
 // mapping weekday -> offset from Monday
 const DAY_OFFSETS = {
@@ -470,14 +542,13 @@ const DAY_OFFSETS = {
 };
 // mapping labels for option inputs
 const OPTION_LABELS = {
-  option1: 'Montage',
-  option2: 'Demontage',
-  option3: 'Transport',
-  option4: 'Inbetreibnahme',
-  option5: 'Abnahme',
-  option6: 'Werk',
+  option1: "Montage",
+  option2: "Demontage",
+  option3: "Transport",
+  option4: "Inbetreibnahme",
+  option5: "Abnahme",
+  option6: "Werk",
 };
-
 
 // In-memory store: dateKey -> { flags: {...}, entries: [...] }
 const dayStore = {}; // e.g. { "2025-11-25": { flags: { sick: true, ... }, entries: [...] } }
@@ -488,11 +559,11 @@ function loadFromStorage() {
     if (!raw) return;
 
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
+    if (parsed && typeof parsed === "object") {
       Object.assign(dayStore, parsed);
     }
   } catch (err) {
-    console.error('Failed to load from storage', err);
+    console.error("Failed to load from storage", err);
   }
 }
 
@@ -501,13 +572,15 @@ function saveToStorage() {
     const json = JSON.stringify(dayStore);
     localStorage.setItem(STORAGE_KEY, json);
   } catch (err) {
-    console.error('Failed to save to storage', err);
+    console.error("Failed to save to storage", err);
   }
 }
 
-// --- Auth helper --- //
-const BACKEND_BASE_URL = 'http://localhost:3000';
-const AUTH_SESSION_KEY = 'authSession';
+/**
+ * Auth and API helpers
+ */
+const BACKEND_BASE_URL = window.location.origin;
+const AUTH_SESSION_KEY = "authSession";
 
 // session = { token: string, user: { id, username, role, ... } }
 function setAuthSession(token, user) {
@@ -515,7 +588,7 @@ function setAuthSession(token, user) {
   try {
     localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
   } catch (err) {
-    console.error('Failed to store auth session', err);
+    console.error("Failed to store auth session", err);
   }
 }
 
@@ -524,8 +597,8 @@ function getAuthSession() {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    if (typeof parsed.token !== 'string') return null;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.token !== "string") return null;
     return parsed;
   } catch {
     return null;
@@ -538,7 +611,7 @@ function clearAuthSession() {
 
 function getAuthToken() {
   const session = getAuthSession();
-  return session?.token || '';
+  return session?.token || "";
 }
 
 function getCurrentUser() {
@@ -570,24 +643,23 @@ function authFetch(path, options = {}) {
   });
 }
 
-
 // Fetch official konto values and transmitted months from server
 async function loadMyKontoFromServer() {
   try {
     const token = getAuthToken();
     if (!token) return null;
-    
-    const res = await authFetch('/api/konten/me');
+
+    const res = await authFetch("/api/konten/me");
     if (!res.ok) return null;
     const data = await res.json();
     if (!data.ok) return null;
-    
+
     return {
       konto: data.konto,
-      transmittedMonths: new Set(data.transmittedMonths || [])
+      transmittedMonths: new Set(data.transmittedMonths || []),
     };
   } catch (e) {
-    console.error('Failed to load konto from server:', e);
+    console.error("Failed to load konto from server:", e);
     return null;
   }
 }
@@ -600,10 +672,12 @@ function isDateInTransmittedMonth(dateKey, transmittedMonths) {
   return transmittedMonths.has(monthKey);
 }
 
-
 // Replace local dayStore + pikettStore for a given month with the server-authoritative saved payload
+/**
+ * Replace the local draft representation of a transmitted month with the server-confirmed payload.
+ */
 function applySavedMonthPayloadToLocalStores(savedPayload) {
-  if (!savedPayload || typeof savedPayload !== 'object') return;
+  if (!savedPayload || typeof savedPayload !== "object") return;
 
   const year = Number(savedPayload.year);
   const monthIndex = Number(savedPayload.monthIndex);
@@ -611,7 +685,7 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
 
   // 1) Overwrite dayStore for that month
   Object.keys(dayStore).forEach((dateKey) => {
-    const d = new Date(dateKey + 'T00:00:00');
+    const d = new Date(dateKey + "T00:00:00");
     if (Number.isNaN(d.getTime())) return;
     if (d.getFullYear() === year && d.getMonth() === monthIndex) {
       delete dayStore[dateKey];
@@ -619,7 +693,7 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
   });
 
   const daysObj =
-    savedPayload.days && typeof savedPayload.days === 'object'
+    savedPayload.days && typeof savedPayload.days === "object"
       ? savedPayload.days
       : {};
 
@@ -630,11 +704,13 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
   saveToStorage();
 
   // 2) Overwrite pikettStore for that month
-  const newPikett = Array.isArray(savedPayload.pikett) ? savedPayload.pikett : [];
+  const newPikett = Array.isArray(savedPayload.pikett)
+    ? savedPayload.pikett
+    : [];
 
   pikettStore = pikettStore.filter((p) => {
     if (!p || !p.date) return true;
-    const d = new Date(String(p.date).slice(0, 10) + 'T00:00:00');
+    const d = new Date(String(p.date).slice(0, 10) + "T00:00:00");
     if (Number.isNaN(d.getTime())) return true;
     return !(d.getFullYear() === year && d.getMonth() === monthIndex);
   });
@@ -650,8 +726,9 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
   savePikettStore();
 }
 
-
-// --- Pikett localStorage helpers --- //
+/**
+ * Local persistence helpers / Pikett and absences
+ */
 
 function loadPikettStore() {
   const raw = localStorage.getItem(PIKETT_STORAGE_KEY);
@@ -669,7 +746,6 @@ function loadPikettStore() {
   }
 }
 
-
 function savePikettStore() {
   localStorage.setItem(PIKETT_STORAGE_KEY, JSON.stringify(pikettStore));
 }
@@ -682,30 +758,30 @@ function loadAbsenceRequests() {
     if (!Array.isArray(parsed)) return [];
 
     return parsed.map((item) => {
-      const st = String(item.status || '').toLowerCase();
+      const st = String(item.status || "").toLowerCase();
       const allowed = new Set([
-        'pending',
-        'accepted',
-        'rejected',
-        'cancel_requested',
-        'cancelled',
+        "pending",
+        "accepted",
+        "rejected",
+        "cancel_requested",
+        "cancelled",
       ]);
 
       return {
         id:
           item.id ||
-          'abs-' +
+          "abs-" +
             Date.now().toString(36) +
             Math.random().toString(36).slice(2, 8),
-        type: (item.type || '').toLowerCase(),
-        from: item.from || '',
-        to: item.to || '',
+        type: (item.type || "").toLowerCase(),
+        from: item.from || "",
+        to: item.to || "",
         days:
-          typeof item.days === 'number' && !Number.isNaN(item.days)
+          typeof item.days === "number" && !Number.isNaN(item.days)
             ? item.days
             : undefined,
-        comment: item.comment || '',
-        status: allowed.has(st) ? st : 'pending',
+        comment: item.comment || "",
+        status: allowed.has(st) ? st : "pending",
       };
     });
   } catch {
@@ -713,48 +789,48 @@ function loadAbsenceRequests() {
   }
 }
 
-
 function saveAbsenceRequests() {
   localStorage.setItem(ABSENCE_STORAGE_KEY, JSON.stringify(absenceRequests));
 }
 
 function createAbsenceId() {
   return (
-    'abs-' +
+    "abs-" +
     Date.now().toString(36) +
-    '-' +
+    "-" +
     Math.random().toString(36).slice(2, 8)
   );
 }
 
 function absenceTypeLabel(type) {
-  const key = String(type || '').trim().toLowerCase();
+  const key = String(type || "")
+    .trim()
+    .toLowerCase();
 
   const map = {
-    ferien: 'Ferien',
-    unfall: 'Unfall',
-    militaer: 'Militär',
-    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
-    vaterschaft: 'Vaterschaftsurlaub',
+    ferien: "Ferien",
+    unfall: "Unfall",
+    militaer: "Militär",
+    bezahlteabwesenheit: "Bezahlte Abwesenheit",
+    vaterschaft: "Vaterschaftsurlaub",
   };
 
-  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '–');
+  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : "–");
 }
-
 
 // Create a new empty Pikett-Einsatz entry (default date = today)
 function createEmptyPikettEntry() {
   const d = new Date();
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
   const today = `${yyyy}-${mm}-${dd}`;
 
   return {
     date: today,
-    komNr: '',
+    komNr: "",
     hours: 0,
-    note: '',
+    note: "",
     isOvertime3: false,
   };
 }
@@ -771,7 +847,9 @@ let pikettMonthOffset = 0;
 // 0 = aktueller Monat, -1 = Vormonat, +1 = nächster Monat (Dashboard)
 let dashboardMonthOffset = 0;
 
-// --- Jahres-Konfiguration für Vorarbeit & (später) Startsaldi --- //
+/**
+ * Year configuration / Vorarbeit targets and seeded balances
+ */
 
 // Hier kannst du später pro Jahr einstellen, wie viel Vorarbeit nötig ist,
 // und optional Startsaldi aus dem Vorjahr eintragen.
@@ -788,7 +866,7 @@ const OVERTIME_YEAR_CONFIG = {
 
   2025: {
     vorarbeitRequired: 39,
-    ueZ1CarryIn: 0, 
+    ueZ1CarryIn: 0,
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
     vacationDaysPerYear: 21,
@@ -812,50 +890,51 @@ function getYearConfig(year) {
   };
 }
 
-
-// --- Feiertage Kanton Bern (für Ferien-Berechnung) --- //
+/**
+ * Holiday calendar / Kanton Bern
+ */
 
 const BERN_HOLIDAYS = {
   2025: new Set([
-    '2025-01-01', // Neujahr
-    '2025-01-02', // Berchtoldstag
-    '2025-04-18', // Karfreitag
-    '2025-04-20', // Ostersonntag
-    '2025-04-21', // Ostermontag
-    '2025-05-29', // Auffahrt
-    '2025-06-09', // Pfingstmontag
-    '2025-08-01', // Bundesfeier
-    '2025-09-21', // Bettag
-    '2025-12-25', // Weihnachten
-    '2025-12-26', // Stephanstag
+    "2025-01-01", // Neujahr
+    "2025-01-02", // Berchtoldstag
+    "2025-04-18", // Karfreitag
+    "2025-04-20", // Ostersonntag
+    "2025-04-21", // Ostermontag
+    "2025-05-29", // Auffahrt
+    "2025-06-09", // Pfingstmontag
+    "2025-08-01", // Bundesfeier
+    "2025-09-21", // Bettag
+    "2025-12-25", // Weihnachten
+    "2025-12-26", // Stephanstag
   ]),
 
   2026: new Set([
-    '2026-01-01', // Neujahr
-    '2026-01-02', // Berchtoldstag
-    '2026-04-03', // Karfreitag
-    '2026-04-05', // Ostersonntag
-    '2026-04-06', // Ostermontag
-    '2026-05-14', // Auffahrt
-    '2026-05-25', // Pfingstmontag
-    '2026-08-01', // Bundesfeier
-    '2026-09-20', // Bettag
-    '2026-12-25', // Weihnachten
-    '2026-12-26', // Stephanstag
+    "2026-01-01", // Neujahr
+    "2026-01-02", // Berchtoldstag
+    "2026-04-03", // Karfreitag
+    "2026-04-05", // Ostersonntag
+    "2026-04-06", // Ostermontag
+    "2026-05-14", // Auffahrt
+    "2026-05-25", // Pfingstmontag
+    "2026-08-01", // Bundesfeier
+    "2026-09-20", // Bettag
+    "2026-12-25", // Weihnachten
+    "2026-12-26", // Stephanstag
   ]),
 
   2027: new Set([
-    '2027-01-01', // Neujahr
-    '2027-01-02', // Berchtoldstag
-    '2027-03-26', // Karfreitag
-    '2027-03-28', // Ostersonntag
-    '2027-03-29', // Ostermontag
-    '2027-05-06', // Auffahrt
-    '2027-05-17', // Pfingstmontag
-    '2027-08-01', // Bundesfeier
-    '2027-09-19', // Bettag
-    '2027-12-25', // Weihnachten
-    '2027-12-26', // Stephanstag
+    "2027-01-01", // Neujahr
+    "2027-01-02", // Berchtoldstag
+    "2027-03-26", // Karfreitag
+    "2027-03-28", // Ostersonntag
+    "2027-03-29", // Ostermontag
+    "2027-05-06", // Auffahrt
+    "2027-05-17", // Pfingstmontag
+    "2027-08-01", // Bundesfeier
+    "2027-09-19", // Bettag
+    "2027-12-25", // Weihnachten
+    "2027-12-26", // Stephanstag
   ]),
 };
 
@@ -912,9 +991,9 @@ function getCurrentPikettMonthInfo() {
   const start = new Date(year, monthIndex, 1);
   const end = new Date(year, monthIndex + 1, 1);
 
-  const label = base.toLocaleString('de-DE', {
-    month: 'long',
-    year: 'numeric',
+  const label = base.toLocaleString("de-DE", {
+    month: "long",
+    year: "numeric",
   });
 
   return {
@@ -928,19 +1007,18 @@ function getCurrentPikettMonthInfo() {
 
 // Pikett-Liste für aktuellen Monat rendern
 function renderPikettList() {
-  const listEl = document.getElementById('pikettList');
+  const listEl = document.getElementById("pikettList");
   if (!listEl) return;
 
   const info = getCurrentPikettMonthInfo();
 
   // Monatstitel aktualisieren
   if (pikettMonthLabelEl) {
-    const text =
-      info.label.charAt(0).toUpperCase() + info.label.slice(1);
+    const text = info.label.charAt(0).toUpperCase() + info.label.slice(1);
     pikettMonthLabelEl.textContent = text;
   }
 
-  listEl.innerHTML = '';
+  listEl.innerHTML = "";
 
   const monthEntries = [];
 
@@ -961,13 +1039,13 @@ function renderPikettList() {
   // Keine Einträge im Monat → Hinweis + 0,0 h
   if (monthEntries.length === 0) {
     if (pikettMonthTotalEl) {
-      pikettMonthTotalEl.textContent = '0,0 h';
+      pikettMonthTotalEl.textContent = "0,0 h";
     }
 
-    const emptyCard = document.createElement('div');
-    emptyCard.className = 'pikett-card';
+    const emptyCard = document.createElement("div");
+    emptyCard.className = "pikett-card";
     emptyCard.textContent =
-      'Noch keine Pikett-Einsätze in diesem Monat erfasst.';
+      "Noch keine Pikett-Einsätze in diesem Monat erfasst.";
     listEl.appendChild(emptyCard);
 
     return;
@@ -979,48 +1057,48 @@ function renderPikettList() {
   let monthTotal = 0;
 
   monthEntries.forEach(({ entry, index }) => {
-    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours)) {
+    if (typeof entry.hours === "number" && !Number.isNaN(entry.hours)) {
       monthTotal += entry.hours;
     }
 
-    const card = document.createElement('div');
-    card.className = 'pikett-card';
+    const card = document.createElement("div");
+    card.className = "pikett-card";
     card.dataset.index = String(index);
 
     // Header: Date + Kom.Nummer + remove
-    const header = document.createElement('div');
-    header.className = 'pikett-card-header';
+    const header = document.createElement("div");
+    header.className = "pikett-card-header";
 
-    const fieldGroup = document.createElement('div');
-    fieldGroup.className = 'pikett-field-group';
+    const fieldGroup = document.createElement("div");
+    fieldGroup.className = "pikett-field-group";
 
     // Date
-    const dateLabel = document.createElement('label');
-    dateLabel.className = 'pikett-label';
+    const dateLabel = document.createElement("label");
+    dateLabel.className = "pikett-label";
 
-    const dateSpan = document.createElement('span');
-    dateSpan.textContent = 'Datum';
+    const dateSpan = document.createElement("span");
+    dateSpan.textContent = "Datum";
 
-    const dateInput = document.createElement('input');
-    dateInput.type = 'date';
-    dateInput.className = 'pikett-date';
-    dateInput.value = entry.date || '';
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.className = "pikett-date";
+    dateInput.value = entry.date || "";
 
     dateLabel.appendChild(dateSpan);
     dateLabel.appendChild(dateInput);
 
     // Kom.Nummer
-    const komLabel = document.createElement('label');
-    komLabel.className = 'pikett-label';
+    const komLabel = document.createElement("label");
+    komLabel.className = "pikett-label";
 
-    const komSpan = document.createElement('span');
-    komSpan.textContent = 'Kom.Nummer (Anlage)';
+    const komSpan = document.createElement("span");
+    komSpan.textContent = "Kom.Nummer (Anlage)";
 
-    const komInput = document.createElement('input');
-    komInput.type = 'text';
-    komInput.className = 'pikett-kom';
-    komInput.placeholder = 'z.B. 123456';
-    komInput.value = entry.komNr || '';
+    const komInput = document.createElement("input");
+    komInput.type = "text";
+    komInput.className = "pikett-kom";
+    komInput.placeholder = "z.B. 123456";
+    komInput.value = entry.komNr || "";
 
     komLabel.appendChild(komSpan);
     komLabel.appendChild(komInput);
@@ -1029,53 +1107,53 @@ function renderPikettList() {
     fieldGroup.appendChild(komLabel);
 
     // Remove button
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'pikett-remove-btn';
-    removeBtn.textContent = '✕';
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "pikett-remove-btn";
+    removeBtn.textContent = "✕";
 
     header.appendChild(fieldGroup);
     header.appendChild(removeBtn);
 
     // Body: hours + note
-    const body = document.createElement('div');
-    body.className = 'pikett-card-body';
+    const body = document.createElement("div");
+    body.className = "pikett-card-body";
 
-    const hoursLabel = document.createElement('label');
-    hoursLabel.className = 'pikett-label';
+    const hoursLabel = document.createElement("label");
+    hoursLabel.className = "pikett-label";
 
-    const hoursSpan = document.createElement('span');
-    hoursSpan.textContent = 'Pikett-Stunden';
+    const hoursSpan = document.createElement("span");
+    hoursSpan.textContent = "Pikett-Stunden";
 
-    const hoursInput = document.createElement('input');
-    hoursInput.type = 'number';
-    hoursInput.min = '0';
-    hoursInput.step = '0.25';
-    hoursInput.placeholder = '0,0';
-    hoursInput.className = 'pikett-hours';
+    const hoursInput = document.createElement("input");
+    hoursInput.type = "number";
+    hoursInput.min = "0";
+    hoursInput.step = "0.25";
+    hoursInput.placeholder = "0,0";
+    hoursInput.className = "pikett-hours";
 
     if (
-      typeof entry.hours === 'number' &&
+      typeof entry.hours === "number" &&
       !Number.isNaN(entry.hours) &&
       entry.hours !== 0
     ) {
-      hoursInput.value = entry.hours.toString().replace('.', ',');
+      hoursInput.value = entry.hours.toString().replace(".", ",");
     }
 
     hoursLabel.appendChild(hoursSpan);
     hoursLabel.appendChild(hoursInput);
 
-    const noteLabel = document.createElement('label');
-    noteLabel.className = 'pikett-label';
+    const noteLabel = document.createElement("label");
+    noteLabel.className = "pikett-label";
 
-    const noteSpan = document.createElement('span');
-    noteSpan.textContent = 'Notiz (optional)';
+    const noteSpan = document.createElement("span");
+    noteSpan.textContent = "Notiz (optional)";
 
-    const noteInput = document.createElement('input');
-    noteInput.type = 'text';
-    noteInput.className = 'pikett-note';
-    noteInput.placeholder = 'z.B. kurze Beschreibung';
-    noteInput.value = entry.note || '';
+    const noteInput = document.createElement("input");
+    noteInput.type = "text";
+    noteInput.className = "pikett-note";
+    noteInput.placeholder = "z.B. kurze Beschreibung";
+    noteInput.value = entry.note || "";
 
     noteLabel.appendChild(noteSpan);
     noteLabel.appendChild(noteInput);
@@ -1083,47 +1161,47 @@ function renderPikettList() {
     body.appendChild(hoursLabel);
     body.appendChild(noteLabel);
 
-        // --- NEW: Überzeit 3 (150%) toggle section ---
-    const overtimeSection = document.createElement('div');
-    overtimeSection.className = 'pikett-overtime3-section';
+    // --- NEW: Überzeit 3 (150%) toggle section ---
+    const overtimeSection = document.createElement("div");
+    overtimeSection.className = "pikett-overtime3-section";
 
     // Header with title + info button
-    const overtimeHeader = document.createElement('div');
-    overtimeHeader.className = 'pikett-overtime3-header';
+    const overtimeHeader = document.createElement("div");
+    overtimeHeader.className = "pikett-overtime3-header";
 
-    const overtimeTitle = document.createElement('span');
-    overtimeTitle.className = 'pikett-overtime3-title';
-    overtimeTitle.textContent = 'Überzeit 3 (150%)';
+    const overtimeTitle = document.createElement("span");
+    overtimeTitle.className = "pikett-overtime3-title";
+    overtimeTitle.textContent = "Überzeit 3 (150%)";
 
-    const overtimeInfoBtn = document.createElement('button');
-    overtimeInfoBtn.type = 'button';
-    overtimeInfoBtn.className = 'pikett-overtime3-info-btn';
-    overtimeInfoBtn.setAttribute('aria-label', 'Info Überzeit 3');
-    overtimeInfoBtn.textContent = 'i';
+    const overtimeInfoBtn = document.createElement("button");
+    overtimeInfoBtn.type = "button";
+    overtimeInfoBtn.className = "pikett-overtime3-info-btn";
+    overtimeInfoBtn.setAttribute("aria-label", "Info Überzeit 3");
+    overtimeInfoBtn.textContent = "i";
 
     overtimeHeader.appendChild(overtimeTitle);
     overtimeHeader.appendChild(overtimeInfoBtn);
 
     // Info box (collapsed by default, opened via CSS class on the card)
-    const overtimeInfoBox = document.createElement('div');
-    overtimeInfoBox.className = 'pikett-overtime3-info-box';
+    const overtimeInfoBox = document.createElement("div");
+    overtimeInfoBox.className = "pikett-overtime3-info-box";
     overtimeInfoBox.innerHTML = `
       <p><strong>Wochenendarbeit ohne Pikett-Dienst:</strong></p>
       <p>Aktiviere diese Option nur, wenn du am Wochenende gearbeitet hast, ohne offizielle Pikett-Woche.</p>
     `;
 
     // Checkbox toggle
-    const overtimeToggle = document.createElement('label');
-    overtimeToggle.className = 'pikett-overtime3-toggle';
+    const overtimeToggle = document.createElement("label");
+    overtimeToggle.className = "pikett-overtime3-toggle";
 
-    const overtimeCheckbox = document.createElement('input');
-    overtimeCheckbox.type = 'checkbox';
-    overtimeCheckbox.className = 'pikett-overtime3-checkbox';
+    const overtimeCheckbox = document.createElement("input");
+    overtimeCheckbox.type = "checkbox";
+    overtimeCheckbox.className = "pikett-overtime3-checkbox";
     overtimeCheckbox.checked = !!entry.isOvertime3;
 
-    const overtimeText = document.createElement('span');
+    const overtimeText = document.createElement("span");
     overtimeText.textContent =
-      'Dieser Einsatz ist Wochenendarbeit ohne Pikett (Überzeit 3 – 150%)';
+      "Dieser Einsatz ist Wochenendarbeit ohne Pikett (Überzeit 3 – 150%)";
 
     overtimeToggle.appendChild(overtimeCheckbox);
     overtimeToggle.appendChild(overtimeText);
@@ -1134,7 +1212,6 @@ function renderPikettList() {
 
     body.appendChild(overtimeSection);
 
-
     card.appendChild(header);
     card.appendChild(body);
 
@@ -1143,7 +1220,7 @@ function renderPikettList() {
 
   // Monatstotal anzeigen
   if (pikettMonthTotalEl) {
-    const formatted = monthTotal.toFixed(1).replace('.', ',') + ' h';
+    const formatted = monthTotal.toFixed(1).replace(".", ",") + " h";
     pikettMonthTotalEl.textContent = formatted;
   }
 }
@@ -1165,18 +1242,18 @@ function updatePikettMonthTotal() {
     const m = d.getMonth();
     if (y !== info.year || m !== info.monthIndex) return;
 
-    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours)) {
+    if (typeof entry.hours === "number" && !Number.isNaN(entry.hours)) {
       monthTotal += entry.hours;
     }
   });
 
-  const formatted = monthTotal.toFixed(1).replace('.', ',') + ' h';
+  const formatted = monthTotal.toFixed(1).replace(".", ",") + " h";
   pikettMonthTotalEl.textContent = formatted;
 }
 
 // Add new Pikett-Einsatz when clicking the button
 if (pikettAddBtn) {
-  pikettAddBtn.addEventListener('click', () => {
+  pikettAddBtn.addEventListener("click", () => {
     pikettStore.push(createEmptyPikettEntry());
     savePikettStore();
     renderPikettList();
@@ -1187,7 +1264,7 @@ if (pikettAddBtn) {
 // Abwesenheits-Antrag speichern
 
 if (absenceSaveBtn) {
-  absenceSaveBtn.addEventListener('click', async () => {
+  absenceSaveBtn.addEventListener("click", async () => {
     const type = absenceTypeEl.value;
     const from = absenceFromEl.value;
     const to = absenceToEl.value;
@@ -1195,47 +1272,45 @@ if (absenceSaveBtn) {
     const comment = absenceCommentEl.value.trim();
 
     if (!type || !from || !to) {
-      alert('Bitte Typ, Von und Bis ausfüllen.');
+      alert("Bitte Typ, Von und Bis ausfüllen.");
       return;
     }
 
     const localId = `abs-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
     try {
-      const res = await authFetch('/api/absences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/absences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: localId, type, from, to, days, comment }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Absenz konnte nicht gespeichert werden');
+        throw new Error(data.error || "Absenz konnte nicht gespeichert werden");
       }
 
       // Reset form
-      absenceFromEl.value = '';
-      absenceToEl.value = '';
-      absenceDaysEl.value = '';
-      absenceCommentEl.value = '';
+      absenceFromEl.value = "";
+      absenceToEl.value = "";
+      absenceDaysEl.value = "";
+      absenceCommentEl.value = "";
 
       await syncMyAbsencesFromServer();
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Fehler beim Speichern');
+      alert(e.message || "Fehler beim Speichern");
     }
   });
 }
 
-
-
 // Update Pikett entries when the user edits fields
-document.addEventListener('input', (event) => {
+document.addEventListener("input", (event) => {
   const target = event.target;
   if (!target) return;
 
   // Only care about elements inside a .pikett-card
-  const card = target.closest('.pikett-card');
+  const card = target.closest(".pikett-card");
   if (!card) return;
 
   const index = Number(card.dataset.index);
@@ -1243,24 +1318,20 @@ document.addEventListener('input', (event) => {
 
   const entry = pikettStore[index];
 
-  if (target.classList.contains('pikett-date')) {
-    entry.date = target.value || '';
-  } else if (target.classList.contains('pikett-kom')) {
+  if (target.classList.contains("pikett-date")) {
+    entry.date = target.value || "";
+  } else if (target.classList.contains("pikett-kom")) {
     const normalized = normalizeKomNr(target.value);
     target.value = normalized;
     entry.komNr = normalized;
-  } else if (target.classList.contains('pikett-hours')) {
-  const raw = target.value.trim();
-  let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-  if (!Number.isNaN(num)) {
-    num = roundToQuarter(num);
-  }
-  entry.hours = Number.isNaN(num) ? 0 : num;
-
-  
-  }
-
-   else if (target.classList.contains('pikett-note')) {
+  } else if (target.classList.contains("pikett-hours")) {
+    const raw = target.value.trim();
+    let num = raw ? parseFloat(raw.replace(",", ".")) : 0;
+    if (!Number.isNaN(num)) {
+      num = roundToQuarter(num);
+    }
+    entry.hours = Number.isNaN(num) ? 0 : num;
+  } else if (target.classList.contains("pikett-note")) {
     entry.note = target.value;
   } else {
     return;
@@ -1271,15 +1342,18 @@ document.addEventListener('input', (event) => {
 });
 
 // --- NEW: handle Überzeit 3 checkbox on Pikett cards --- //
-document.addEventListener('change', (event) => {
+document.addEventListener("change", (event) => {
   const target = event.target;
   if (!target) return;
 
-  if (!target.classList || !target.classList.contains('pikett-overtime3-checkbox')) {
+  if (
+    !target.classList ||
+    !target.classList.contains("pikett-overtime3-checkbox")
+  ) {
     return;
   }
 
-  const card = target.closest('.pikett-card');
+  const card = target.closest(".pikett-card");
   if (!card) return;
 
   const index = Number(card.dataset.index);
@@ -1290,49 +1364,48 @@ document.addEventListener('change', (event) => {
   // no need to re-render; checkbox already shows current state
 });
 
-
 // Remove a Pikett-Einsatz card (mit Bestätigung)
 // + Info-Toggle für Überzeit 3
-document.addEventListener('click', (event) => {
+document.addEventListener("click", (event) => {
   const target = event.target;
   if (!target) return;
 
   // 1) Info-Button "i" für Überzeit 3 toggeln
-  if (target.classList.contains('pikett-overtime3-info-btn')) {
-    const card = target.closest('.pikett-card');
+  if (target.classList.contains("pikett-overtime3-info-btn")) {
+    const card = target.closest(".pikett-card");
     if (!card) return;
-    card.classList.toggle('open-overtime3-info');
+    card.classList.toggle("open-overtime3-info");
     return; // fertig, nicht weiter runterlaufen
   }
 
   // 2) Klick auf ✕ → Bestätigungszeile anzeigen
-  if (target.classList.contains('pikett-remove-btn')) {
-    const card = target.closest('.pikett-card');
+  if (target.classList.contains("pikett-remove-btn")) {
+    const card = target.closest(".pikett-card");
     if (!card) return;
 
     // Wenn Karte schon im Bestätigungsmodus ist, nichts tun
-    if (card.classList.contains('pikett-confirm-mode')) {
+    if (card.classList.contains("pikett-confirm-mode")) {
       return;
     }
 
-    card.classList.add('pikett-confirm-mode');
+    card.classList.add("pikett-confirm-mode");
 
-    const row = document.createElement('div');
-    row.className = 'pikett-confirm-row';
+    const row = document.createElement("div");
+    row.className = "pikett-confirm-row";
 
-    const text = document.createElement('span');
-    text.className = 'pikett-confirm-text';
-    text.textContent = 'Pikett-Einsatz wirklich löschen?';
+    const text = document.createElement("span");
+    text.className = "pikett-confirm-text";
+    text.textContent = "Pikett-Einsatz wirklich löschen?";
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'pikett-confirm-cancel';
-    cancelBtn.textContent = 'Abbrechen';
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "pikett-confirm-cancel";
+    cancelBtn.textContent = "Abbrechen";
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'pikett-confirm-delete';
-    deleteBtn.textContent = 'Löschen';
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "pikett-confirm-delete";
+    deleteBtn.textContent = "Löschen";
 
     row.appendChild(text);
     row.appendChild(cancelBtn);
@@ -1343,20 +1416,20 @@ document.addEventListener('click', (event) => {
   }
 
   // 3) Abbrechen in der Bestätigungszeile
-  if (target.classList.contains('pikett-confirm-cancel')) {
-    const card = target.closest('.pikett-card');
+  if (target.classList.contains("pikett-confirm-cancel")) {
+    const card = target.closest(".pikett-card");
     if (!card) return;
 
-    const row = card.querySelector('.pikett-confirm-row');
+    const row = card.querySelector(".pikett-confirm-row");
     if (row) row.remove();
 
-    card.classList.remove('pikett-confirm-mode');
+    card.classList.remove("pikett-confirm-mode");
     return;
   }
 
   // 4) Löschen in der Bestätigungszeile
-  if (target.classList.contains('pikett-confirm-delete')) {
-    const card = target.closest('.pikett-card');
+  if (target.classList.contains("pikett-confirm-delete")) {
+    const card = target.closest(".pikett-card");
     if (!card) return;
 
     const index = Number(card.dataset.index);
@@ -1370,74 +1443,78 @@ document.addEventListener('click', (event) => {
 });
 
 // Abwesenheits-Antrag löschen – mit Bestätigungszeile
-document.addEventListener('click', async (event) => {
+document.addEventListener("click", async (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
-  if (target.classList.contains('absence-cancel-btn')) {
-  const item = target.closest('.absence-item');
-  if (!item) return;
-
-  const id = item.dataset.absenceId;
-  if (!id) return;
-
-  try {
-    const res = await authFetch(`/api/absences/${encodeURIComponent(id)}/cancel`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Aktion nicht möglich');
-
-    await syncMyAbsencesFromServer();
-  } catch (e) {
-    console.error(e);
-    alert(e.message || 'Fehler');
-  }
-  return;
-}
-
-
-  // 2) "Abbrechen" in der Bestätigungszeile
-  if (target.classList.contains('absence-confirm-cancel')) {
-    const item = target.closest('.absence-item');
+  if (target.classList.contains("absence-cancel-btn")) {
+    const item = target.closest(".absence-item");
     if (!item) return;
 
-    const row = item.querySelector('.absence-confirm-row');
-    if (row) row.remove();
+    const id = item.dataset.absenceId;
+    if (!id) return;
 
-    item.classList.remove('absence-confirm-mode');
+    try {
+      const res = await authFetch(
+        `/api/absences/${encodeURIComponent(id)}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      const data = await res.json();
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || "Aktion nicht möglich");
+
+      await syncMyAbsencesFromServer();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Fehler");
+    }
     return;
   }
 
-    // 3) Endgültig löschen (Stornieren) in der Bestätigungszeile
-    if (target.classList.contains('absence-confirm-delete')) {
-      const item = target.closest('.absence-item');
-      if (!item) return;
+  // 2) "Abbrechen" in der Bestätigungszeile
+  if (target.classList.contains("absence-confirm-cancel")) {
+    const item = target.closest(".absence-item");
+    if (!item) return;
 
-      const id = item.dataset.absenceId;
-      if (!id) return;
+    const row = item.querySelector(".absence-confirm-row");
+    if (row) row.remove();
 
-      try {
-        const res = await authFetch(`/api/absences/${encodeURIComponent(id)}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.error || 'Stornieren nicht möglich');
+    item.classList.remove("absence-confirm-mode");
+    return;
+  }
 
-        // Refresh local state from server (single source of truth)
-        await syncMyAbsencesFromServer();
-      } catch (e) {
-        console.error(e);
-        alert(e.message || 'Fehler beim Stornieren');
-      }
-      return;
+  // 3) Endgültig löschen (Stornieren) in der Bestätigungszeile
+  if (target.classList.contains("absence-confirm-delete")) {
+    const item = target.closest(".absence-item");
+    if (!item) return;
+
+    const id = item.dataset.absenceId;
+    if (!id) return;
+
+    try {
+      const res = await authFetch(`/api/absences/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || "Stornieren nicht möglich");
+
+      // Refresh local state from server (single source of truth)
+      await syncMyAbsencesFromServer();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Fehler beim Stornieren");
     }
-
-
+    return;
+  }
 });
 
 if (adminMonthPrevBtn) {
-  adminMonthPrevBtn.addEventListener('click', () => {
-    if (adminActiveInnerTab !== 'overview') return;
+  adminMonthPrevBtn.addEventListener("click", () => {
+    if (adminActiveInnerTab !== "overview") return;
     adminMonthOffset -= 1;
     updateAdminMonthLabel();
     loadAdminSummary();
@@ -1445,18 +1522,16 @@ if (adminMonthPrevBtn) {
 }
 
 if (adminMonthNextBtn) {
-  adminMonthNextBtn.addEventListener('click', () => {
+  adminMonthNextBtn.addEventListener("click", () => {
     adminMonthOffset += 1;
     updateAdminMonthLabel();
     loadAdminSummary();
   });
 }
 
-
-
 // Pikett-Monat wechseln
 if (pikettMonthPrevBtn) {
-  pikettMonthPrevBtn.addEventListener('click', () => {
+  pikettMonthPrevBtn.addEventListener("click", () => {
     pikettMonthOffset -= 1;
     renderPikettList();
     updatePikettMonthTotal();
@@ -1464,7 +1539,7 @@ if (pikettMonthPrevBtn) {
 }
 
 if (pikettMonthNextBtn) {
-  pikettMonthNextBtn.addEventListener('click', () => {
+  pikettMonthNextBtn.addEventListener("click", () => {
     pikettMonthOffset += 1;
     renderPikettList();
     updatePikettMonthTotal();
@@ -1472,20 +1547,20 @@ if (pikettMonthNextBtn) {
 }
 
 if (dashboardTransmitBtn) {
-  dashboardTransmitBtn.addEventListener('click', () => {
+  dashboardTransmitBtn.addEventListener("click", () => {
     const token = getAuthToken();
     if (!token) {
-      alert('Bitte zuerst einloggen, bevor Sie die Monatsdaten übertragen.');
+      alert("Bitte zuerst einloggen, bevor Sie die Monatsdaten übertragen.");
       showLogin();
       return;
     }
 
     const payload = buildPayloadForCurrentDashboardMonth();
 
-    authFetch('/api/transmit-month', {
-      method: 'POST',
+    authFetch("/api/transmit-month", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
     })
@@ -1493,52 +1568,54 @@ if (dashboardTransmitBtn) {
         if (!res.ok) {
           // differentiate 401 vs others (optional)
           if (res.status === 401) {
-            throw new Error('UNAUTHORIZED');
+            throw new Error("UNAUTHORIZED");
           }
-          throw new Error('SERVER_ERROR');
+          throw new Error("SERVER_ERROR");
         }
         return res.json();
       })
       .then((data) => {
         if (!data.ok) {
           alert(
-            `Übertragung fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`
+            `Übertragung fehlgeschlagen: ${data.error || "Unbekannter Fehler"}`,
           );
           return;
         }
         alert(
-          `Daten für ${payload.monthLabel} erfolgreich übertragen.\nServer: ${data.message}`
+          `Daten für ${payload.monthLabel} erfolgreich übertragen.\nServer: ${data.message}`,
         );
 
-          // Sync-Status direkt aktualisieren
-           loadSyncStatus();
+        // Sync-Status direkt aktualisieren
+        loadSyncStatus();
 
-           // If the backend preserved locked days (or otherwise normalized the payload),
-          // sync the local stores to the authoritative saved payload to keep user/admin views consistent.
-          if (data.savedPayload) {
-            applySavedMonthPayloadToLocalStores(data.savedPayload);
+        // If the backend preserved locked days (or otherwise normalized the payload),
+        // sync the local stores to the authoritative saved payload to keep user/admin views consistent.
+        if (data.savedPayload) {
+          applySavedMonthPayloadToLocalStores(data.savedPayload);
 
-            // Optional: if locks were involved, you can surface this to the user later (toast/banner)
-            if (data.lockInfo && data.lockInfo.preservedDaysCount > 0) {
-              console.info('Hinweis: Server hat gesperrte Tage beibehalten:', data.lockInfo);
-            }
-
-            updateDashboardForCurrentMonth();
-            renderPikettList();
-            updatePikettMonthTotal();
-            updateOvertimeYearCard();
+          // Optional: if locks were involved, you can surface this to the user later (toast/banner)
+          if (data.lockInfo && data.lockInfo.preservedDaysCount > 0) {
+            console.info(
+              "Hinweis: Server hat gesperrte Tage beibehalten:",
+              data.lockInfo,
+            );
           }
 
+          updateDashboardForCurrentMonth();
+          renderPikettList();
+          updatePikettMonthTotal();
+          updateOvertimeYearCard();
+        }
       })
       .catch((err) => {
         console.error(err);
-        if (err.message === 'UNAUTHORIZED') {
+        if (err.message === "UNAUTHORIZED") {
           clearAuthSession();
           showLogin();
-          alert('Sitzung ist abgelaufen. Bitte neu einloggen.');
+          alert("Sitzung ist abgelaufen. Bitte neu einloggen.");
         } else {
           alert(
-            'Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).'
+            "Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).",
           );
         }
       });
@@ -1549,57 +1626,55 @@ let openAdminDayRow = null;
 
 function getDrawerForRow(row) {
   const el = row.nextElementSibling;
-  return (el && el.classList.contains('admin-day-drawer')) ? el : null;
+  return el && el.classList.contains("admin-day-drawer") ? el : null;
 }
 
 function createDrawerForRow(row) {
-  const drawer = document.createElement('div');
-  drawer.className = 'admin-day-drawer';
+  const drawer = document.createElement("div");
+  drawer.className = "admin-day-drawer";
   drawer.innerHTML = `<div class="admin-day-drawer-loading">Details werden geladen …</div>`;
-  row.insertAdjacentElement('afterend', drawer);
+  row.insertAdjacentElement("afterend", drawer);
   return drawer;
 }
 
 function openDrawer(row, drawer) {
-  row.classList.add('expanded');
-  drawer.classList.add('is-open');
+  row.classList.add("expanded");
+  drawer.classList.add("is-open");
 
   // animate height
-  drawer.style.maxHeight = '0px';
+  drawer.style.maxHeight = "0px";
   requestAnimationFrame(() => {
-    drawer.style.maxHeight = drawer.scrollHeight + 'px';
+    drawer.style.maxHeight = drawer.scrollHeight + "px";
   });
 }
 
 function closeDrawer(row, drawer) {
   // animate to 0 then remove (prevents the “instant pop”)
-  drawer.style.maxHeight = drawer.scrollHeight + 'px';
+  drawer.style.maxHeight = drawer.scrollHeight + "px";
   requestAnimationFrame(() => {
-    drawer.style.maxHeight = '0px';
-    drawer.classList.remove('is-open');
+    drawer.style.maxHeight = "0px";
+    drawer.classList.remove("is-open");
   });
 
-  row.classList.remove('expanded');
+  row.classList.remove("expanded");
 
   const onEnd = (ev) => {
-    if (ev.propertyName !== 'max-height') return;
-    drawer.removeEventListener('transitionend', onEnd);
+    if (ev.propertyName !== "max-height") return;
+    drawer.removeEventListener("transitionend", onEnd);
     drawer.remove();
   };
-  drawer.addEventListener('transitionend', onEnd);
+  drawer.addEventListener("transitionend", onEnd);
 }
 
 function refreshDrawerHeight(drawer) {
   // call after you inject real content
   requestAnimationFrame(() => {
-    drawer.style.maxHeight = drawer.scrollHeight + 'px';
+    drawer.style.maxHeight = drawer.scrollHeight + "px";
   });
 }
 
-
-
-document.addEventListener('click', (e) => {
-  const row = e.target.closest('.admin-day-row');
+document.addEventListener("click", (e) => {
+  const row = e.target.closest(".admin-day-row");
   if (!row) return;
 
   const username = row.dataset.username;
@@ -1607,7 +1682,8 @@ document.addEventListener('click', (e) => {
   const monthIndex = Number(row.dataset.monthIndex);
   const dateKey = row.dataset.date;
 
-  if (!username || !dateKey || Number.isNaN(year) || Number.isNaN(monthIndex)) return;
+  if (!username || !dateKey || Number.isNaN(year) || Number.isNaN(monthIndex))
+    return;
 
   // If another day is open → close it (accordion behavior)
   if (openAdminDayRow && openAdminDayRow !== row) {
@@ -1633,16 +1709,18 @@ document.addEventListener('click', (e) => {
   const cached = adminDayDetailCache.get(cacheKey);
 
   if (cached) {
-    drawer.innerHTML = '';
+    drawer.innerHTML = "";
     drawer.appendChild(buildAdminDayDrawer(cached));
     refreshDrawerHeight(drawer);
     return;
   }
 
-  authFetch(`/api/admin/day-detail?username=${encodeURIComponent(username)}&year=${year}&monthIndex=${monthIndex}&date=${encodeURIComponent(dateKey)}`)
+  authFetch(
+    `/api/admin/day-detail?username=${encodeURIComponent(username)}&year=${year}&monthIndex=${monthIndex}&date=${encodeURIComponent(dateKey)}`,
+  )
     .then((res) => res.json())
     .then((data) => {
-      if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
+      if (!data.ok) throw new Error(data.error || "Fehler beim Laden");
 
       adminDayDetailCache.set(cacheKey, data);
 
@@ -1650,7 +1728,7 @@ document.addEventListener('click', (e) => {
       const stillThere = getDrawerForRow(row);
       if (!stillThere) return;
 
-      stillThere.innerHTML = '';
+      stillThere.innerHTML = "";
       stillThere.appendChild(buildAdminDayDrawer(data));
       refreshDrawerHeight(stillThere);
     })
@@ -1660,17 +1738,14 @@ document.addEventListener('click', (e) => {
       const stillThere = getDrawerForRow(row);
       if (!stillThere) return;
 
-      stillThere.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+      stillThere.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || "Unbekannt"}</div>`;
       refreshDrawerHeight(stillThere);
     });
 });
 
-
-
-
 function buildAdminDayDrawer(data) {
-  const wrap = document.createElement('div');
-  wrap.className = 'admin-day-drawer-content';
+  const wrap = document.createElement("div");
+  wrap.className = "admin-day-drawer-content";
 
   // -------- helpers --------
   const el = (tag, className, text) => {
@@ -1681,17 +1756,17 @@ function buildAdminDayDrawer(data) {
   };
 
   const badgeClassForStatus = (s) => {
-    if (s === 'ok') return 'is-ok';
-    if (s === 'missing') return 'is-missing';
-    if (s === 'ferien') return 'is-ferien';
-    if (s === 'absence') return 'is-absence';
-    return 'is-unknown';
+    if (s === "ok") return "is-ok";
+    if (s === "missing") return "is-missing";
+    if (s === "ferien") return "is-ferien";
+    if (s === "absence") return "is-absence";
+    return "is-unknown";
   };
 
   const addSection = (titleText, bodyNode) => {
-    const section = el('div', 'admin-day-section');
-    const title = el('div', 'admin-day-section-title', titleText);
-    const body = el('div', 'admin-day-section-body');
+    const section = el("div", "admin-day-section");
+    const title = el("div", "admin-day-section-title", titleText);
+    const body = el("div", "admin-day-section-body");
     body.appendChild(bodyNode);
     section.appendChild(title);
     section.appendChild(body);
@@ -1699,101 +1774,134 @@ function buildAdminDayDrawer(data) {
   };
 
   const chip = (text, variant) => {
-    const c = el('span', 'admin-day-chip', text);
+    const c = el("span", "admin-day-chip", text);
     if (variant) c.classList.add(variant);
     return c;
   };
 
   const kv = (label, value) => {
-    const row = el('div', 'admin-day-kv');
-    row.appendChild(el('div', 'admin-day-kv-label', label));
-    row.appendChild(el('div', 'admin-day-kv-value', value));
+    const row = el("div", "admin-day-kv");
+    row.appendChild(el("div", "admin-day-kv-label", label));
+    row.appendChild(el("div", "admin-day-kv-value", value));
     return row;
   };
 
-  const emptyMuted = (text = '–') => el('div', 'admin-day-muted', text);
+  const emptyMuted = (text = "–") => el("div", "admin-day-muted", text);
 
   // If backend returns ok:true but transmitted:false for this day/month
   if (data && data.transmitted === false) {
-    wrap.appendChild(el('div', 'admin-day-muted', 'Für diesen Tag sind keine übertragenen Daten vorhanden.'));
+    wrap.appendChild(
+      el(
+        "div",
+        "admin-day-muted",
+        "Für diesen Tag sind keine übertragenen Daten vorhanden.",
+      ),
+    );
     return wrap;
   }
 
   // -------- header: date + status badge --------
-  const dateKey = data?.dateKey ? String(data.dateKey).slice(0, 10) : '';
-  const dateLabel = dateKey ? formatShortDateFromKey(dateKey) : (data?.dateKey || '–');
+  const dateKey = data?.dateKey ? String(data.dateKey).slice(0, 10) : "";
+  const dateLabel = dateKey
+    ? formatShortDateFromKey(dateKey)
+    : data?.dateKey || "–";
 
-  const header = el('div', 'admin-day-header');
-  const headerLeft = el('div', 'admin-day-header-left');
+  const header = el("div", "admin-day-header");
+  const headerLeft = el("div", "admin-day-header-left");
 
-  const title = el('div', 'admin-day-title', `Tag: ${dateLabel}`);
+  const title = el("div", "admin-day-title", `Tag: ${dateLabel}`);
   const subtitle = el(
-    'div',
-    'admin-day-subtitle',
-    data?.month?.monthLabel ? `${data.month.monthLabel}` : ''
+    "div",
+    "admin-day-subtitle",
+    data?.month?.monthLabel ? `${data.month.monthLabel}` : "",
   );
 
   headerLeft.appendChild(title);
   if (subtitle.textContent) headerLeft.appendChild(subtitle);
 
-  const statusBadge = el('div', 'admin-day-status-badge', statusLabel(data?.status));
+  const statusBadge = el(
+    "div",
+    "admin-day-status-badge",
+    statusLabel(data?.status),
+  );
   statusBadge.classList.add(badgeClassForStatus(data?.status));
 
   header.appendChild(headerLeft);
   header.appendChild(statusBadge);
 
   // -------- chips row (Flags / Meals / Absence) --------
-  const chipsRow = el('div', 'admin-day-chips');
+  const chipsRow = el("div", "admin-day-chips");
 
   // Flags
   const flags = data?.flags || {};
   const flagsActive = [];
-  if (flags.ferien) flagsActive.push('Ferien');
-  if (flags.schmutzzulage) flagsActive.push('Schmutzzulage');
-  if (flags.nebenauslagen) flagsActive.push('Nebenauslagen');
+  if (flags.ferien) flagsActive.push("Ferien");
+  if (flags.schmutzzulage) flagsActive.push("Schmutzzulage");
+  if (flags.nebenauslagen) flagsActive.push("Nebenauslagen");
   if (flagsActive.length) {
-    flagsActive.forEach((f) => chipsRow.appendChild(chip(f, 'chip-flag')));
+    flagsActive.forEach((f) => chipsRow.appendChild(chip(f, "chip-flag")));
   } else {
-    chipsRow.appendChild(chip('Keine Flags', 'chip-muted'));
+    chipsRow.appendChild(chip("Keine Flags", "chip-muted"));
   }
 
   // Meal allowance
   const meal = data?.mealAllowance || {};
-  const mealsOn = ['1', '2', '3'].filter((k) => !!meal[k]);
+  const mealsOn = ["1", "2", "3"].filter((k) => !!meal[k]);
   chipsRow.appendChild(
     mealsOn.length
-      ? chip(`Verpflegung: ${mealsOn.join(' / ')}`, 'chip-meal')
-      : chip('Keine Verpflegung', 'chip-muted')
+      ? chip(`Verpflegung: ${mealsOn.join(" / ")}`, "chip-meal")
+      : chip("Keine Verpflegung", "chip-muted"),
   );
 
   // Absence
   const abs = data?.acceptedAbsence || null;
   if (abs) {
-    const absText = `Absenz: ${abs.type || 'Absenz'} (${String(abs.from).slice(0, 10)} – ${String(abs.to).slice(0, 10)})`;
-    chipsRow.appendChild(chip(absText, 'chip-absence'));
+    const absText = `Absenz: ${abs.type || "Absenz"} (${String(abs.from).slice(0, 10)} – ${String(abs.to).slice(0, 10)})`;
+    chipsRow.appendChild(chip(absText, "chip-absence"));
   }
 
   // -------- totals grid --------
   const t = data?.totals || {};
-  const totalsGrid = el('div', 'admin-day-totals');
+  const totalsGrid = el("div", "admin-day-totals");
 
-  totalsGrid.appendChild(kv('Kommissionen', formatHoursSafe(t.komHours)));
-  totalsGrid.appendChild(kv('Tagesstunden', formatHoursSafe(t.dayHoursTotal)));
-  totalsGrid.appendChild(kv('Spezial', formatHoursSafe(t.specialHours)));
-  totalsGrid.appendChild(kv('Pikett', formatHoursSafe(t.pikettHours)));
+  totalsGrid.appendChild(kv("Kommissionen", formatHoursSafe(t.komHours)));
+  totalsGrid.appendChild(kv("Tagesstunden", formatHoursSafe(t.dayHoursTotal)));
+  totalsGrid.appendChild(kv("Spezial", formatHoursSafe(t.specialHours)));
+  totalsGrid.appendChild(kv("Pikett", formatHoursSafe(t.pikettHours)));
 
-  const totalStrong = kv('Total', formatHoursSafe(t.totalHours));
-  totalStrong.classList.add('is-total');
+  const totalStrong = kv("Total", formatHoursSafe(t.totalHours));
+  totalStrong.classList.add("is-total");
   totalsGrid.appendChild(totalStrong);
 
   // optional: show breakdown of dayHours if useful
   const dayHours = data?.breakdown?.dayHours || null;
-  if (dayHours && (dayHours.schulung || dayHours.sitzungKurs || dayHours.arztKrank)) {
-    const mini = el('div', 'admin-day-mini-breakdown');
-    mini.appendChild(el('div', 'admin-day-mini-title', 'Tagesstunden Details'));
-    mini.appendChild(el('div', 'admin-day-mini-line', `Schulung: ${formatHoursSafe(dayHours.schulung)}`));
-    mini.appendChild(el('div', 'admin-day-mini-line', `Sitzung/Kurs: ${formatHoursSafe(dayHours.sitzungKurs)}`));
-    mini.appendChild(el('div', 'admin-day-mini-line', `Arzt/Krank: ${formatHoursSafe(dayHours.arztKrank)}`));
+  if (
+    dayHours &&
+    (dayHours.schulung || dayHours.sitzungKurs || dayHours.arztKrank)
+  ) {
+    const mini = el("div", "admin-day-mini-breakdown");
+    mini.appendChild(el("div", "admin-day-mini-title", "Tagesstunden Details"));
+    mini.appendChild(
+      el(
+        "div",
+        "admin-day-mini-line",
+        `Schulung: ${formatHoursSafe(dayHours.schulung)}`,
+      ),
+    );
+    mini.appendChild(
+      el(
+        "div",
+        "admin-day-mini-line",
+        `Sitzung/Kurs: ${formatHoursSafe(dayHours.sitzungKurs)}`,
+      ),
+    );
+    mini.appendChild(
+      el(
+        "div",
+        "admin-day-mini-line",
+        `Arzt/Krank: ${formatHoursSafe(dayHours.arztKrank)}`,
+      ),
+    );
     totalsGrid.appendChild(mini);
   }
 
@@ -1803,23 +1911,30 @@ function buildAdminDayDrawer(data) {
   if (!entries.length) {
     komBody = emptyMuted();
   } else {
-    const list = el('div', 'admin-day-list');
+    const list = el("div", "admin-day-list");
     entries.forEach((e) => {
-      const line = el('div', 'admin-day-list-row');
+      const line = el("div", "admin-day-list-row");
 
-      const komNr = (e && e.komNr) ? String(e.komNr) : '–';
-      const hoursObj = (e && e.hours && typeof e.hours === 'object') ? e.hours : {};
+      const komNr = e && e.komNr ? String(e.komNr) : "–";
+      const hoursObj =
+        e && e.hours && typeof e.hours === "object" ? e.hours : {};
 
       const parts = [];
       Object.entries(hoursObj).forEach(([k, v]) => {
         const n = Number(v);
         if (!Number.isFinite(n) || n <= 0) return;
         const label = OPTION_LABELS?.[k] || k;
-        parts.push(`${label}: ${n.toFixed(2).replace('.', ',').replace(/,00$/, '')} h`);
+        parts.push(
+          `${label}: ${n.toFixed(2).replace(".", ",").replace(/,00$/, "")} h`,
+        );
       });
 
-      const left = el('div', 'admin-day-list-left', komNr);
-      const right = el('div', 'admin-day-list-right', parts.length ? parts.join(' · ') : '–');
+      const left = el("div", "admin-day-list-left", komNr);
+      const right = el(
+        "div",
+        "admin-day-list-right",
+        parts.length ? parts.join(" · ") : "–",
+      );
 
       line.appendChild(left);
       line.appendChild(right);
@@ -1829,22 +1944,29 @@ function buildAdminDayDrawer(data) {
   }
 
   // -------- section: Spezialbuchungen --------
-  const specials = Array.isArray(data?.specialEntries) ? data.specialEntries : [];
+  const specials = Array.isArray(data?.specialEntries)
+    ? data.specialEntries
+    : [];
   let specialBody;
   if (!specials.length) {
     specialBody = emptyMuted();
   } else {
-    const list = el('div', 'admin-day-list');
+    const list = el("div", "admin-day-list");
     specials.forEach((s) => {
-      const line = el('div', 'admin-day-list-row');
+      const line = el("div", "admin-day-list-row");
 
-      const type = s?.type === 'fehler' ? 'Fehler' : 'Regie';
-      const kom = s?.komNr || '–';
+      const type = s?.type === "fehler" ? "Fehler" : "Regie";
+      const kom = s?.komNr || "–";
       const h = formatHoursSafe(s?.hours);
-      const ref = s?.type === 'fehler' ? (s?.description || '') : (s?.rapportNr || '');
+      const ref =
+        s?.type === "fehler" ? s?.description || "" : s?.rapportNr || "";
 
-      const left = el('div', 'admin-day-list-left', type);
-      const right = el('div', 'admin-day-list-right', `${kom} · ${h}${ref ? ' · ' + ref : ''}`);
+      const left = el("div", "admin-day-list-left", type);
+      const right = el(
+        "div",
+        "admin-day-list-right",
+        `${kom} · ${h}${ref ? " · " + ref : ""}`,
+      );
 
       line.appendChild(left);
       line.appendChild(right);
@@ -1859,16 +1981,20 @@ function buildAdminDayDrawer(data) {
   if (!pikett.length) {
     pikettBody = emptyMuted();
   } else {
-    const list = el('div', 'admin-day-list');
+    const list = el("div", "admin-day-list");
     pikett.forEach((p) => {
-      const line = el('div', 'admin-day-list-row');
+      const line = el("div", "admin-day-list-row");
 
       const h = formatHoursSafe(p?.hours);
-      const tag = p?.isOvertime3 ? 'ÜZ3' : 'ÜZ2';
-      const note = p?.note ? String(p.note) : '';
+      const tag = p?.isOvertime3 ? "ÜZ3" : "ÜZ2";
+      const note = p?.note ? String(p.note) : "";
 
-      const left = el('div', 'admin-day-list-left', tag);
-      const right = el('div', 'admin-day-list-right', `${h}${note ? ' · ' + note : ''}`);
+      const left = el("div", "admin-day-list-left", tag);
+      const right = el(
+        "div",
+        "admin-day-list-right",
+        `${h}${note ? " · " + note : ""}`,
+      );
 
       line.appendChild(left);
       line.appendChild(right);
@@ -1881,48 +2007,48 @@ function buildAdminDayDrawer(data) {
   wrap.appendChild(header);
   wrap.appendChild(chipsRow);
   wrap.appendChild(totalsGrid);
-  wrap.appendChild(addSection('Kommissionen', komBody));
-  wrap.appendChild(addSection('Spezialbuchungen', specialBody));
-  wrap.appendChild(addSection('Pikett', pikettBody));
+  wrap.appendChild(addSection("Kommissionen", komBody));
+  wrap.appendChild(addSection("Spezialbuchungen", specialBody));
+  wrap.appendChild(addSection("Pikett", pikettBody));
 
   return wrap;
 }
 
-
 function statusLabel(s) {
-  if (s === 'ok') return 'OK';
-  if (s === 'missing') return 'Fehlt';
-  if (s === 'ferien') return 'Ferien';
-  if (s === 'absence') return 'Absenz';
-  return '–';
+  if (s === "ok") return "OK";
+  if (s === "missing") return "Fehlt";
+  if (s === "ferien") return "Ferien";
+  if (s === "absence") return "Absenz";
+  return "–";
 }
 
 function formatHoursSafe(v) {
-  const n = typeof v === 'number' ? v : Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
-  return n.toFixed(1).replace('.', ',') + ' h';
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return "0,0 h";
+  return n.toFixed(1).replace(".", ",") + " h";
 }
 
 function formatPayrollHours(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
-  return `${n.toFixed(1).replace('.', ',')} h`;
+  if (!Number.isFinite(n)) return "0,0 h";
+  return `${n.toFixed(1).replace(".", ",")} h`;
 }
 
 function formatPayrollDays(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return '0';
-  return `${String(n).replace('.', ',')} Tage`;
+  if (!Number.isFinite(n)) return "0";
+  return `${String(n).replace(".", ",")} Tage`;
 }
 
 function formatPayrollCount(v) {
   const n = Number(v);
-  if (!Number.isFinite(n)) return '0';
+  if (!Number.isFinite(n)) return "0";
   return String(Math.round(n));
 }
 
-
-// --- Dashboard month info + aggregation --- //
+/**
+ * Dashboard month aggregation and admin month helpers
+ */
 function getCurrentDashboardMonthInfo() {
   const today = new Date();
   const base = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1931,9 +2057,9 @@ function getCurrentDashboardMonthInfo() {
   const year = base.getFullYear();
   const monthIndex = base.getMonth(); // 0–11
 
-  const label = base.toLocaleString('de-DE', {
-    month: 'long',
-    year: 'numeric',
+  const label = base.toLocaleString("de-DE", {
+    month: "long",
+    year: "numeric",
   });
 
   return { year, monthIndex, label };
@@ -1947,7 +2073,10 @@ function getCurrentAdminMonthInfo() {
   const year = base.getFullYear();
   const monthIndex = base.getMonth();
 
-  const labelRaw = base.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
+  const labelRaw = base.toLocaleString("de-DE", {
+    month: "long",
+    year: "numeric",
+  });
   const label = labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1);
 
   return { year, monthIndex, label };
@@ -1961,7 +2090,7 @@ function updateAdminMonthLabel() {
 
 function parseDateKeyToDate(dateKey) {
   // dateKey = "YYYY-MM-DD"
-  return new Date(dateKey + 'T00:00:00');
+  return new Date(dateKey + "T00:00:00");
 }
 
 function formatShortDateFromKey(dateKey) {
@@ -1970,31 +2099,33 @@ function formatShortDateFromKey(dateKey) {
 }
 
 function formatDateDisplayEU(dateStr) {
-  const raw = String(dateStr || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return String(dateStr || '–');
+  const raw = String(dateStr || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return String(dateStr || "–");
 
-  const [yyyy, mm, dd] = raw.split('-');
+  const [yyyy, mm, dd] = raw.split("-");
   return `${dd}.${mm}.${yyyy}`;
 }
 
 function formatDayLabelFromKey(dateKey, weekdayNum) {
   const d = parseDateKeyToDate(dateKey);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
 
-  const map = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr' };
-  const wd = map[weekdayNum] || '';
+  const map = { 1: "Mo", 2: "Di", 3: "Mi", 4: "Do", 5: "Fr" };
+  const wd = map[weekdayNum] || "";
   return `${wd} ${dd}.${mm}`;
 }
 
 function adminStatusText(status) {
-  if (status === 'ok') return 'OK';
-  if (status === 'ferien') return 'Ferien';
-  if (status === 'absence') return 'Absenz';
-  return 'Fehlt';
+  if (status === "ok") return "OK";
+  if (status === "ferien") return "Ferien";
+  if (status === "absence") return "Absenz";
+  return "Fehlt";
 }
 
-
+/**
+ * Build the exact month payload that will be transmitted to the server from local draft data.
+ */
 function buildPayloadForCurrentDashboardMonth() {
   const info = getCurrentDashboardMonthInfo();
   const { year, monthIndex, label } = info;
@@ -2036,7 +2167,7 @@ function buildPayloadForCurrentDashboardMonth() {
 
   return {
     year,
-    monthIndex,        // 0–11
+    monthIndex, // 0–11
     monthLabel: label, // z.B. "März 2025"
     days: monthDays,
     pikett: monthPikett,
@@ -2044,32 +2175,41 @@ function buildPayloadForCurrentDashboardMonth() {
   };
 }
 
-
+/**
+ * Load admin personnel data: absence requests and konten cards.
+ */
 async function loadAdminPersonnel() {
   if (!adminAbsenceListEl || !adminKontenGridEl) return;
 
-  const status = adminAbsenceStatusFilterEl ? adminAbsenceStatusFilterEl.value : 'pending';
-  const search = adminAbsenceSearchEl ? adminAbsenceSearchEl.value.trim().toLowerCase() : '';
+  const status = adminAbsenceStatusFilterEl
+    ? adminAbsenceStatusFilterEl.value
+    : "pending";
+  const search = adminAbsenceSearchEl
+    ? adminAbsenceSearchEl.value.trim().toLowerCase()
+    : "";
 
-  adminAbsenceListEl.innerHTML = 'Lade…';
-  adminKontenGridEl.innerHTML = 'Lade…';
+  adminAbsenceListEl.innerHTML = "Lade…";
+  adminKontenGridEl.innerHTML = "Lade…";
 
   try {
     const [absRes, kontRes] = await Promise.all([
       authFetch(`/api/admin/absences?status=${encodeURIComponent(status)}`),
-      authFetch('/api/admin/konten'),
+      authFetch("/api/admin/konten"),
     ]);
 
     const absData = await absRes.json();
     const kontData = await kontRes.json();
 
-    if (!absRes.ok || !absData.ok) throw new Error(absData.error || 'Absenzen konnten nicht geladen werden');
-    if (!kontRes.ok || !kontData.ok) throw new Error(kontData.error || 'Konten konnten nicht geladen werden');
+    if (!absRes.ok || !absData.ok)
+      throw new Error(absData.error || "Absenzen konnten nicht geladen werden");
+    if (!kontRes.ok || !kontData.ok)
+      throw new Error(kontData.error || "Konten konnten nicht geladen werden");
 
     let absences = Array.isArray(absData.absences) ? absData.absences : [];
     if (search) {
       absences = absences.filter((a) => {
-        const hay = `${a.username || ''} ${a.type || ''} ${a.comment || ''}`.toLowerCase();
+        const hay =
+          `${a.username || ""} ${a.type || ""} ${a.comment || ""}`.toLowerCase();
         return hay.includes(search);
       });
     }
@@ -2078,96 +2218,97 @@ async function loadAdminPersonnel() {
     renderAdminKontenGrid(Array.isArray(kontData.users) ? kontData.users : []);
   } catch (e) {
     console.error(e);
-    adminAbsenceListEl.innerHTML = `<div class="admin-error">${e.message || 'Fehler'}</div>`;
-    adminKontenGridEl.innerHTML = `<div class="admin-error">${e.message || 'Fehler'}</div>`;
+    adminAbsenceListEl.innerHTML = `<div class="admin-error">${e.message || "Fehler"}</div>`;
+    adminKontenGridEl.innerHTML = `<div class="admin-error">${e.message || "Fehler"}</div>`;
   }
 }
 
 function renderAdminAbsenceList(absences) {
-  adminAbsenceListEl.innerHTML = '';
+  adminAbsenceListEl.innerHTML = "";
 
   if (!absences.length) {
-    adminAbsenceListEl.innerHTML = '<div class="admin-empty">Keine Einträge.</div>';
+    adminAbsenceListEl.innerHTML =
+      '<div class="admin-empty">Keine Einträge.</div>';
     return;
   }
 
   const formatDaysValue = (value) => {
     const n = Number(value);
-    return Number.isFinite(n) ? String(n).replace('.', ',') : '–';
+    return Number.isFinite(n) ? String(n).replace(".", ",") : "–";
   };
 
   const statusText = {
-    pending: 'Offen',
-    accepted: 'Akzeptiert',
-    rejected: 'Abgelehnt',
-    cancel_requested: 'Storno angefragt',
-    cancelled: 'Storniert',
+    pending: "Offen",
+    accepted: "Akzeptiert",
+    rejected: "Abgelehnt",
+    cancel_requested: "Storno angefragt",
+    cancelled: "Storniert",
   };
 
   absences.forEach((a) => {
-    const item = document.createElement('div');
-    item.className = 'admin-absence-item';
+    const item = document.createElement("div");
+    item.className = "admin-absence-item";
 
-    const top = document.createElement('div');
-    top.className = 'admin-absence-top';
+    const top = document.createElement("div");
+    top.className = "admin-absence-top";
 
-    const title = document.createElement('div');
-    title.className = 'admin-absence-title';
-    title.textContent = `${a.username || '–'} · ${absenceTypeLabel(a.type)}`;
+    const title = document.createElement("div");
+    title.className = "admin-absence-title";
+    title.textContent = `${a.username || "–"} · ${absenceTypeLabel(a.type)}`;
 
-    const badge = document.createElement('span');
+    const badge = document.createElement("span");
     badge.className = `absence-status-badge ${a.status}`;
     badge.textContent =
-      statusText[String(a.status || '').toLowerCase()] || 'Offen';
+      statusText[String(a.status || "").toLowerCase()] || "Offen";
 
     top.appendChild(title);
     top.appendChild(badge);
 
-    const meta = document.createElement('div');
-    meta.className = 'admin-absence-meta';
+    const meta = document.createElement("div");
+    meta.className = "admin-absence-meta";
 
-    const rangeRow = document.createElement('div');
+    const rangeRow = document.createElement("div");
     const fromLabel = formatDateDisplayEU(a.from);
     const toLabel = formatDateDisplayEU(a.to);
 
     rangeRow.textContent = `Zeitraum: ${fromLabel} → ${toLabel}`;
 
     const currentYear =
-    Number(String(a.from || '').slice(0, 4)) || new Date().getFullYear();
+      Number(String(a.from || "").slice(0, 4)) || new Date().getFullYear();
 
     const displayDays = computeAbsenceDaysForYear(a, currentYear);
 
-    const daysRow = document.createElement('div');
-    daysRow.textContent = `Tage: ${String(displayDays).replace('.', ',')}`;
+    const daysRow = document.createElement("div");
+    daysRow.textContent = `Tage: ${String(displayDays).replace(".", ",")}`;
 
     meta.appendChild(rangeRow);
     meta.appendChild(daysRow);
 
-    const comment = document.createElement('div');
-    comment.className = 'admin-absence-comment';
+    const comment = document.createElement("div");
+    comment.className = "admin-absence-comment";
     comment.textContent = a.comment
       ? `Kommentar: ${a.comment}`
-      : 'Kommentar: –';
+      : "Kommentar: –";
 
     item.appendChild(top);
     item.appendChild(meta);
     item.appendChild(comment);
 
-    if (a.status === 'pending') {
-      const actions = document.createElement('div');
-      actions.className = 'admin-absence-actions';
+    if (a.status === "pending") {
+      const actions = document.createElement("div");
+      actions.className = "admin-absence-actions";
 
-      const acceptBtn = document.createElement('button');
-      acceptBtn.type = 'button';
-      acceptBtn.className = 'admin-absence-accept';
-      acceptBtn.textContent = 'Akzeptieren';
+      const acceptBtn = document.createElement("button");
+      acceptBtn.type = "button";
+      acceptBtn.className = "admin-absence-accept";
+      acceptBtn.textContent = "Akzeptieren";
       acceptBtn.dataset.username = a.username;
       acceptBtn.dataset.absenceId = a.id;
 
-      const rejectBtn = document.createElement('button');
-      rejectBtn.type = 'button';
-      rejectBtn.className = 'admin-absence-reject';
-      rejectBtn.textContent = 'Ablehnen';
+      const rejectBtn = document.createElement("button");
+      rejectBtn.type = "button";
+      rejectBtn.className = "admin-absence-reject";
+      rejectBtn.textContent = "Ablehnen";
       rejectBtn.dataset.username = a.username;
       rejectBtn.dataset.absenceId = a.id;
 
@@ -2176,21 +2317,21 @@ function renderAdminAbsenceList(absences) {
       item.appendChild(actions);
     }
 
-    if (a.status === 'cancel_requested') {
-      const actions = document.createElement('div');
-      actions.className = 'admin-absence-actions';
+    if (a.status === "cancel_requested") {
+      const actions = document.createElement("div");
+      actions.className = "admin-absence-actions";
 
-      const approveCancel = document.createElement('button');
-      approveCancel.type = 'button';
-      approveCancel.className = 'admin-absence-cancel-approve';
-      approveCancel.textContent = 'Storno genehmigen';
+      const approveCancel = document.createElement("button");
+      approveCancel.type = "button";
+      approveCancel.className = "admin-absence-cancel-approve";
+      approveCancel.textContent = "Storno genehmigen";
       approveCancel.dataset.username = a.username;
       approveCancel.dataset.absenceId = a.id;
 
-      const denyCancel = document.createElement('button');
-      denyCancel.type = 'button';
-      denyCancel.className = 'admin-absence-cancel-deny';
-      denyCancel.textContent = 'Storno ablehnen';
+      const denyCancel = document.createElement("button");
+      denyCancel.type = "button";
+      denyCancel.className = "admin-absence-cancel-deny";
+      denyCancel.textContent = "Storno ablehnen";
       denyCancel.dataset.username = a.username;
       denyCancel.dataset.absenceId = a.id;
 
@@ -2203,11 +2344,10 @@ function renderAdminAbsenceList(absences) {
   });
 }
 
-
 function renderAdminKontenGrid(rows) {
   if (!adminKontenGridEl) return;
 
-  adminKontenGridEl.innerHTML = '';
+  adminKontenGridEl.innerHTML = "";
 
   if (!Array.isArray(rows) || rows.length === 0) {
     adminKontenGridEl.innerHTML = `<div class="admin-empty">Keine Konten-Daten.</div>`;
@@ -2229,14 +2369,17 @@ function renderAdminKontenGrid(rows) {
 
     // Backend already maintains this field per user for Vorarbeit logic:
     const posByYear = konto?.ueZ1PositiveByYear || {};
-    const positiveThisYear = Math.max(0, toNum(posByYear[String(selectedYear)], 0));
+    const positiveThisYear = Math.max(
+      0,
+      toNum(posByYear[String(selectedYear)], 0),
+    );
 
     // Same rule as your user-year card: consume yearly positive hours into Vorarbeit first
     const vorarbeitFilled = Math.min(vorarbeitRequired, positiveThisYear);
     const ueZ1AfterVorarbeit = rawUeZ1 - vorarbeitFilled;
 
-    const card = document.createElement('div');
-    card.className = 'admin-konto-card';
+    const card = document.createElement("div");
+    card.className = "admin-konto-card";
 
     card.innerHTML = `
       <div class="admin-konto-header">
@@ -2281,10 +2424,9 @@ function renderAdminKontenGrid(rows) {
   });
 }
 
-
-
-
-// --- Abwesenheiten-Helper: Tage pro Jahr berechnen & Liste rendern --- //
+/**
+ * Absence helpers and yearly vacation calculations
+ */
 
 function datesOverlapYear(fromDate, toDate, year) {
   const yearStart = new Date(year, 0, 1);
@@ -2330,7 +2472,7 @@ function computeAbsenceDaysForYear(request, year) {
 
   // Explizite Tage nur verwenden, wenn der Antrag komplett in diesem Jahr liegt.
   if (
-    typeof request.days === 'number' &&
+    typeof request.days === "number" &&
     !Number.isNaN(request.days) &&
     request.days > 0 &&
     start.getFullYear() === end.getFullYear() &&
@@ -2379,7 +2521,7 @@ function calculateUsedVacationDaysFromFlags(year) {
       dayData.entries.forEach((entry) => {
         if (!entry || !entry.hours) return;
         Object.values(entry.hours).forEach((val) => {
-          if (typeof val === 'number' && !Number.isNaN(val)) {
+          if (typeof val === "number" && !Number.isNaN(val)) {
             hoursWorked += val;
           }
         });
@@ -2390,7 +2532,7 @@ function calculateUsedVacationDaysFromFlags(year) {
     if (dayData.dayHours) {
       const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
       [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           hoursWorked += val;
         }
       });
@@ -2401,7 +2543,7 @@ function calculateUsedVacationDaysFromFlags(year) {
       dayData.specialEntries.forEach((special) => {
         if (!special) return;
         const val = special.hours;
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           hoursWorked += val;
         }
       });
@@ -2421,8 +2563,6 @@ function calculateUsedVacationDaysFromFlags(year) {
 
   return totalDays;
 }
-
-
 
 // Gibt alle Abwesenheiten zurück, die irgendeinen Anteil im angegebenen Jahr haben
 function getAbsencesForYear(year) {
@@ -2447,7 +2587,6 @@ function getAbsencesForYear(year) {
   });
 }
 
-
 // Baut die Abwesenheits-Liste im Dashboard für das aktuell ausgewählte Jahr
 function renderAbsenceListForCurrentYear() {
   if (!absenceListEl) return;
@@ -2455,12 +2594,12 @@ function renderAbsenceListForCurrentYear() {
   const { year } = getCurrentDashboardMonthInfo();
 
   const items = getAbsencesForYear(year).slice();
-  absenceListEl.innerHTML = '';
+  absenceListEl.innerHTML = "";
 
   if (items.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'special-empty-text';
-    empty.textContent = 'Keine Abwesenheiten für dieses Jahr erfasst.';
+    const empty = document.createElement("div");
+    empty.className = "special-empty-text";
+    empty.textContent = "Keine Abwesenheiten für dieses Jahr erfasst.";
     absenceListEl.appendChild(empty);
     return;
   }
@@ -2473,15 +2612,15 @@ function renderAbsenceListForCurrentYear() {
   });
 
   items.forEach((req) => {
-    const container = document.createElement('div');
-    container.className = 'absence-item';
+    const container = document.createElement("div");
+    container.className = "absence-item";
     container.dataset.absenceId = req.id;
 
-    const header = document.createElement('div');
-    header.className = 'absence-item-header';
+    const header = document.createElement("div");
+    header.className = "absence-item-header";
 
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'absence-title';
+    const titleSpan = document.createElement("span");
+    titleSpan.className = "absence-title";
 
     const fromDate = new Date(req.from);
     const toDate = new Date(req.to);
@@ -2499,48 +2638,51 @@ function renderAbsenceListForCurrentYear() {
 
     titleSpan.textContent = `${typeLabel} · ${fromStr} – ${toStr} (${daysText} Tage)`;
 
-    const meta = document.createElement('div');
-    meta.className = 'absence-meta';
+    const meta = document.createElement("div");
+    meta.className = "absence-meta";
     meta.textContent = req.comment
       ? `Kommentar: ${req.comment}`
-      : 'Kein Kommentar';
+      : "Kein Kommentar";
 
     header.appendChild(titleSpan);
 
-    const statusRow = document.createElement('div');
-    statusRow.className = 'absence-status-row';
+    const statusRow = document.createElement("div");
+    statusRow.className = "absence-status-row";
 
-    const badge = document.createElement('span');
-    badge.className = 'absence-status-badge';
+    const badge = document.createElement("span");
+    badge.className = "absence-status-badge";
 
-    const st = String(req.status || 'pending').toLowerCase();
+    const st = String(req.status || "pending").toLowerCase();
     badge.classList.add(st);
     badge.textContent =
-      st === 'accepted' ? 'Akzeptiert' :
-      st === 'rejected' ? 'Abgelehnt' :
-      st === 'cancel_requested' ? 'Storno angefragt' :
-      st === 'cancelled' ? 'Storniert' :
-      'Offen';
+      st === "accepted"
+        ? "Akzeptiert"
+        : st === "rejected"
+          ? "Abgelehnt"
+          : st === "cancel_requested"
+            ? "Storno angefragt"
+            : st === "cancelled"
+              ? "Storniert"
+              : "Offen";
 
     statusRow.appendChild(badge);
 
     // Actions:
     // pending  -> user can delete (stornieren)
     // accepted -> user can request cancellation (storno anfragen)
-    if (st === 'pending') {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'absence-cancel-btn';
-    btn.textContent = 'Stornieren';
-    statusRow.appendChild(btn);
-   }
+    if (st === "pending") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "absence-cancel-btn";
+      btn.textContent = "Stornieren";
+      statusRow.appendChild(btn);
+    }
 
-
-    if (st === 'accepted') {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'absence-cancel-btn';
-      btn.textContent = 'Storno anfragen';
+    if (st === "accepted") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "absence-cancel-btn";
+      btn.textContent = "Storno anfragen";
       statusRow.appendChild(btn);
     }
 
@@ -2549,8 +2691,6 @@ function renderAbsenceListForCurrentYear() {
     container.appendChild(header);
     container.appendChild(meta);
     absenceListEl.appendChild(container);
-
-
   });
 }
 
@@ -2566,11 +2706,11 @@ function syncVacationFlagsFromAbsences() {
 
   // 2) Für jede akzeptierte Ferien-Absenz die passenden Tage markieren
   absenceRequests.forEach((request) => {
-    const type = (request.type || '').toLowerCase();
-    if (type !== 'ferien') return;
+    const type = (request.type || "").toLowerCase();
+    if (type !== "ferien") return;
 
-    const st = String(request.status || '').toLowerCase();
-    if (!(st === 'accepted' || st === 'cancel_requested')) return;
+    const st = String(request.status || "").toLowerCase();
+    if (!(st === "accepted" || st === "cancel_requested")) return;
 
     if (!request.from || !request.to) return;
 
@@ -2607,15 +2747,15 @@ function syncVacationFlagsFromAbsences() {
   saveToStorage();
 }
 
-
-
+/**
+ * Recompute all dashboard totals and cards for the currently selected month.
+ */
 function updateDashboardForCurrentMonth() {
   const info = getCurrentDashboardMonthInfo();
 
   // Monatstitel aktualisieren
   if (dashboardMonthLabelEl) {
-    const text =
-      info.label.charAt(0).toUpperCase() + info.label.slice(1);
+    const text = info.label.charAt(0).toUpperCase() + info.label.slice(1);
     dashboardMonthLabelEl.textContent = text;
   }
 
@@ -2638,7 +2778,7 @@ function updateDashboardForCurrentMonth() {
       dayData.entries.forEach((entry) => {
         if (!entry || !entry.hours) return;
         Object.values(entry.hours).forEach((val) => {
-          if (typeof val === 'number' && !Number.isNaN(val)) {
+          if (typeof val === "number" && !Number.isNaN(val)) {
             totalKom += val;
           }
         });
@@ -2649,26 +2789,23 @@ function updateDashboardForCurrentMonth() {
     if (dayData.dayHours) {
       const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
       [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           totalDayHours += val;
         }
       });
     }
 
-        // Spezialbuchungen (Regie / Fehler) zählen als ÜZ1 / Kommissionsstunden
+    // Spezialbuchungen (Regie / Fehler) zählen als ÜZ1 / Kommissionsstunden
     if (Array.isArray(dayData.specialEntries)) {
       dayData.specialEntries.forEach((special) => {
         if (!special) return;
         const val = special.hours;
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           totalKom += val;
         }
       });
     }
-
   });
-
-
 
   // 2) Pikett-Daten (pikettStore) aggregieren
   pikettStore.forEach((entry) => {
@@ -2681,7 +2818,7 @@ function updateDashboardForCurrentMonth() {
     if (y !== info.year || m !== info.monthIndex) return;
 
     const hours =
-      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
+      typeof entry.hours === "number" && !Number.isNaN(entry.hours)
         ? entry.hours
         : 0;
 
@@ -2692,30 +2829,26 @@ function updateDashboardForCurrentMonth() {
     }
   });
 
-
-
   const totalAll = totalKom + totalDayHours + totalPikett + totalOvertime3;
 
   // 3) Werte in das Dashboard schreiben
   if (dashTotalKomEl) {
-    dashTotalKomEl.textContent =
-      totalKom.toFixed(1).replace('.', ',') + ' h';
+    dashTotalKomEl.textContent = totalKom.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalDayhoursEl) {
     dashTotalDayhoursEl.textContent =
-      totalDayHours.toFixed(1).replace('.', ',') + ' h';
+      totalDayHours.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalPikettEl) {
     dashTotalPikettEl.textContent =
-      totalPikett.toFixed(1).replace('.', ',') + ' h';
+      totalPikett.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalOvertime3El) {
     dashTotalOvertime3El.textContent =
-      totalOvertime3.toFixed(1).replace('.', ',') + ' h';
+      totalOvertime3.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalHoursEl) {
-    dashTotalHoursEl.textContent =
-      totalAll.toFixed(1).replace('.', ',') + ' h';
+    dashTotalHoursEl.textContent = totalAll.toFixed(1).replace(".", ",") + " h";
   }
 
   // 4) Wochenstatus für diesen Monat aktualisieren
@@ -2726,12 +2859,12 @@ function updateSyncStatus(transmissions) {
   if (!syncStatusEl || !syncLabelEl) return;
 
   // Reset base class
-  syncStatusEl.className = 'sync-chip';
+  syncStatusEl.className = "sync-chip";
 
   if (!Array.isArray(transmissions) || transmissions.length === 0) {
-    syncLabelEl.textContent = 'Nie gesendet';
-    syncStatusEl.classList.add('sync-age-unknown');
-    syncStatusEl.title = 'Noch keine Übertragung zum Server.';
+    syncLabelEl.textContent = "Nie gesendet";
+    syncStatusEl.classList.add("sync-age-unknown");
+    syncStatusEl.title = "Noch keine Übertragung zum Server.";
     return;
   }
 
@@ -2747,9 +2880,9 @@ function updateSyncStatus(transmissions) {
   }, null);
 
   if (!latest) {
-    syncLabelEl.textContent = 'Nie gesendet';
-    syncStatusEl.classList.add('sync-age-unknown');
-    syncStatusEl.title = 'Noch keine Übertragung zum Server.';
+    syncLabelEl.textContent = "Nie gesendet";
+    syncStatusEl.classList.add("sync-age-unknown");
+    syncStatusEl.title = "Noch keine Übertragung zum Server.";
     return;
   }
 
@@ -2760,24 +2893,26 @@ function updateSyncStatus(transmissions) {
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
   // Show last sync time in the label
-  syncLabelEl.textContent = date.toLocaleString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  syncLabelEl.textContent = date.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
   // Age → color & tooltip
   if (diffHours <= 24) {
-    syncStatusEl.classList.add('sync-age-ok');
-    syncStatusEl.title = 'Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).';
+    syncStatusEl.classList.add("sync-age-ok");
+    syncStatusEl.title =
+      "Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).";
   } else if (diffDays <= 7) {
-    syncStatusEl.classList.add('sync-age-warn');
-    syncStatusEl.title = 'Daten sind leicht veraltet (älter als 1 Tag).';
+    syncStatusEl.classList.add("sync-age-warn");
+    syncStatusEl.title = "Daten sind leicht veraltet (älter als 1 Tag).";
   } else {
-    syncStatusEl.classList.add('sync-age-bad');
-    syncStatusEl.title = 'Daten sind veraltet (länger als eine Woche keine Übertragung).';
+    syncStatusEl.classList.add("sync-age-bad");
+    syncStatusEl.title =
+      "Daten sind veraltet (länger als eine Woche keine Übertragung).";
   }
 }
 
@@ -2785,39 +2920,39 @@ function loadSyncStatus() {
   if (!syncStatusEl || !syncLabelEl) return;
 
   // Optional mini "loading" state
-  syncLabelEl.textContent = '…';
-  syncStatusEl.className = 'sync-chip sync-age-unknown';
-  syncStatusEl.title = 'Lade Server-Status…';
+  syncLabelEl.textContent = "…";
+  syncStatusEl.className = "sync-chip sync-age-unknown";
+  syncStatusEl.title = "Lade Server-Status…";
 
-  authFetch('/api/transmissions')
+  authFetch("/api/transmissions")
     .then((res) => {
       if (!res.ok) {
-        throw new Error('Serverfehler');
+        throw new Error("Serverfehler");
       }
       return res.json();
     })
     .then((data) => {
       if (!data.ok) {
-        throw new Error(data.error || 'Fehler beim Laden der Übertragungen');
+        throw new Error(data.error || "Fehler beim Laden der Übertragungen");
       }
       updateSyncStatus(data.transmissions || []);
     })
     .catch((err) => {
-      console.error('Failed to load sync status', err);
-      syncLabelEl.textContent = 'Unbekannt';
-      syncStatusEl.className = 'sync-chip sync-age-unknown';
-      syncStatusEl.title = 'Server-Status konnte nicht geladen werden.';
+      console.error("Failed to load sync status", err);
+      syncLabelEl.textContent = "Unbekannt";
+      syncStatusEl.className = "sync-chip sync-age-unknown";
+      syncStatusEl.title = "Server-Status konnte nicht geladen werden.";
     });
 }
 
 async function syncMyAbsencesFromServer() {
   try {
-    const res = await authFetch('/api/absences');
-    if (!res.ok) throw new Error('Absenzen konnten nicht geladen werden');
+    const res = await authFetch("/api/absences");
+    if (!res.ok) throw new Error("Absenzen konnten nicht geladen werden");
 
     const data = await res.json();
     if (!data.ok) {
-      throw new Error(data.error || 'Absenzen konnten nicht geladen werden');
+      throw new Error(data.error || "Absenzen konnten nicht geladen werden");
     }
 
     absenceRequests = Array.isArray(data.absences) ? data.absences : [];
@@ -2834,6 +2969,9 @@ async function syncMyAbsencesFromServer() {
   }
 }
 
+/**
+ * Load and render the server-side overtime and Vorarbeit yearly summary for the current user.
+ */
 async function updateOvertimeYearCard() {
   if (
     !overtimeYearUeZ1El ||
@@ -2851,8 +2989,8 @@ async function updateOvertimeYearCard() {
   const { year: selectedYear } = getCurrentDashboardMonthInfo();
 
   if (overtimeYearSourceEl) {
-    overtimeYearSourceEl.classList.remove('is-error');
-    overtimeYearSourceEl.textContent = 'Lade offiziellen Stand …';
+    overtimeYearSourceEl.classList.remove("is-error");
+    overtimeYearSourceEl.textContent = "Lade offiziellen Stand …";
   }
 
   try {
@@ -2860,7 +2998,7 @@ async function updateOvertimeYearCard() {
     const konto = serverData?.konto;
 
     if (!konto) {
-      throw new Error('NO_KONTO_DATA');
+      throw new Error("NO_KONTO_DATA");
     }
 
     const cfgSelected = getYearConfig(selectedYear) || {};
@@ -2868,29 +3006,29 @@ async function updateOvertimeYearCard() {
     const vacationDaysPerYear = Number(cfgSelected.vacationDaysPerYear) || 21;
 
     const officialUeZ1Raw = Number(konto.ueZ1) || 0;
-      const officialUeZ2 = Number(konto.ueZ2) || 0;
-      const officialUeZ3 = Number(konto.ueZ3) || 0;
-      const officialVacationDays = Number(konto.vacationDays) || 0;
+    const officialUeZ2 = Number(konto.ueZ2) || 0;
+    const officialUeZ3 = Number(konto.ueZ3) || 0;
+    const officialVacationDays = Number(konto.vacationDays) || 0;
 
-      const positiveForSelectedYear =
-        Number(konto.ueZ1PositiveByYear?.[String(selectedYear)]) || 0;
+    const positiveForSelectedYear =
+      Number(konto.ueZ1PositiveByYear?.[String(selectedYear)]) || 0;
 
-      const vorarbeitFilled = Math.min(
-        Math.max(positiveForSelectedYear, 0),
-        vorarbeitRequired
-      );
+    const vorarbeitFilled = Math.min(
+      Math.max(positiveForSelectedYear, 0),
+      vorarbeitRequired,
+    );
 
-      const officialUeZ1AfterVorarbeit = officialUeZ1Raw - vorarbeitFilled;
+    const officialUeZ1AfterVorarbeit = officialUeZ1Raw - vorarbeitFilled;
 
-      overtimeYearUeZ1El.textContent = formatHoursSigned(officialUeZ1AfterVorarbeit);
-      overtimeYearUeZ2El.textContent = formatHours(officialUeZ2);
-      overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
-      overtimeYearVorarbeitEl.textContent =
-            `${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}`;
+    overtimeYearUeZ1El.textContent = formatHoursSigned(
+      officialUeZ1AfterVorarbeit,
+    );
+    overtimeYearUeZ2El.textContent = formatHours(officialUeZ2);
+    overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
+    overtimeYearVorarbeitEl.textContent = `${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}`;
 
     if (vacationYearSummaryEl) {
-      vacationYearSummaryEl.textContent =
-        `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
+      vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
     }
 
     if (overtimeYearSourceEl) {
@@ -2899,34 +3037,34 @@ async function updateOvertimeYearCard() {
       if (updatedAt && !Number.isNaN(updatedAt.getTime())) {
         overtimeYearSourceEl.textContent =
           `Offizieller Stand nach letzter Übertragung: ` +
-          updatedAt.toLocaleString('de-DE', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
+          updatedAt.toLocaleString("de-DE", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
           });
       } else {
         overtimeYearSourceEl.textContent =
-          'Offizieller Stand nach letzter Übertragung';
+          "Offizieller Stand nach letzter Übertragung";
       }
     }
   } catch (err) {
-    console.error('Failed to load official overtime card:', err);
+    console.error("Failed to load official overtime card:", err);
 
-    overtimeYearUeZ1El.textContent = '–';
-    overtimeYearUeZ2El.textContent = '–';
-    overtimeYearUeZ3El.textContent = '–';
-    overtimeYearVorarbeitEl.textContent = '–';
+    overtimeYearUeZ1El.textContent = "–";
+    overtimeYearUeZ2El.textContent = "–";
+    overtimeYearUeZ3El.textContent = "–";
+    overtimeYearVorarbeitEl.textContent = "–";
 
     if (vacationYearSummaryEl) {
-      vacationYearSummaryEl.textContent = '– / – Tage';
+      vacationYearSummaryEl.textContent = "– / – Tage";
     }
 
     if (overtimeYearSourceEl) {
-      overtimeYearSourceEl.classList.add('is-error');
+      overtimeYearSourceEl.classList.add("is-error");
       overtimeYearSourceEl.textContent =
-        'Offizieller Stand konnte nicht geladen werden.';
+        "Offizieller Stand konnte nicht geladen werden.";
     }
   }
 }
@@ -2939,7 +3077,7 @@ async function updateOvertimeYearCard() {
  *  - Total Stunden (Kom + Tagesstunden + Pikett) in diesem Monat
  */
 function updateDashboardWeekListForCurrentMonth() {
-  const weekListEl = document.getElementById('dashboardWeekList');
+  const weekListEl = document.getElementById("dashboardWeekList");
   if (!weekListEl) return;
 
   const info = getCurrentDashboardMonthInfo();
@@ -3003,7 +3141,7 @@ function updateDashboardWeekListForCurrentMonth() {
       dayData.entries.forEach((entry) => {
         if (!entry || !entry.hours) return;
         Object.values(entry.hours).forEach((val) => {
-          if (typeof val === 'number' && !Number.isNaN(val)) {
+          if (typeof val === "number" && !Number.isNaN(val)) {
             nonPikettHours += val;
           }
         });
@@ -3014,7 +3152,7 @@ function updateDashboardWeekListForCurrentMonth() {
     if (dayData.dayHours) {
       const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
       [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           nonPikettHours += val;
         }
       });
@@ -3025,7 +3163,7 @@ function updateDashboardWeekListForCurrentMonth() {
       dayData.specialEntries.forEach((special) => {
         if (!special) return;
         const val = special.hours;
-        if (typeof val === 'number' && !Number.isNaN(val)) {
+        if (typeof val === "number" && !Number.isNaN(val)) {
           nonPikettHours += val;
         }
       });
@@ -3061,7 +3199,7 @@ function updateDashboardWeekListForCurrentMonth() {
     if (!w) return;
 
     const hours =
-      typeof entry.hours === 'number' && !Number.isNaN(entry.hours)
+      typeof entry.hours === "number" && !Number.isNaN(entry.hours)
         ? entry.hours
         : 0;
 
@@ -3077,14 +3215,15 @@ function updateDashboardWeekListForCurrentMonth() {
     w.totalHours += hours;
   });
 
-    // 3b) Akzeptierte Abwesenheiten (alle Typen) als "erfasst" markieren
+  // 3b) Akzeptierte Abwesenheiten (alle Typen) als "erfasst" markieren
   absenceRequests.forEach((req) => {
     // nur akzeptierte Anträge berücksichtigen
-    if (!req.from || !req.to || req.status !== 'accepted') return;
+    if (!req.from || !req.to || req.status !== "accepted") return;
 
     let fromDate = new Date(req.from);
     let toDate = new Date(req.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return;
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
+      return;
 
     // Reihenfolge korrigieren
     if (toDate < fromDate) {
@@ -3131,7 +3270,7 @@ function updateDashboardWeekListForCurrentMonth() {
   });
 
   // 4) Rendern
-  weekListEl.innerHTML = '';
+  weekListEl.innerHTML = "";
 
   const weeks = Object.values(weekMap).sort((a, b) => {
     if (a.year !== b.year) return a.year - b.year;
@@ -3139,31 +3278,31 @@ function updateDashboardWeekListForCurrentMonth() {
   });
 
   if (weeks.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'dashboard-week-row';
-    empty.textContent = 'Keine Einträge in diesem Monat.';
+    const empty = document.createElement("div");
+    empty.className = "dashboard-week-row";
+    empty.textContent = "Keine Einträge in diesem Monat.";
     weekListEl.appendChild(empty);
     return;
   }
 
   weeks.forEach((w) => {
-    const row = document.createElement('div');
-    row.className = 'dashboard-week-row';
+    const row = document.createElement("div");
+    row.className = "dashboard-week-row";
 
-    const labelSpan = document.createElement('span');
-    labelSpan.className = 'dashboard-week-label';
+    const labelSpan = document.createElement("span");
+    labelSpan.className = "dashboard-week-label";
 
-    const fromStr = w.minDate ? formatShortDate(w.minDate) : '';
-    const toStr = w.maxDate ? formatShortDate(w.maxDate) : '';
+    const fromStr = w.minDate ? formatShortDate(w.minDate) : "";
+    const toStr = w.maxDate ? formatShortDate(w.maxDate) : "";
 
     const workDaysInMonth = Object.values(w.days).filter(
-      (di) => di.weekday >= 1 && di.weekday <= 5
+      (di) => di.weekday >= 1 && di.weekday <= 5,
     ).length;
 
     labelSpan.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${workDaysInMonth} Tage)`;
 
-    const statusSpan = document.createElement('span');
-    statusSpan.className = 'dashboard-week-status';
+    const statusSpan = document.createElement("span");
+    statusSpan.className = "dashboard-week-status";
 
     const expectedDates = Object.entries(w.days)
       .filter(([, di]) => di.weekday >= 1 && di.weekday <= 5)
@@ -3178,19 +3317,18 @@ function updateDashboardWeekListForCurrentMonth() {
     });
 
     if (expectedDates.length === 0) {
-      statusSpan.textContent = 'Nur Wochenende im Monat';
+      statusSpan.textContent = "Nur Wochenende im Monat";
     } else if (missingCount === 0) {
-      statusSpan.textContent = 'Alle Tage erfasst';
-      statusSpan.classList.add('status-ok');
+      statusSpan.textContent = "Alle Tage erfasst";
+      statusSpan.classList.add("status-ok");
     } else {
       statusSpan.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
-      statusSpan.classList.add('status-missing');
+      statusSpan.classList.add("status-missing");
     }
 
-    const totalSpan = document.createElement('span');
-    totalSpan.className = 'dashboard-week-total';
-    totalSpan.textContent =
-      w.totalHours.toFixed(1).replace('.', ',') + ' h';
+    const totalSpan = document.createElement("span");
+    totalSpan.className = "dashboard-week-total";
+    totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
 
     row.appendChild(labelSpan);
     row.appendChild(statusSpan);
@@ -3200,12 +3338,9 @@ function updateDashboardWeekListForCurrentMonth() {
   });
 }
 
-    
-  
-
 // Dashboard-Monat wechseln
 if (dashboardMonthPrevBtn) {
-  dashboardMonthPrevBtn.addEventListener('click', () => {
+  dashboardMonthPrevBtn.addEventListener("click", () => {
     dashboardMonthOffset -= 1;
     updateDashboardForCurrentMonth();
     updateOvertimeYearCard();
@@ -3213,19 +3348,20 @@ if (dashboardMonthPrevBtn) {
 }
 
 if (dashboardMonthNextBtn) {
-  dashboardMonthNextBtn.addEventListener('click', () => {
+  dashboardMonthNextBtn.addEventListener("click", () => {
     dashboardMonthOffset += 1;
     updateDashboardForCurrentMonth();
     updateOvertimeYearCard();
   });
 }
 
-
-// --- Helpers --- //
+/**
+ * Generic helpers
+ */
 
 function updateStorageKeysForUser(user) {
-  const name = user && user.username ? user.username : 'anon';
-  const safe = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const name = user && user.username ? user.username : "anon";
+  const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
 
   STORAGE_KEY = `wochenplan-v1-${safe}`;
   PIKETT_STORAGE_KEY = `pikett-v1-${safe}`;
@@ -3233,11 +3369,13 @@ function updateStorageKeysForUser(user) {
 }
 // Normalize Kom.Nummer: remove all whitespace (spaces, tabs, line breaks)
 function normalizeKomNr(value) {
-  if (!value) return '';
-  return value.replace(/\s+/g, '');
+  if (!value) return "";
+  return value.replace(/\s+/g, "");
 }
 
-// --- Date helpers for Wochenplan --- //
+/**
+ * Date helpers for Wochenplan and dashboard timelines
+ */
 
 function getMonday(date) {
   const d = new Date(date);
@@ -3249,7 +3387,9 @@ function getMonday(date) {
 }
 
 function getISOWeekInfo(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+  );
   const dayNum = d.getUTCDay() || 7;
 
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
@@ -3262,33 +3402,33 @@ function getISOWeekInfo(date) {
 }
 
 function formatShortDate(date) {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
   const yy = String(date.getFullYear()).slice(-2);
   return `${dd}.${mm}.${yy}`;
 }
 
 function formatDateKey(date) {
   const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatHours(value) {
   const rounded = Math.round(value * 10) / 10;
-  return rounded.toFixed(1).replace('.', ',') + ' h';
+  return rounded.toFixed(1).replace(".", ",") + " h";
 }
 
 function formatHoursSigned(value) {
   const rounded = Math.round(value * 10) / 10;
   if (rounded > 0) {
-    return '+' + rounded.toFixed(1).replace('.', ',') + ' h';
+    return "+" + rounded.toFixed(1).replace(".", ",") + " h";
   }
   if (rounded < 0) {
-    return '-' + Math.abs(rounded).toFixed(1).replace('.', ',') + ' h';
+    return "-" + Math.abs(rounded).toFixed(1).replace(".", ",") + " h";
   }
-  return '0,0 h';
+  return "0,0 h";
 }
 
 function roundToQuarter(num) {
@@ -3297,17 +3437,16 @@ function roundToQuarter(num) {
 }
 
 function formatHoursForInput(num) {
-  let s = num.toFixed(2);    // e.g. "2.25"
-  s = s.replace('.', ',');   // -> "2,25"
-  s = s.replace(/,00$/, ''); // "2,00" -> "2"
+  let s = num.toFixed(2); // e.g. "2.25"
+  s = s.replace(".", ","); // -> "2,25"
+  s = s.replace(/,00$/, ""); // "2,00" -> "2"
   return s;
 }
 
 function formatDays(value) {
   const rounded = Math.round(value * 10) / 10; // 1 Nachkommastelle
-  return rounded.toFixed(1).replace('.', ','); // "12.5" -> "12,5"
+  return rounded.toFixed(1).replace(".", ","); // "12.5" -> "12,5"
 }
-
 
 function getMondayForCurrentWeek() {
   const today = new Date();
@@ -3324,14 +3463,14 @@ function getCurrentDateKey() {
   d.setDate(monday.getDate() + offset);
 
   const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatFullDateSlash(date) {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
   const yyyy = date.getFullYear();
   return `${dd}.${mm}.${yyyy}`;
 }
@@ -3341,11 +3480,11 @@ function updateDayTitleWithDate() {
 
   // aktueller Button für den Tag
   const activeBtn = document.querySelector(
-    `.day-button[data-day="${currentDayId}"]`
+    `.day-button[data-day="${currentDayId}"]`,
   );
   const baseTitle = activeBtn
-    ? activeBtn.dataset.title || activeBtn.textContent || ''
-    : titleEl.textContent || '';
+    ? activeBtn.dataset.title || activeBtn.textContent || ""
+    : titleEl.textContent || "";
 
   // Datum für currentDayId in der aktuellen Woche berechnen
   const monday = getMondayForCurrentWeek();
@@ -3361,17 +3500,15 @@ function updateDayTitleWithDate() {
 }
 
 function showLogin() {
-  document.body.classList.remove('admin-only');
-  if (loginView) loginView.classList.remove('hidden');
-  if (mainApp) mainApp.classList.add('hidden');
+  document.body.classList.remove("admin-only");
+  if (loginView) loginView.classList.remove("hidden");
+  if (mainApp) mainApp.classList.add("hidden");
 }
 
 function showApp() {
-  if (loginView) loginView.classList.add('hidden');
-  if (mainApp) mainApp.classList.remove('hidden');
+  if (loginView) loginView.classList.add("hidden");
+  if (mainApp) mainApp.classList.remove("hidden");
 }
-
-
 
 function getOrCreateDayData(dateKey) {
   let data = dayStore[dateKey];
@@ -3382,7 +3519,7 @@ function getOrCreateDayData(dateKey) {
   }
 
   // Flags: nur noch Ferien + Schmutzzulage
-    // Flags: Ferien (mit Unterscheidung Manual / Absenz), Schmutzzulage, Nebenauslagen
+  // Flags: Ferien (mit Unterscheidung Manual / Absenz), Schmutzzulage, Nebenauslagen
   if (!data.flags) {
     data.flags = {};
   }
@@ -3390,19 +3527,15 @@ function getOrCreateDayData(dateKey) {
   // Migration / Defaults:
   // - Alte Daten: flags.ferien -> als "manual" interpretieren
 
-
-
   // Sichtbares Ferien-Flag: OR aus beiden Quellen
-  data.flags.ferien =
-  !!data.flags.ferien;
+  data.flags.ferien = !!data.flags.ferien;
 
-  if (typeof data.flags.schmutzzulage !== 'boolean') {
+  if (typeof data.flags.schmutzzulage !== "boolean") {
     data.flags.schmutzzulage = false;
   }
-  if (typeof data.flags.nebenauslagen !== 'boolean') {
+  if (typeof data.flags.nebenauslagen !== "boolean") {
     data.flags.nebenauslagen = false;
   }
-
 
   // Tagesbezogene Stunden (Schulung, Sitzung/Kurs, Arzt/Krank)
   if (!data.dayHours) {
@@ -3412,13 +3545,13 @@ function getOrCreateDayData(dateKey) {
       arztKrank: 0,
     };
   } else {
-    if (typeof data.dayHours.schulung !== 'number') {
+    if (typeof data.dayHours.schulung !== "number") {
       data.dayHours.schulung = 0;
     }
-    if (typeof data.dayHours.sitzungKurs !== 'number') {
+    if (typeof data.dayHours.sitzungKurs !== "number") {
       data.dayHours.sitzungKurs = 0;
     }
-    if (typeof data.dayHours.arztKrank !== 'number') {
+    if (typeof data.dayHours.arztKrank !== "number") {
       data.dayHours.arztKrank = 0;
     }
   }
@@ -3431,24 +3564,23 @@ function getOrCreateDayData(dateKey) {
   // Verpflegungspauschale (1=Frühstück, 2=Mittag, 3=Abend)
   if (!data.mealAllowance) {
     data.mealAllowance = {
-      '1': false,
-      '2': false,
-      '3': false,
+      1: false,
+      2: false,
+      3: false,
     };
   }
 
-    // Spezialbuchungen (Regie / Fehler)
+  // Spezialbuchungen (Regie / Fehler)
   if (!Array.isArray(data.specialEntries)) {
     data.specialEntries = [];
   }
-
 
   return data;
 }
 
 function createEmptyEntry() {
   return {
-    komNr: '',
+    komNr: "",
     hours: {
       option1: 0,
       option2: 0,
@@ -3458,16 +3590,15 @@ function createEmptyEntry() {
       option6: 0,
     },
   };
-
 }
 
 function createEmptySpecialEntry() {
   return {
-    type: 'regie',     // "regie" oder "fehler"
-    komNr: '',
+    type: "regie", // "regie" oder "fehler"
+    komNr: "",
     hours: 0,
-    rapportNr: '',
-    description: '',
+    rapportNr: "",
+    description: "",
   };
 }
 
@@ -3485,8 +3616,13 @@ function getOrCreateFirstEntry(dayData) {
   return getOrCreateEntry(dayData, 0);
 }
 
-// --- Week info (KW label + weekday dates) --- //
+/**
+ * Wochenplan header rendering / week label and day dates
+ */
 
+/**
+ * Render the currently selected Wochenplan week header and visible weekday dates.
+ */
 function renderWeekInfo() {
   const monday = getMondayForCurrentWeek();
   const { week } = getISOWeekInfo(monday);
@@ -3511,31 +3647,36 @@ function switchToView(viewName) {
   }
 }
 
-
+/**
+ * Show or hide admin-only UI based on the authenticated user role.
+ */
 function updateUIForRole() {
   const user = getCurrentUser();
 
-  document.body.classList.toggle('admin-only', !!(user && user.role === 'admin'));
+  document.body.classList.toggle(
+    "admin-only",
+    !!(user && user.role === "admin"),
+  );
 
-  if (user && user.role === 'admin') {
+  if (user && user.role === "admin") {
     // Admin: only show Admin tab
-    document.querySelectorAll('.top-nav-tab').forEach((tab) => {
+    document.querySelectorAll(".top-nav-tab").forEach((tab) => {
       const view = tab.dataset.view;
-      if (view === 'admin') {
-        tab.classList.remove('hidden');
-        tab.classList.add('active');
+      if (view === "admin") {
+        tab.classList.remove("hidden");
+        tab.classList.add("active");
       } else {
-        tab.classList.add('hidden');
-        tab.classList.remove('active');
+        tab.classList.add("hidden");
+        tab.classList.remove("active");
       }
     });
 
     // Show only admin view
-    document.querySelectorAll('.app-view').forEach((viewEl) => {
-      if (viewEl.id === 'view-admin') {
-        viewEl.classList.add('active');
+    document.querySelectorAll(".app-view").forEach((viewEl) => {
+      if (viewEl.id === "view-admin") {
+        viewEl.classList.add("active");
       } else {
-        viewEl.classList.remove('active');
+        viewEl.classList.remove("active");
       }
     });
 
@@ -3547,22 +3688,22 @@ function updateUIForRole() {
 
   // Normal user: hide admin tab, show all others
   if (adminTab) {
-    adminTab.classList.add('hidden');
-    adminTab.classList.remove('active');
+    adminTab.classList.add("hidden");
+    adminTab.classList.remove("active");
   }
 
-  document.querySelectorAll('.top-nav-tab').forEach((tab) => {
+  document.querySelectorAll(".top-nav-tab").forEach((tab) => {
     const view = tab.dataset.view;
-    if (view !== 'admin') {
-      tab.classList.remove('hidden');
+    if (view !== "admin") {
+      tab.classList.remove("hidden");
     }
   });
 
   // If we were in admin view somehow, go back to Wochenplan
-  const currentActive = document.querySelector('.app-view.active');
-  if (currentActive && currentActive.id === 'view-admin') {
+  const currentActive = document.querySelector(".app-view.active");
+  if (currentActive && currentActive.id === "view-admin") {
     const firstTab = document.querySelector(
-      '.top-nav-tab[data-view="wochenplan"]'
+      '.top-nav-tab[data-view="wochenplan"]',
     );
     if (firstTab) {
       firstTab.click();
@@ -3571,25 +3712,28 @@ function updateUIForRole() {
 }
 
 if (anlagenStatusSelect) {
-  anlagenStatusSelect.addEventListener('change', () => {
-    anlagenStatusFilter = anlagenStatusSelect.value || 'active';
+  anlagenStatusSelect.addEventListener("change", () => {
+    anlagenStatusFilter = anlagenStatusSelect.value || "active";
     selectedKomNr = null; // re-select from list
     loadAdminAnlagenSummary({ force: true });
   });
 }
 
 if (anlagenSearchInput) {
-  anlagenSearchInput.addEventListener('input', debounce(() => {
-    anlagenSearchTerm = anlagenSearchInput.value || '';
-    // re-render from cache if possible
-    const cacheKey = `${anlagenStatusFilter}`;
-    const base = anlagenSummaryCache.get(cacheKey) || [];
-    renderAnlagenList(base);
-  }, 150));
+  anlagenSearchInput.addEventListener(
+    "input",
+    debounce(() => {
+      anlagenSearchTerm = anlagenSearchInput.value || "";
+      // re-render from cache if possible
+      const cacheKey = `${anlagenStatusFilter}`;
+      const base = anlagenSummaryCache.get(cacheKey) || [];
+      renderAnlagenList(base);
+    }, 150),
+  );
 }
 
 if (anlagenRefreshBtn) {
-  anlagenRefreshBtn.addEventListener('click', () => {
+  anlagenRefreshBtn.addEventListener("click", () => {
     anlagenSummaryCache.clear();
     anlagenDetailCache.clear();
     selectedKomNr = null;
@@ -3598,56 +3742,64 @@ if (anlagenRefreshBtn) {
 }
 
 if (payrollRefreshBtn) {
-  payrollRefreshBtn.addEventListener('click', () => {
+  payrollRefreshBtn.addEventListener("click", () => {
     loadAdminPayroll();
   });
 }
 
 if (payrollPeriodFromEl) {
-  payrollPeriodFromEl.addEventListener('change', () => {
+  payrollPeriodFromEl.addEventListener("change", () => {
     loadAdminPayroll();
   });
 }
 
 if (payrollPeriodToEl) {
-  payrollPeriodToEl.addEventListener('change', () => {
+  payrollPeriodToEl.addEventListener("change", () => {
     loadAdminPayroll();
   });
 }
 
+/**
+ * Event wiring / delegated admin actions
+ * Handles admin approval, konto save, payroll export, and similar button actions.
+ */
 
-
-
-document.addEventListener('click', async (event) => {
+document.addEventListener("click", async (event) => {
   const t = event.target;
   if (!t || !t.classList) return;
 
-  if (t.classList.contains('admin-absence-accept') || t.classList.contains('admin-absence-reject')) {
+  if (
+    t.classList.contains("admin-absence-accept") ||
+    t.classList.contains("admin-absence-reject")
+  ) {
     const username = t.dataset.username;
     const id = t.dataset.absenceId;
-    const status = t.classList.contains('admin-absence-accept') ? 'accepted' : 'rejected';
+    const status = t.classList.contains("admin-absence-accept")
+      ? "accepted"
+      : "rejected";
 
     try {
-      const res = await authFetch('/api/admin/absences/decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/admin/absences/decision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, id, status }),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Entscheid fehlgeschlagen');
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || "Entscheid fehlgeschlagen");
       loadAdminPersonnel();
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Fehler');
+      alert(e.message || "Fehler");
     }
   }
 
-  if (t.classList.contains('admin-konto-save')) {
+  if (t.classList.contains("admin-konto-save")) {
     const username = t.dataset.username;
-    const card = t.closest('.admin-konto-card');
+    const card = t.closest(".admin-konto-card");
     if (!card) return;
 
-    const inputs = card.querySelectorAll('.admin-konto-input');
+    const inputs = card.querySelectorAll(".admin-konto-input");
     const body = { username };
 
     inputs.forEach((inp) => {
@@ -3656,116 +3808,127 @@ document.addEventListener('click', async (event) => {
     });
 
     try {
-      const res = await authFetch('/api/admin/konten/set', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/admin/konten/set", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || "Speichern fehlgeschlagen");
       loadAdminPersonnel();
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Fehler');
+      alert(e.message || "Fehler");
     }
   }
-// Admin: approve or deny cancellation request
-if (t.classList.contains('admin-absence-cancel-approve') || t.classList.contains('admin-absence-cancel-deny')) {
-  const username = t.dataset.username;
-  const id = t.dataset.absenceId;
-  const status = t.classList.contains('admin-absence-cancel-approve') ? 'cancelled' : 'accepted';
+  // Admin: approve or deny cancellation request
+  if (
+    t.classList.contains("admin-absence-cancel-approve") ||
+    t.classList.contains("admin-absence-cancel-deny")
+  ) {
+    const username = t.dataset.username;
+    const id = t.dataset.absenceId;
+    const status = t.classList.contains("admin-absence-cancel-approve")
+      ? "cancelled"
+      : "accepted";
 
-  try {
-    const res = await authFetch('/api/admin/absences/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, id, status }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Entscheid fehlgeschlagen');
-    
-    // Show feedback if vacation days were restored
-    if (data.vacationRestored > 0) {
-      alert(`Storno genehmigt. ${data.vacationRestored} Ferientag(e) wurden dem Konto von ${username} gutgeschrieben.`);
+    try {
+      const res = await authFetch("/api/admin/absences/decision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, id, status }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || "Entscheid fehlgeschlagen");
+
+      // Show feedback if vacation days were restored
+      if (data.vacationRestored > 0) {
+        alert(
+          `Storno genehmigt. ${data.vacationRestored} Ferientag(e) wurden dem Konto von ${username} gutgeschrieben.`,
+        );
+      }
+
+      loadAdminPersonnel();
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Fehler");
     }
-    
-    loadAdminPersonnel();
-  } catch (e) {
-    console.error(e);
-    alert(e.message || 'Fehler');
   }
-}
 });
 
-
 if (adminPersonnelRefreshBtn) {
-  adminPersonnelRefreshBtn.addEventListener('click', () => loadAdminPersonnel());
+  adminPersonnelRefreshBtn.addEventListener("click", () =>
+    loadAdminPersonnel(),
+  );
 }
 if (adminAbsenceStatusFilterEl) {
-  adminAbsenceStatusFilterEl.addEventListener('change', () => loadAdminPersonnel());
+  adminAbsenceStatusFilterEl.addEventListener("change", () =>
+    loadAdminPersonnel(),
+  );
 }
 if (adminAbsenceSearchEl) {
-  adminAbsenceSearchEl.addEventListener('input', () => loadAdminPersonnel());
+  adminAbsenceSearchEl.addEventListener("input", () => loadAdminPersonnel());
 }
 
-
-
-// --- Total hours for currently active day --- //
+/**
+ * Current-day total calculation
+ */
 
 function updateDayTotalFromInputs() {
   if (!dayTotalEl) return;
 
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) {
-    dayTotalEl.textContent = '0,0 h';
+    dayTotalEl.textContent = "0,0 h";
     return;
   }
 
   let total = 0;
 
   // 1) Kommissions-Stunden
-  const inputs = activeSection.querySelectorAll('.hours-input');
+  const inputs = activeSection.querySelectorAll(".hours-input");
   inputs.forEach((input) => {
     const raw = input.value.trim();
     if (!raw) return;
 
-    const asNumber = parseFloat(raw.replace(',', '.'));
+    const asNumber = parseFloat(raw.replace(",", "."));
     if (!Number.isNaN(asNumber)) {
       total += asNumber;
     }
   });
 
   // 2) Tagesbezogene Stunden (Schulung / Sitzung / Arzt)
-  const dayHourInputs = activeSection.querySelectorAll('.day-hours-input');
+  const dayHourInputs = activeSection.querySelectorAll(".day-hours-input");
   dayHourInputs.forEach((input) => {
     const raw = input.value.trim();
     if (!raw) return;
 
-    const asNumber = parseFloat(raw.replace(',', '.'));
+    const asNumber = parseFloat(raw.replace(",", "."));
     if (!Number.isNaN(asNumber)) {
       total += asNumber;
     }
   });
 
   // 3) Spezialbuchungen-Stunden
-  const specialInputs = activeSection.querySelectorAll('.special-hours-input');
+  const specialInputs = activeSection.querySelectorAll(".special-hours-input");
   specialInputs.forEach((input) => {
     const raw = input.value.trim();
     if (!raw) return;
 
-    const asNumber = parseFloat(raw.replace(',', '.'));
+    const asNumber = parseFloat(raw.replace(",", "."));
     if (!Number.isNaN(asNumber)) {
       total += asNumber;
     }
   });
 
-  const formatted = total.toFixed(1).replace('.', ',') + ' h';
+  const formatted = total.toFixed(1).replace(".", ",") + " h";
   dayTotalEl.textContent = formatted;
 }
 
-
 if (loginForm) {
-  loginForm.addEventListener('submit', (event) => {
+  loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
 
     const username = loginUsernameInput.value.trim();
@@ -3773,17 +3936,16 @@ if (loginForm) {
 
     if (!username || !password) {
       if (loginErrorEl) {
-        loginErrorEl.textContent =
-          'Bitte Benutzername und Passwort eingeben.';
-        loginErrorEl.style.display = 'block';
+        loginErrorEl.textContent = "Bitte Benutzername und Passwort eingeben.";
+        loginErrorEl.style.display = "block";
       }
       return;
     }
 
-        // Call backend
+    // Call backend
     fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
     })
       .then((res) => {
@@ -3791,10 +3953,10 @@ if (loginForm) {
         return res.json();
       })
       .then((data) => {
-        console.log('Login response JSON:', data);
+        console.log("Login response JSON:", data);
 
         if (!data.ok || !data.token) {
-          throw new Error(data.error || 'Login fehlgeschlagen');
+          throw new Error(data.error || "Login fehlgeschlagen");
         }
 
         const user = data.user || { username };
@@ -3812,46 +3974,46 @@ if (loginForm) {
         }
 
         if (loginErrorEl) {
-          loginErrorEl.textContent = '';
-          loginErrorEl.style.display = 'none';
+          loginErrorEl.textContent = "";
+          loginErrorEl.style.display = "none";
         }
 
-        loginPasswordInput.value = '';
+        loginPasswordInput.value = "";
         showApp();
 
         // For safety, enforce default view: admin → admin, others → wochenplan
-        if (user.role === 'admin') {
-          switchToView('admin');
+        if (user.role === "admin") {
+          switchToView("admin");
         } else {
-          switchToView('wochenplan');
+          switchToView("wochenplan");
         }
 
         loadSyncStatus();
       })
       .catch((err) => {
-        console.error('Login error', err);
+        console.error("Login error", err);
         if (loginErrorEl) {
           loginErrorEl.textContent =
-            err.message || 'Login fehlgeschlagen. Bitte erneut versuchen.';
-          loginErrorEl.style.display = 'block';
+            err.message || "Login fehlgeschlagen. Bitte erneut versuchen.";
+          loginErrorEl.style.display = "block";
         }
       });
-
-      });
-    }
-
+  });
+}
 
 if (logoutBtn) {
-  logoutBtn.addEventListener('click', () => {
+  logoutBtn.addEventListener("click", () => {
     clearAuthSession();
     if (userDisplayEl) {
-      userDisplayEl.textContent = '–';
+      userDisplayEl.textContent = "–";
     }
     showLogin();
   });
 }
 
-
+/**
+ * Restore the existing session if possible and bootstrap the main app view.
+ */
 function initAuthView() {
   const session = getAuthSession(); // { token, user }
 
@@ -3875,64 +4037,64 @@ function initAuthView() {
 
   // Enforce default view based on stored role
   const user = getCurrentUser();
-  if (user && user.role === 'admin') {
-    switchToView('admin');
+  if (user && user.role === "admin") {
+    switchToView("admin");
   } else {
-    switchToView('wochenplan');
+    switchToView("wochenplan");
   }
 
   loadSyncStatus();
 
   // Optional: verify token against backend and refresh user info
-  authFetch('/api/auth/me')
+  authFetch("/api/auth/me")
     .then((res) => {
       if (!res.ok) {
-        throw new Error('Unauthorized');
+        throw new Error("Unauthorized");
       }
       return res.json();
     })
     .then((data) => {
       if (!data.ok || !data.user) {
-        throw new Error('Invalid session');
+        throw new Error("Invalid session");
       }
 
       const currentSession = getAuthSession();
       if (!currentSession || !currentSession.token) {
-        throw new Error('No token in session anymore');
+        throw new Error("No token in session anymore");
       }
 
       setAuthSession(currentSession.token, data.user);
 
       if (userDisplayEl) {
-        userDisplayEl.textContent = data.user.username || 'Unbekannt';
+        userDisplayEl.textContent = data.user.username || "Unbekannt";
       }
 
       // Role might have changed → re-apply UI
       updateUIForRole();
     })
     .catch((err) => {
-      console.error('Auth check failed', err);
+      console.error("Auth check failed", err);
       clearAuthSession();
       showLogin();
     });
 }
 
-      function getAdminSyncStatusInfo(lastSentAt) {
+function getAdminSyncStatusInfo(lastSentAt) {
   // No transmission yet
   if (!lastSentAt) {
     return {
-      className: 'sync-age-unknown',
-      label: 'Nie gesendet',
-      title: 'Noch keine Übertragung zum Server.',
+      className: "sync-age-unknown",
+      label: "Nie gesendet",
+      title: "Noch keine Übertragung zum Server.",
     };
   }
 
   const date = new Date(lastSentAt);
   if (Number.isNaN(date.getTime())) {
     return {
-      className: 'sync-age-unknown',
-      label: 'Unbekannt',
-      title: 'Letztes Übertragungsdatum ist ungültig.',
+      className: "sync-age-unknown",
+      label: "Unbekannt",
+      title: "Letztes Übertragungsdatum ist ungültig.",
     };
   }
 
@@ -3941,28 +4103,28 @@ function initAuthView() {
   const diffHours = diffMs / (1000 * 60 * 60);
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
-  const label = date.toLocaleString('de-CH', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+  const label = date.toLocaleString("de-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
   let className;
   let statusText;
 
   if (diffHours <= 24) {
-    className = 'sync-age-ok';
+    className = "sync-age-ok";
     statusText =
-      'Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).';
+      "Daten sind aktuell (Übertragung innerhalb der letzten 24 Stunden).";
   } else if (diffDays <= 7) {
-    className = 'sync-age-warn';
-    statusText = 'Daten sind leicht veraltet (älter als 1 Tag).';
+    className = "sync-age-warn";
+    statusText = "Daten sind leicht veraltet (älter als 1 Tag).";
   } else {
-    className = 'sync-age-bad';
+    className = "sync-age-bad";
     statusText =
-      'Daten sind veraltet (länger als eine Woche keine Übertragung).';
+      "Daten sind veraltet (länger als eine Woche keine Übertragung).";
   }
 
   return {
@@ -3973,19 +4135,17 @@ function initAuthView() {
 }
 
 function operationLabel(opKey) {
-  if (!opKey) return '–';
+  if (!opKey) return "–";
 
   // split specials (adapt if your backend keys differ)
-  if (opKey === '_specialRegie') return 'Spezial: Regie';
-  if (opKey === '_specialFehler') return 'Spezial: Fehler';
-  if (opKey === '_special') return 'Spezial';
+  if (opKey === "_specialRegie") return "Spezial: Regie";
+  if (opKey === "_specialFehler") return "Spezial: Fehler";
+  if (opKey === "_special") return "Spezial";
 
   // normal options (option1..option6)
   const label = OPTION_LABELS[opKey];
   return label || opKey;
 }
-
-
 
 function debounce(fn, ms) {
   let t = null;
@@ -3995,6 +4155,9 @@ function debounce(fn, ms) {
   };
 }
 
+/**
+ * Load the admin Anlagen summary list with the active filters and cache the result.
+ */
 function loadAdminAnlagenSummary({ force } = {}) {
   if (!adminAnlagenList || !adminAnlagenDetail) return;
 
@@ -4007,30 +4170,30 @@ function loadAdminAnlagenSummary({ force } = {}) {
 
   adminAnlagenList.innerHTML = `<div class="admin-day-drawer-loading">Lade Anlagen …</div>`;
 
-  authFetch(`/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}`)
+  authFetch(
+    `/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}`,
+  )
     .then((res) => res.json())
     .then((data) => {
       if (!data.ok || !Array.isArray(data.anlagen)) {
-        throw new Error(data.error || 'Ungültige Antwort');
+        throw new Error(data.error || "Ungültige Antwort");
       }
       anlagenSummaryCache.set(cacheKey, data.anlagen);
       renderAnlagenList(data.anlagen);
     })
     .catch((err) => {
       console.error(err);
-      adminAnlagenList.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+      adminAnlagenList.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || "Unbekannt"}</div>`;
     });
 }
-
-
 
 function renderAnlagenList(anlagen) {
   if (!adminAnlagenList) return;
 
-  const term = (anlagenSearchTerm || '').trim();
+  const term = (anlagenSearchTerm || "").trim();
   const filtered = !term
     ? anlagen
-    : anlagen.filter((a) => String(a.komNr || '').includes(term));
+    : anlagen.filter((a) => String(a.komNr || "").includes(term));
 
   if (filtered.length === 0) {
     adminAnlagenList.innerHTML = `<div style="padding:12px;opacity:.75;">Keine Anlagen gefunden.</div>`;
@@ -4042,35 +4205,36 @@ function renderAnlagenList(anlagen) {
     return;
   }
 
-  adminAnlagenList.innerHTML = '';
+  adminAnlagenList.innerHTML = "";
 
   filtered.forEach((a) => {
-    const row = document.createElement('div');
-    row.className = 'anlagen-row';
+    const row = document.createElement("div");
+    row.className = "anlagen-row";
     row.dataset.komnr = a.komNr;
 
-    if (selectedKomNr && selectedKomNr === a.komNr) row.classList.add('is-selected');
+    if (selectedKomNr && selectedKomNr === a.komNr)
+      row.classList.add("is-selected");
 
-    const kom = document.createElement('div');
-    kom.className = 'anlagen-komnr';
-    kom.textContent = a.komNr || '–';
+    const kom = document.createElement("div");
+    kom.className = "anlagen-komnr";
+    kom.textContent = a.komNr || "–";
 
-    const meta = document.createElement('div');
-    meta.className = 'anlagen-meta';
+    const meta = document.createElement("div");
+    meta.className = "anlagen-meta";
 
-    const last = a.lastActivity ? formatShortDateFromKey(a.lastActivity) : '–';
-    const topOp = a.topOperationKey ? operationLabel(a.topOperationKey) : '–';
-    meta.textContent = `Top: ${topOp} · Letzte Aktivität: ${last}${a.archived ? ' · Archiviert' : ''}`;
+    const last = a.lastActivity ? formatShortDateFromKey(a.lastActivity) : "–";
+    const topOp = a.topOperationKey ? operationLabel(a.topOperationKey) : "–";
+    meta.textContent = `Top: ${topOp} · Letzte Aktivität: ${last}${a.archived ? " · Archiviert" : ""}`;
 
-    const hours = document.createElement('div');
-    hours.className = 'anlagen-hours';
+    const hours = document.createElement("div");
+    hours.className = "anlagen-hours";
     hours.textContent = formatHours(Number(a.totalHours || 0));
 
     row.appendChild(kom);
     row.appendChild(hours);
     row.appendChild(meta);
 
-    row.addEventListener('click', () => {
+    row.addEventListener("click", () => {
       selectedKomNr = a.komNr;
       // rerender to update selection highlight
       renderAnlagenList(anlagen);
@@ -4089,6 +4253,9 @@ function renderAnlagenList(anlagen) {
   }
 }
 
+/**
+ * Load and render one Anlagen detail record for the selected Kommissionsnummer.
+ */
 function loadAdminAnlagenDetail(komNr, { force } = {}) {
   if (!adminAnlagenDetail) return;
   if (!komNr) return;
@@ -4103,61 +4270,62 @@ function loadAdminAnlagenDetail(komNr, { force } = {}) {
   authFetch(`/api/admin/anlagen-detail?komNr=${encodeURIComponent(komNr)}`)
     .then((res) => res.json())
     .then((data) => {
-      if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
+      if (!data.ok) throw new Error(data.error || "Fehler beim Laden");
       anlagenDetailCache.set(komNr, data);
       renderAnlagenDetail(data);
     })
     .catch((err) => {
       console.error(err);
-      adminAnlagenDetail.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || 'Unbekannt'}</div>`;
+      adminAnlagenDetail.innerHTML = `<div class="admin-day-drawer-error">Fehler: ${err.message || "Unbekannt"}</div>`;
     });
 }
-
 
 function renderAnlagenDetail(data) {
   if (!adminAnlagenDetail) return;
 
-  const komNr = data.komNr || '–';
+  const komNr = data.komNr || "–";
   const total = Number(data.totalHours || 0);
-  const last = data.lastActivity ? formatShortDateFromKey(data.lastActivity) : '–';
+  const last = data.lastActivity
+    ? formatShortDateFromKey(data.lastActivity)
+    : "–";
   const archived = !!data.archived;
 
-  adminAnlagenDetail.innerHTML = '';
+  adminAnlagenDetail.innerHTML = "";
 
   // header
-  const head = document.createElement('div');
-  head.className = 'anlagen-detail-head';
+  const head = document.createElement("div");
+  head.className = "anlagen-detail-head";
 
-  const left = document.createElement('div');
+  const left = document.createElement("div");
 
-  const title = document.createElement('div');
-  title.className = 'anlagen-detail-title';
+  const title = document.createElement("div");
+  title.className = "anlagen-detail-title";
   title.textContent = `Kom.-Nr. ${komNr}`;
 
-  const sub = document.createElement('div');
-  sub.className = 'anlagen-detail-sub';
+  const sub = document.createElement("div");
+  sub.className = "anlagen-detail-sub";
   sub.textContent = `Total: ${formatHours(total)} · Letzte Aktivität: ${last}`;
 
   left.appendChild(title);
   left.appendChild(sub);
 
   // --- NEW: actions container (right side) ---
-  const actions = document.createElement('div');
-  actions.className = 'anlagen-detail-actions';
+  const actions = document.createElement("div");
+  actions.className = "anlagen-detail-actions";
 
   // archive button (your existing logic)
-  const archiveBtn = document.createElement('button');
-  archiveBtn.type = 'button';
-  archiveBtn.className = 'anlagen-archive-btn';
-  archiveBtn.classList.toggle('is-archived', archived);
-  archiveBtn.textContent = archived ? 'Archiviert (aktivieren)' : 'Archivieren';
+  const archiveBtn = document.createElement("button");
+  archiveBtn.type = "button";
+  archiveBtn.className = "anlagen-archive-btn";
+  archiveBtn.classList.toggle("is-archived", archived);
+  archiveBtn.textContent = archived ? "Archiviert (aktivieren)" : "Archivieren";
 
-  archiveBtn.addEventListener('click', () => {
+  archiveBtn.addEventListener("click", () => {
     archiveBtn.disabled = true;
 
-    authFetch('/api/admin/anlagen-archive', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    authFetch("/api/admin/anlagen-archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         komNr,
         archived: !archived,
@@ -4166,7 +4334,8 @@ function renderAnlagenDetail(data) {
     })
       .then((res) => res.json())
       .then((resp) => {
-        if (!resp.ok) throw new Error(resp.error || 'Archivierung fehlgeschlagen');
+        if (!resp.ok)
+          throw new Error(resp.error || "Archivierung fehlgeschlagen");
 
         // clear caches so summary reflects new state
         anlagenSummaryCache.clear();
@@ -4178,7 +4347,7 @@ function renderAnlagenDetail(data) {
       })
       .catch((err) => {
         console.error(err);
-        alert(err.message || 'Archivierung fehlgeschlagen');
+        alert(err.message || "Archivierung fehlgeschlagen");
       })
       .finally(() => {
         archiveBtn.disabled = false;
@@ -4186,22 +4355,22 @@ function renderAnlagenDetail(data) {
   });
 
   // --- NEW: export button ---
-  const exportBtn = document.createElement('button');
-  exportBtn.type = 'button';
-  exportBtn.className = 'anlagen-export-btn';
-  exportBtn.textContent = 'Export PDF';
+  const exportBtn = document.createElement("button");
+  exportBtn.type = "button";
+  exportBtn.className = "anlagen-export-btn";
+  exportBtn.textContent = "Export PDF";
 
-  exportBtn.addEventListener('click', async () => {
+  exportBtn.addEventListener("click", async () => {
     exportBtn.disabled = true;
     const prevText = exportBtn.textContent;
-    exportBtn.textContent = 'Export läuft…';
+    exportBtn.textContent = "Export läuft…";
 
     try {
       // must exist from step 5.6
       await exportAnlagePdf(komNr);
     } catch (err) {
       console.error(err);
-      alert(err?.message || 'PDF Export fehlgeschlagen');
+      alert(err?.message || "PDF Export fehlgeschlagen");
     } finally {
       exportBtn.disabled = false;
       exportBtn.textContent = prevText;
@@ -4217,18 +4386,18 @@ function renderAnlagenDetail(data) {
   adminAnlagenDetail.appendChild(head);
 
   // charts wrapper
-  const charts = document.createElement('div');
-  charts.className = 'anlagen-charts';
+  const charts = document.createElement("div");
+  charts.className = "anlagen-charts";
 
   // operations donut
-  const opsCard = document.createElement('div');
-  opsCard.className = 'anlagen-card';
+  const opsCard = document.createElement("div");
+  opsCard.className = "anlagen-card";
   opsCard.innerHTML = `<h4>Stunden nach Tätigkeit</h4>`;
   opsCard.appendChild(buildOperationsDonut(data.operations || [], total));
 
   // users bars
-  const usersCard = document.createElement('div');
-  usersCard.className = 'anlagen-card';
+  const usersCard = document.createElement("div");
+  usersCard.className = "anlagen-card";
   usersCard.innerHTML = `<h4>Stunden nach Benutzer</h4>`;
   usersCard.appendChild(buildUsersBars(data.users || []));
 
@@ -4237,18 +4406,18 @@ function renderAnlagenDetail(data) {
   adminAnlagenDetail.appendChild(charts);
 }
 async function exportAnlagePdf(komNr) {
-  if (!komNr) throw new Error('Kom.-Nr fehlt');
+  if (!komNr) throw new Error("Kom.-Nr fehlt");
 
   const user = getCurrentUser();
-  const teamId = user?.teamId || '';
+  const teamId = user?.teamId || "";
 
   // 1) Detail laden
   const detailRes = await authFetch(
-    `/api/admin/anlagen-detail?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`
+    `/api/admin/anlagen-detail?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`,
   );
 
   if (!detailRes.ok) {
-    let msg = 'Detail konnte nicht geladen werden';
+    let msg = "Detail konnte nicht geladen werden";
     try {
       const j = await detailRes.json();
       msg = j?.error || msg;
@@ -4257,7 +4426,8 @@ async function exportAnlagePdf(komNr) {
   }
 
   const detail = await detailRes.json();
-  if (!detail.ok) throw new Error(detail.error || 'Detail konnte nicht geladen werden');
+  if (!detail.ok)
+    throw new Error(detail.error || "Detail konnte nicht geladen werden");
 
   // Build labels once for PDF (and charts) so everything is consistent
   const mappedOperations = (detail.operations || []).map((o) => ({
@@ -4275,7 +4445,7 @@ async function exportAnlagePdf(komNr) {
   let ledger = null;
   try {
     const ledgerRes = await authFetch(
-      `/api/admin/anlagen-ledger?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`
+      `/api/admin/anlagen-ledger?komNr=${encodeURIComponent(komNr)}&teamId=${encodeURIComponent(teamId)}`,
     );
     if (ledgerRes.ok) {
       const ledgerJson = await ledgerRes.json();
@@ -4285,26 +4455,29 @@ async function exportAnlagePdf(komNr) {
     ledger = null; // optional -> PDF Export soll trotzdem gehen
   }
 
-    const donutSvg = buildDonutChartSvg(detailForPdf.operations || [], Number(detailForPdf.totalHours || 0), {
+  const donutSvg = buildDonutChartSvg(
+    detailForPdf.operations || [],
+    Number(detailForPdf.totalHours || 0),
+    {
       title: `Kom.-Nr. ${komNr}`,
-      width: 500,   // ← Make it smaller and more square
-      height: 500,  // ← Square = no warp in PDF
-    });
+      width: 500, // ← Make it smaller and more square
+      height: 500, // ← Square = no warp in PDF
+    },
+  );
 
-    const usersSvg = buildUsersBarsSvg(detailForPdf.users || [], {
-  title: '',
-  width: 500,   // ← Match donut chart width
-  height: 500,  // ← Make it taller (square)
-});
-
+  const usersSvg = buildUsersBarsSvg(detailForPdf.users || [], {
+    title: "",
+    width: 500, // ← Match donut chart width
+    height: 500, // ← Make it taller (square)
+  });
 
   const donutPngDataUrl = await svgToPngDataUrl(donutSvg, 1000, 1000);
   const usersPngDataUrl = await svgToPngDataUrl(usersSvg, 1000, 1000);
 
   // 4) PDF Export Request (WICHTIG: resp variable!)
-  const resp = await authFetch('/api/admin/anlagen-export-pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const resp = await authFetch("/api/admin/anlagen-export-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       komNr,
       teamId,
@@ -4316,7 +4489,7 @@ async function exportAnlagePdf(komNr) {
   });
 
   if (!resp.ok) {
-    let msg = 'Export fehlgeschlagen';
+    let msg = "Export fehlgeschlagen";
     try {
       const j = await resp.json();
       msg = j?.error || msg;
@@ -4328,7 +4501,7 @@ async function exportAnlagePdf(komNr) {
   const blob = await resp.blob();
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
   a.download = `Anlage_${komNr}.pdf`;
   document.body.appendChild(a);
@@ -4342,55 +4515,59 @@ async function exportAnlagePdf(komNr) {
 // ---------- PDF export chart helpers (SVG -> PNG) ----------
 
 function escapeXml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // You can swap these colors to match your UI.
 // Keep it deterministic so PDF always looks the same.
 function exportOpColor(opKey) {
   const map = {
-    option1: '#4E79A7',
-    option2: '#F28E2B',
-    option3: '#E15759',
-    option4: '#76B7B2',
-    option5: '#59A14F',
-    option6: '#EDC948',
-    Regie:  '#B07AA1',
-    Fehler: '#FF9DA7',
-    _special_regie: '#B07AA1',
-    _special_fehler: '#FF9DA7',
-    _special: '#9C755F',
+    option1: "#4E79A7",
+    option2: "#F28E2B",
+    option3: "#E15759",
+    option4: "#76B7B2",
+    option5: "#59A14F",
+    option6: "#EDC948",
+    Regie: "#B07AA1",
+    Fehler: "#FF9DA7",
+    _special_regie: "#B07AA1",
+    _special_fehler: "#FF9DA7",
+    _special: "#9C755F",
   };
-  return map[opKey] || '#9AA0A6';
+  return map[opKey] || "#9AA0A6";
 }
 function exportOpLabel(opKey) {
   // If you already have OPTION_LABELS in your file, reuse it safely:
-  if (typeof OPTION_LABELS === 'object' && OPTION_LABELS && OPTION_LABELS[opKey]) {
+  if (
+    typeof OPTION_LABELS === "object" &&
+    OPTION_LABELS &&
+    OPTION_LABELS[opKey]
+  ) {
     return OPTION_LABELS[opKey];
   }
 
   const map = {
-    option1: 'Montage',
-    option2: 'Demontage',
-    option3: 'Transport',
-    option4: 'Inbetriebnahme',
-    option5: 'Abnahme',
-    option6: 'Werk',
+    option1: "Montage",
+    option2: "Demontage",
+    option3: "Transport",
+    option4: "Inbetriebnahme",
+    option5: "Abnahme",
+    option6: "Werk",
 
-    _regie: 'Regie',
-    _fehler: 'Fehler',
+    _regie: "Regie",
+    _fehler: "Fehler",
 
     // legacy / fallback variants
-    Regie: 'Regie',
-    Fehler: 'Fehler',
-    _special_regie: 'Regie',
-    _special_fehler: 'Fehler',
-    _special: 'Spezial',
+    Regie: "Regie",
+    Fehler: "Fehler",
+    _special_regie: "Regie",
+    _special_fehler: "Fehler",
+    _special: "Spezial",
   };
 
   return map[opKey] || opKey;
@@ -4409,13 +4586,12 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
   const total = Number(totalHours || 0);
   const items = Array.isArray(operations) ? operations : [];
   const normalized = items
-  .map((it) => ({
-    key: String(it?.key || '').trim(),
-    label: String(it?.label || '').trim(),   // NEW
-    hours: Number(it?.hours || 0),
-  }))
-  .filter((it) => it.key && it.hours > 0);
-
+    .map((it) => ({
+      key: String(it?.key || "").trim(),
+      label: String(it?.label || "").trim(), // NEW
+      hours: Number(it?.hours || 0),
+    }))
+    .filter((it) => it.key && it.hours > 0);
 
   // Empty state (still render something so PDF layout stays consistent)
   if (total <= 0 || normalized.length === 0) {
@@ -4429,14 +4605,15 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
 
   // Donut slices: stacked circles with dashoffset
   let offset = 0;
-  const slices = normalized.map((it) => {
-    const frac = it.hours / total;
-    const len = frac * circ;
-    const dash = `${len} ${circ - len}`;
-    const dashOffset = -offset;
-    offset += len;
+  const slices = normalized
+    .map((it) => {
+      const frac = it.hours / total;
+      const len = frac * circ;
+      const dash = `${len} ${circ - len}`;
+      const dashOffset = -offset;
+      offset += len;
 
-    return `
+      return `
 <circle cx="${cx}" cy="${cy}" r="${r}"
   fill="none"
   stroke="${exportOpColor(it.key)}"
@@ -4446,26 +4623,29 @@ function buildDonutChartSvg(operations, totalHours, opts = {}) {
   stroke-dashoffset="${dashOffset}"
   transform="rotate(-90 ${cx} ${cy})"
 />`;
-  }).join('');
+    })
+    .join("");
 
   // Legend (right side)
   const legendX = cx + 135;
   let legendY = height / 2;
-  const legend = normalized.map((it) => {
-    const pct = (it.hours / total) * 100;
-    const line = `
+  const legend = normalized
+    .map((it) => {
+      const pct = (it.hours / total) * 100;
+      const line = `
 <rect x="${legendX}" y="${legendY - 14}" width="14" height="14" fill="${exportOpColor(it.key)}"/>
 <text x="${legendX + 22}" y="${legendY - 2}" font-family="Arial" font-size="16" fill="#111">
- ${escapeXml(it.label || exportOpLabel(it.key))}: ... ${it.hours.toFixed(1).replace('.', ',')} h
+ ${escapeXml(it.label || exportOpLabel(it.key))}: ... ${it.hours.toFixed(1).replace(".", ",")} h
 </text>`;
-    legendY += 26;
-    return line;
-  }).join('');
+      legendY += 26;
+      return line;
+    })
+    .join("");
 
   const centerText = `
 <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-family="Arial" font-size="16" fill="#666">Total</text>
 <text x="${cx}" y="${cy + 22}" text-anchor="middle" font-family="Arial" font-size="28" fill="#111">
-  ${total.toFixed(1).replace('.', ',')} h
+  ${total.toFixed(1).replace(".", ",")} h
 </text>`;
 
   return `
@@ -4485,7 +4665,10 @@ function buildUsersBarsSvg(users, opts = {}) {
   const height = opts.height ?? 420;
 
   const items = (Array.isArray(users) ? users : [])
-    .map((u) => ({ username: String(u.username || ''), hours: Number(u.hours || 0) }))
+    .map((u) => ({
+      username: String(u.username || ""),
+      hours: Number(u.hours || 0),
+    }))
     .filter((u) => u.username);
 
   if (items.length === 0) {
@@ -4510,29 +4693,33 @@ function buildUsersBarsSvg(users, opts = {}) {
   const barW = Math.max(10, (chartW - barGap * (barCount - 1)) / barCount);
 
   // Simple grid lines
-  const gridLines = [0.25, 0.5, 0.75, 1].map((p) => {
-    const y = chartY + chartH - p * chartH;
-    const val = (p * max).toFixed(1).replace('.', ',');
-    return `
+  const gridLines = [0.25, 0.5, 0.75, 1]
+    .map((p) => {
+      const y = chartY + chartH - p * chartH;
+      const val = (p * max).toFixed(1).replace(".", ",");
+      return `
 <line x1="${chartX}" y1="${y}" x2="${chartX + chartW}" y2="${y}" stroke="#E5E7EB" stroke-width="1"/>
 <text x="${chartX - 10}" y="${y + 5}" text-anchor="end" font-family="Arial" font-size="12" fill="#666">${val}</text>`;
-  }).join('');
+    })
+    .join("");
 
-  const bars = items.map((it, idx) => {
-    const h = (it.hours / max) * chartH;
-    const x = chartX + idx * (barW + barGap);
-    const y = chartY + chartH - h;
+  const bars = items
+    .map((it, idx) => {
+      const h = (it.hours / max) * chartH;
+      const x = chartX + idx * (barW + barGap);
+      const y = chartY + chartH - h;
 
-    const label = escapeXml(it.username);
-    const hoursLabel = it.hours.toFixed(1).replace('.', ',');
+      const label = escapeXml(it.username);
+      const hoursLabel = it.hours.toFixed(1).replace(".", ",");
 
-    return `
+      return `
 <rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="#4E79A7"/>
 <text x="${x + barW / 2}" y="${chartY + chartH + 18}" text-anchor="middle"
   font-family="Arial" font-size="16" fill="#111">${label}</text>
 <text x="${x + barW / 2}" y="${y - 6}" text-anchor="middle"
   font-family="Arial" font-size="16" fill="#111">${hoursLabel}</text>`;
-  }).join('');
+    })
+    .join("");
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
@@ -4549,11 +4736,11 @@ function buildUsersBarsSvg(users, opts = {}) {
 async function svgToPngDataUrl(svgString, outW, outH) {
   // Ensure the SVG has a viewBox; otherwise browser may report 0x0 size
   // (If your SVG builder already sets viewBox + width/height, this is still fine.)
-  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+  const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
   const img = new Image();
-  img.decoding = 'async';
+  img.decoding = "async";
   img.src = url;
 
   // Wait until the image is decoded
@@ -4570,14 +4757,14 @@ async function svgToPngDataUrl(svgString, outW, outH) {
   const srcW = img.naturalWidth || img.width;
   const srcH = img.naturalHeight || img.height;
 
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = outW;
   canvas.height = outH;
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
   // White background (PDF-friendly)
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, outW, outH);
 
   // Preserve aspect ratio: "contain" the source image inside the canvas
@@ -4590,16 +4777,18 @@ async function svgToPngDataUrl(svgString, outW, outH) {
   ctx.drawImage(img, dx, dy, drawW, drawH);
 
   URL.revokeObjectURL(url);
-  return canvas.toDataURL('image/png');
+  return canvas.toDataURL("image/png");
 }
 
-
-
 function buildOperationsDonut(operations, totalHours) {
-  const wrap = document.createElement('div');
+  const wrap = document.createElement("div");
 
-  const ops = Array.isArray(operations) ? operations.filter(o => Number(o.hours || 0) > 0) : [];
-  const total = Number(totalHours || 0) || ops.reduce((s, o) => s + Number(o.hours || 0), 0);
+  const ops = Array.isArray(operations)
+    ? operations.filter((o) => Number(o.hours || 0) > 0)
+    : [];
+  const total =
+    Number(totalHours || 0) ||
+    ops.reduce((s, o) => s + Number(o.hours || 0), 0);
 
   if (!ops.length || total <= 0) {
     wrap.innerHTML = `<div style="opacity:.75;">Keine Daten.</div>`;
@@ -4621,25 +4810,25 @@ function buildOperationsDonut(operations, totalHours) {
     return `${colors[i]} ${from}% ${to}%`;
   });
 
-  const donut = document.createElement('div');
-  donut.className = 'anlagen-donut';
-  donut.style.background = `conic-gradient(${stops.join(',')})`;
+  const donut = document.createElement("div");
+  donut.className = "anlagen-donut";
+  donut.style.background = `conic-gradient(${stops.join(",")})`;
 
-  const legend = document.createElement('div');
-  legend.className = 'anlagen-legend';
+  const legend = document.createElement("div");
+  legend.className = "anlagen-legend";
 
   ops.forEach((o, i) => {
-    const item = document.createElement('div');
-    item.className = 'anlagen-legend-item';
+    const item = document.createElement("div");
+    item.className = "anlagen-legend-item";
 
-    const dot = document.createElement('div');
-    dot.className = 'anlagen-legend-dot';
+    const dot = document.createElement("div");
+    dot.className = "anlagen-legend-dot";
     dot.style.background = colors[i];
 
-    const label = document.createElement('div');
+    const label = document.createElement("div");
     label.textContent = operationLabel(o.key);
 
-    const val = document.createElement('div');
+    const val = document.createElement("div");
     val.textContent = formatHours(Number(o.hours || 0));
 
     item.appendChild(dot);
@@ -4653,11 +4842,12 @@ function buildOperationsDonut(operations, totalHours) {
   return wrap;
 }
 
-
 function buildUsersBars(users) {
-  const wrap = document.createElement('div');
+  const wrap = document.createElement("div");
 
-  const list = Array.isArray(users) ? users.filter(u => Number(u.hours || 0) > 0) : [];
+  const list = Array.isArray(users)
+    ? users.filter((u) => Number(u.hours || 0) > 0)
+    : [];
   if (!list.length) {
     wrap.innerHTML = `<div style="opacity:.75;">Keine Daten.</div>`;
     return wrap;
@@ -4665,26 +4855,26 @@ function buildUsersBars(users) {
 
   // limit to top 12 for readability (scales better)
   const top = list.slice(0, 12);
-  const max = Math.max(...top.map(u => Number(u.hours || 0)));
+  const max = Math.max(...top.map((u) => Number(u.hours || 0)));
 
-  const bars = document.createElement('div');
-  bars.className = 'anlagen-bars';
+  const bars = document.createElement("div");
+  bars.className = "anlagen-bars";
 
   top.forEach((u) => {
-    const row = document.createElement('div');
-    row.className = 'anlagen-bar-row';
+    const row = document.createElement("div");
+    row.className = "anlagen-bar-row";
 
-    const name = document.createElement('div');
-    name.textContent = u.username || '–';
+    const name = document.createElement("div");
+    name.textContent = u.username || "–";
 
-    const hrs = document.createElement('div');
+    const hrs = document.createElement("div");
     hrs.textContent = formatHours(Number(u.hours || 0));
 
-    const track = document.createElement('div');
-    track.className = 'anlagen-bar-track';
+    const track = document.createElement("div");
+    track.className = "anlagen-bar-track";
 
-    const fill = document.createElement('div');
-    fill.className = 'anlagen-bar-fill';
+    const fill = document.createElement("div");
+    fill.className = "anlagen-bar-fill";
     const pct = max > 0 ? (Number(u.hours || 0) / max) * 100 : 0;
     fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
 
@@ -4701,35 +4891,40 @@ function buildUsersBars(users) {
   return wrap;
 }
 
-
 function chartColorByIndex(i) {
-  // stable color palette (same idea as your UI)
+  // stable color palette 
   const hue = (i * 47) % 360;
   return `hsl(${hue}, 55%, 55%)`;
 }
 
+/**
+ * Render the operations donut chart SVG into a PNG data URL for PDF export.
+ */
 function renderDonutChartToPng(operations, totalHours) {
   // operations: [{ key, hours }]
-  const ops = Array.isArray(operations) ? operations.filter(o => (Number(o.hours) || 0) > 0) : [];
-  const total = Number(totalHours) || ops.reduce((s, o) => s + (Number(o.hours) || 0), 0);
+  const ops = Array.isArray(operations)
+    ? operations.filter((o) => (Number(o.hours) || 0) > 0)
+    : [];
+  const total =
+    Number(totalHours) || ops.reduce((s, o) => s + (Number(o.hours) || 0), 0);
 
   const W = 1100;
   const H = 520;
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
   // background
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
   // title
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('Stunden nach Tätigkeit', 40, 42);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Stunden nach Tätigkeit", 40, 42);
 
   // donut geometry
   const cx = 260;
@@ -4739,10 +4934,11 @@ function renderDonutChartToPng(operations, totalHours) {
 
   // empty state
   if (!(total > 0) || ops.length === 0) {
-    ctx.fillStyle = '#334155';
-    ctx.font = '500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-    ctx.fillText('Keine Stunden vorhanden.', 40, 80);
-    return canvas.toDataURL('image/png');
+    ctx.fillStyle = "#334155";
+    ctx.font =
+      "500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.fillText("Keine Stunden vorhanden.", 40, 80);
+    return canvas.toDataURL("image/png");
   }
 
   // draw segments
@@ -4763,29 +4959,29 @@ function renderDonutChartToPng(operations, totalHours) {
 
   // punch hole
   ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalCompositeOperation = "destination-out";
   ctx.beginPath();
   ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
   // center label
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '700 22px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-  ctx.textAlign = 'center';
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "700 22px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "center";
   ctx.fillText(formatHours(total), cx, cy + 8);
 
   // legend (right side)
   const lx = 520;
   let ly = 110;
 
-  ctx.textAlign = 'left';
-  ctx.font = '600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-  ctx.fillStyle = '#0f172a';
-  ctx.fillText('Legende', lx, ly);
+  ctx.textAlign = "left";
+  ctx.font = "600 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.fillStyle = "#0f172a";
+  ctx.fillText("Legende", lx, ly);
   ly += 18;
 
-  ctx.font = '500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.font = "500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
   ops.forEach((o, i) => {
     const label = operationLabel(o.key);
@@ -4799,10 +4995,10 @@ function renderDonutChartToPng(operations, totalHours) {
     ctx.fill();
 
     // text
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = "#0f172a";
     ctx.fillText(`${label}`, lx + 22, ly + 12);
 
-    ctx.fillStyle = '#334155';
+    ctx.fillStyle = "#334155";
     ctx.fillText(`${formatHours(h)} · ${pct}%`, lx + 320, ly + 12);
 
     ly += 26;
@@ -4812,12 +5008,14 @@ function renderDonutChartToPng(operations, totalHours) {
     }
   });
 
-  return canvas.toDataURL('image/png');
+  return canvas.toDataURL("image/png");
 }
 
 function renderUsersBarsToPng(users) {
   // users: [{ username, hours }]
-  const list = Array.isArray(users) ? users.filter(u => (Number(u.hours) || 0) > 0) : [];
+  const list = Array.isArray(users)
+    ? users.filter((u) => (Number(u.hours) || 0) > 0)
+    : [];
   const max = list.reduce((m, u) => Math.max(m, Number(u.hours) || 0), 0);
 
   const W = 1100;
@@ -4826,24 +5024,25 @@ function renderUsersBarsToPng(users) {
   const bottomPad = 30;
   const H = Math.max(260, topPad + list.length * rowH + bottomPad);
 
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('Stunden nach Mitarbeiter', 40, 42);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "700 20px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Stunden nach Mitarbeiter", 40, 42);
 
   if (!list.length || !(max > 0)) {
-    ctx.fillStyle = '#334155';
-    ctx.font = '500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-    ctx.fillText('Keine Stunden vorhanden.', 40, 80);
-    return canvas.toDataURL('image/png');
+    ctx.fillStyle = "#334155";
+    ctx.font =
+      "500 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.fillText("Keine Stunden vorhanden.", 40, 80);
+    return canvas.toDataURL("image/png");
   }
 
   const nameX = 40;
@@ -4851,7 +5050,7 @@ function renderUsersBarsToPng(users) {
   const barW = 680;
   const valX = barX + barW + 18;
 
-  ctx.font = '500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.font = "500 13px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
   list.forEach((u, i) => {
     const y = topPad + i * rowH;
@@ -4859,89 +5058,88 @@ function renderUsersBarsToPng(users) {
     const w = Math.round((h / max) * barW);
 
     // name
-    ctx.fillStyle = '#0f172a';
-    ctx.fillText(u.username || '–', nameX, y + 20);
+    ctx.fillStyle = "#0f172a";
+    ctx.fillText(u.username || "–", nameX, y + 20);
 
     // track
-    ctx.fillStyle = '#e2e8f0';
+    ctx.fillStyle = "#e2e8f0";
     ctx.fillRect(barX, y + 6, barW, 16);
 
     // fill
-    ctx.fillStyle = '#334155';
+    ctx.fillStyle = "#334155";
     ctx.fillRect(barX, y + 6, w, 16);
 
     // value
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = "#0f172a";
     ctx.fillText(formatHours(h), valX, y + 20);
   });
 
-  return canvas.toDataURL('image/png');
+  return canvas.toDataURL("image/png");
 }
 
-
-
-
-  function loadAdminSummary() {
+function loadAdminSummary() {
   if (!adminSummaryContainer) return;
 
   updateAdminMonthLabel();
 
   const info = getCurrentAdminMonthInfo();
-  adminSummaryContainer.innerHTML = '<p>Übersicht wird geladen …</p>';
+  adminSummaryContainer.innerHTML = "<p>Übersicht wird geladen …</p>";
 
-  authFetch(`/api/admin/month-overview?year=${info.year}&monthIndex=${info.monthIndex}`)
+  authFetch(
+    `/api/admin/month-overview?year=${info.year}&monthIndex=${info.monthIndex}`,
+  )
     .then((res) => {
-      if (!res.ok) throw new Error('Fehler beim Laden');
+      if (!res.ok) throw new Error("Fehler beim Laden");
       return res.json();
     })
     .then((data) => {
       if (!data.ok || !Array.isArray(data.users)) {
-        throw new Error(data.error || 'Ungültige Antwort vom Server');
+        throw new Error(data.error || "Ungültige Antwort vom Server");
       }
 
-      adminSummaryContainer.innerHTML = '';
+      adminSummaryContainer.innerHTML = "";
 
-      // Only show real employees in overview (optional): you can keep admins too
+      // Only show real employees in overview 
       const users = data.users;
 
       if (users.length === 0) {
-        adminSummaryContainer.innerHTML = '<p>Keine Benutzer gefunden.</p>';
+        adminSummaryContainer.innerHTML = "<p>Keine Benutzer gefunden.</p>";
         return;
       }
 
       users.forEach((u) => {
-        const card = document.createElement('div');
-        card.className = 'admin-user-card';
+        const card = document.createElement("div");
+        card.className = "admin-user-card";
 
         // --- Header: Name/Team (left) + Sync pill (right) ---
-        const header = document.createElement('div');
-        header.className = 'admin-user-header';
+        const header = document.createElement("div");
+        header.className = "admin-user-header";
 
-        const titleBlock = document.createElement('div');
-        titleBlock.className = 'admin-user-title-block';
+        const titleBlock = document.createElement("div");
+        titleBlock.className = "admin-user-title-block";
 
-        const title = document.createElement('div');
-        title.className = 'admin-user-title';
-        title.textContent = u.username || 'Unbekannter Benutzer';
+        const title = document.createElement("div");
+        title.className = "admin-user-title";
+        title.textContent = u.username || "Unbekannter Benutzer";
 
-        const team = document.createElement('div');
-        team.className = 'admin-user-team';
-        team.textContent = u.teamName || 'kein Team';
+        const team = document.createElement("div");
+        team.className = "admin-user-team";
+        team.textContent = u.teamName || "kein Team";
 
         titleBlock.appendChild(title);
         titleBlock.appendChild(team);
 
         const syncInfo = getAdminSyncStatusInfo(u.lastSentAt);
 
-        const pill = document.createElement('div');
+        const pill = document.createElement("div");
         pill.className = `sync-chip admin-user-sync-chip ${syncInfo.className}`;
         pill.title = syncInfo.title;
 
-        const dot = document.createElement('span');
-        dot.className = 'sync-dot';
+        const dot = document.createElement("span");
+        dot.className = "sync-dot";
 
-        const labelSpan = document.createElement('span');
-        labelSpan.className = 'sync-label';
+        const labelSpan = document.createElement("span");
+        labelSpan.className = "sync-label";
         labelSpan.textContent = syncInfo.label;
 
         pill.appendChild(dot);
@@ -4951,31 +5149,35 @@ function renderUsersBarsToPng(users) {
         header.appendChild(pill);
 
         // --- Month micro-row (Monat + Total + transmitted badge) ---
-        const monthRow = document.createElement('div');
-        monthRow.className = 'admin-user-month-row';
+        const monthRow = document.createElement("div");
+        monthRow.className = "admin-user-month-row";
 
-        const monthLeft = document.createElement('div');
+        const monthLeft = document.createElement("div");
         monthLeft.textContent = `Monat: ${u.month?.monthLabel || info.label}`;
 
-        const monthRight = document.createElement('div');
-        monthRight.style.display = 'inline-flex';
-        monthRight.style.alignItems = 'center';
-        monthRight.style.gap = '10px';
+        const monthRight = document.createElement("div");
+        monthRight.style.display = "inline-flex";
+        monthRight.style.alignItems = "center";
+        monthRight.style.gap = "10px";
 
-        const totalText = document.createElement('span');
-        if (u.month && u.month.transmitted && typeof u.month.monthTotalHours === 'number') {
+        const totalText = document.createElement("span");
+        if (
+          u.month &&
+          u.month.transmitted &&
+          typeof u.month.monthTotalHours === "number"
+        ) {
           totalText.textContent = `Total: ${formatHours(u.month.monthTotalHours)}`;
         } else {
-          totalText.textContent = 'Total: –';
+          totalText.textContent = "Total: –";
         }
 
-        const badge = document.createElement('span');
+        const badge = document.createElement("span");
         if (u.month && u.month.transmitted) {
-          badge.className = 'admin-month-badge transmitted';
-          badge.textContent = 'Monat übertragen';
+          badge.className = "admin-month-badge transmitted";
+          badge.textContent = "Monat übertragen";
         } else {
-          badge.className = 'admin-month-badge not-transmitted';
-          badge.textContent = 'Nicht übertragen';
+          badge.className = "admin-month-badge not-transmitted";
+          badge.textContent = "Nicht übertragen";
         }
 
         monthRight.appendChild(totalText);
@@ -4985,202 +5187,216 @@ function renderUsersBarsToPng(users) {
         monthRow.appendChild(monthRight);
 
         // --- Week blocks (KW) + 5-day rows ---
-        const weekList = document.createElement('div');
-        weekList.className = 'admin-week-list';
+        const weekList = document.createElement("div");
+        weekList.className = "admin-week-list";
 
         if (!u.month || !u.month.transmitted) {
-          const empty = document.createElement('div');
-          empty.className = 'admin-week-block';
-          empty.textContent = 'Für diesen Monat wurden noch keine Daten übertragen.';
+          const empty = document.createElement("div");
+          empty.className = "admin-week-block";
+          empty.textContent =
+            "Für diesen Monat wurden noch keine Daten übertragen.";
           weekList.appendChild(empty);
         } else {
           const weeks = Array.isArray(u.month.weeks) ? u.month.weeks : [];
 
           if (weeks.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'admin-week-block';
-            empty.textContent = 'Keine Wochen-Daten vorhanden.';
+            const empty = document.createElement("div");
+            empty.className = "admin-week-block";
+            empty.textContent = "Keine Wochen-Daten vorhanden.";
             weekList.appendChild(empty);
           } else {
-                weeks.forEach((w) => {
-  const block = document.createElement('div');
-  block.className = 'admin-week-block';
-  if (w.locked) block.classList.add('locked');
+            weeks.forEach((w) => {
+              const block = document.createElement("div");
+              block.className = "admin-week-block";
+              if (w.locked) block.classList.add("locked");
 
-  const headerRow = document.createElement('div');
-  headerRow.className = 'admin-week-header';
+              const headerRow = document.createElement("div");
+              headerRow.className = "admin-week-header";
 
-  const fromStr = w.minDateKey ? formatShortDateFromKey(w.minDateKey) : '';
-  const toStr = w.maxDateKey ? formatShortDateFromKey(w.maxDateKey) : '';
+              const fromStr = w.minDateKey
+                ? formatShortDateFromKey(w.minDateKey)
+                : "";
+              const toStr = w.maxDateKey
+                ? formatShortDateFromKey(w.maxDateKey)
+                : "";
 
-  // --- Top line: KW + date range ---
-  const left = document.createElement('div');
-  left.className = 'admin-week-header-left';
-  left.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${w.workDaysInMonth} Tage)`;
+              // --- Top line: KW + date range ---
+              const left = document.createElement("div");
+              left.className = "admin-week-header-left";
+              left.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${w.workDaysInMonth} Tage)`;
 
-  // --- Status (missing/ok) ---
-  const mid = document.createElement('div');
-  mid.className = 'admin-week-status';
+              // --- Status (missing/ok) ---
+              const mid = document.createElement("div");
+              mid.className = "admin-week-status";
 
-  const missingCount = Number(w.missingCount || 0);
-  mid.classList.remove('status-ok', 'status-missing');
+              const missingCount = Number(w.missingCount || 0);
+              mid.classList.remove("status-ok", "status-missing");
 
-  if (missingCount === 0) {
-    mid.textContent = 'Alle Tage erfasst';
-    mid.classList.add('status-ok');
-  } else {
-    mid.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
-    mid.classList.add('status-missing');
-  }
+              if (missingCount === 0) {
+                mid.textContent = "Alle Tage erfasst";
+                mid.classList.add("status-ok");
+              } else {
+                mid.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
+                mid.classList.add("status-missing");
+              }
 
-  // --- Total line (goes below KW/date range) ---
-  const totalLine = document.createElement('div');
-  totalLine.className = 'admin-week-total';
-  totalLine.textContent = `Total: ${formatHours(Number(w.weekTotalHours || 0))}`;
+              // --- Total line (goes below KW/date range) ---
+              const totalLine = document.createElement("div");
+              totalLine.className = "admin-week-total";
+              totalLine.textContent = `Total: ${formatHours(Number(w.weekTotalHours || 0))}`;
 
-  // --- Left stack: (KW/date range) + (Total + status) ---
-  const leftStack = document.createElement('div');
-  leftStack.className = 'admin-week-left-stack';
+              // --- Left stack: (KW/date range) + (Total + status) ---
+              const leftStack = document.createElement("div");
+              leftStack.className = "admin-week-left-stack";
 
-  const subLine = document.createElement('div');
-  subLine.className = 'admin-week-subline';
-  subLine.appendChild(totalLine);
-  subLine.appendChild(mid);
+              const subLine = document.createElement("div");
+              subLine.className = "admin-week-subline";
+              subLine.appendChild(totalLine);
+              subLine.appendChild(mid);
 
-  leftStack.appendChild(left);
-  leftStack.appendChild(subLine);
+              leftStack.appendChild(left);
+              leftStack.appendChild(subLine);
 
-  // --- Right group: only lock button ---
-  const rightGroup = document.createElement('div');
-  rightGroup.className = 'admin-week-header-right';
+              // --- Right group: only lock button ---
+              const rightGroup = document.createElement("div");
+              rightGroup.className = "admin-week-header-right";
 
-  const lockBtn = document.createElement('button');
-  lockBtn.type = 'button';
-  lockBtn.className = 'admin-week-lock-btn';
-  lockBtn.classList.toggle('is-locked', !!w.locked);
-  lockBtn.textContent = w.locked ? 'Gesperrt' : 'Sperren';
+              const lockBtn = document.createElement("button");
+              lockBtn.type = "button";
+              lockBtn.className = "admin-week-lock-btn";
+              lockBtn.classList.toggle("is-locked", !!w.locked);
+              lockBtn.textContent = w.locked ? "Gesperrt" : "Sperren";
 
-  // optional tooltip meta (keeps it nice)
-  const metaBits = [];
-  if (w.lockedBy) metaBits.push(`von ${w.lockedBy}`);
-  if (w.lockedAt) metaBits.push(`am ${new Date(w.lockedAt).toLocaleString('de-CH')}`);
-  lockBtn.title = w.locked
-    ? `Woche ist gesperrt${metaBits.length ? ' (' + metaBits.join(', ') + ')' : ''}`
-    : 'Woche sperren';
+              // optional tooltip meta (keeps it nice)
+              const metaBits = [];
+              if (w.lockedBy) metaBits.push(`von ${w.lockedBy}`);
+              if (w.lockedAt)
+                metaBits.push(
+                  `am ${new Date(w.lockedAt).toLocaleString("de-CH")}`,
+                );
+              lockBtn.title = w.locked
+                ? `Woche ist gesperrt${metaBits.length ? " (" + metaBits.join(", ") + ")" : ""}`
+                : "Woche sperren";
 
-  lockBtn.addEventListener('click', (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
+              lockBtn.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
 
-    lockBtn.disabled = true;
-    const nextLocked = !w.locked;
+                lockBtn.disabled = true;
+                const nextLocked = !w.locked;
 
-    authFetch('/api/admin/week-lock', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: u.username,
-        weekYear: w.weekYear,
-        week: w.week,
-        locked: nextLocked,
-      }),
-    })
-      .then((res) => res.json())
-      .then((resp) => {
-        if (!resp.ok) throw new Error(resp.error || 'Lock fehlgeschlagen');
+                authFetch("/api/admin/week-lock", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    username: u.username,
+                    weekYear: w.weekYear,
+                    week: w.week,
+                    locked: nextLocked,
+                  }),
+                })
+                  .then((res) => res.json())
+                  .then((resp) => {
+                    if (!resp.ok)
+                      throw new Error(resp.error || "Lock fehlgeschlagen");
 
-        w.locked = !!resp.locked;
-        w.lockedAt = resp.lockedAt || null;
-        w.lockedBy = resp.lockedBy || null;
+                    w.locked = !!resp.locked;
+                    w.lockedAt = resp.lockedAt || null;
+                    w.lockedBy = resp.lockedBy || null;
 
-        block.classList.toggle('locked', w.locked);
-        lockBtn.classList.toggle('is-locked', w.locked);
-        lockBtn.textContent = w.locked ? 'Gesperrt' : 'Sperren';
+                    block.classList.toggle("locked", w.locked);
+                    lockBtn.classList.toggle("is-locked", w.locked);
+                    lockBtn.textContent = w.locked ? "Gesperrt" : "Sperren";
 
-        const mb = [];
-        if (w.lockedBy) mb.push(`von ${w.lockedBy}`);
-        if (w.lockedAt) mb.push(`am ${new Date(w.lockedAt).toLocaleString('de-CH')}`);
-        lockBtn.title = w.locked
-          ? `Woche ist gesperrt${mb.length ? ' (' + mb.join(', ') + ')' : ''}`
-          : 'Woche sperren';
-      })
-      .catch((err) => {
-        console.error(err);
-        alert(err.message || 'Lock fehlgeschlagen');
-      })
-      .finally(() => {
-        lockBtn.disabled = false;
-      });
-  });
+                    const mb = [];
+                    if (w.lockedBy) mb.push(`von ${w.lockedBy}`);
+                    if (w.lockedAt)
+                      mb.push(
+                        `am ${new Date(w.lockedAt).toLocaleString("de-CH")}`,
+                      );
+                    lockBtn.title = w.locked
+                      ? `Woche ist gesperrt${mb.length ? " (" + mb.join(", ") + ")" : ""}`
+                      : "Woche sperren";
+                  })
+                  .catch((err) => {
+                    console.error(err);
+                    alert(err.message || "Lock fehlgeschlagen");
+                  })
+                  .finally(() => {
+                    lockBtn.disabled = false;
+                  });
+              });
 
-      rightGroup.appendChild(lockBtn);
+              rightGroup.appendChild(lockBtn);
 
-      // assemble header
-      headerRow.appendChild(leftStack);
-      headerRow.appendChild(rightGroup);
+              // assemble header
+              headerRow.appendChild(leftStack);
+              headerRow.appendChild(rightGroup);
 
-      // --- Day rows (Mo–Fr) (unchanged) ---
-      const dayList = document.createElement('div');
-      dayList.className = 'admin-day-list';
+              // --- Day rows (Mo–Fr) (unchanged) ---
+              const dayList = document.createElement("div");
+              dayList.className = "admin-day-list";
 
-      const days = Array.isArray(w.days) ? w.days : [];
-      days.forEach((d) => {
-        const row = document.createElement('div');
-        row.className = 'admin-day-row';
-        row.dataset.username = u.username || '';
-        row.dataset.year = String(info.year);
-        row.dataset.monthIndex = String(info.monthIndex);
-        row.dataset.date = d.dateKey;
+              const days = Array.isArray(w.days) ? w.days : [];
+              days.forEach((d) => {
+                const row = document.createElement("div");
+                row.className = "admin-day-row";
+                row.dataset.username = u.username || "";
+                row.dataset.year = String(info.year);
+                row.dataset.monthIndex = String(info.monthIndex);
+                row.dataset.date = d.dateKey;
 
-        if (d.status === 'ferien') row.classList.add('is-ferien');
-        if (d.status === 'absence') row.classList.add('is-absence');
+                if (d.status === "ferien") row.classList.add("is-ferien");
+                if (d.status === "absence") row.classList.add("is-absence");
 
-        const dayLeft = document.createElement('div');
-        dayLeft.textContent = formatDayLabelFromKey(d.dateKey, d.weekday);
+                const dayLeft = document.createElement("div");
+                dayLeft.textContent = formatDayLabelFromKey(
+                  d.dateKey,
+                  d.weekday,
+                );
 
-        const dayCenter = document.createElement('div');
-        dayCenter.className = 'admin-day-hours';
+                const dayCenter = document.createElement("div");
+                dayCenter.className = "admin-day-hours";
 
-        const hoursText = document.createElement('span');
-        hoursText.textContent = formatHours(Number(d.totalHours || 0));
+                const hoursText = document.createElement("span");
+                hoursText.textContent = formatHours(Number(d.totalHours || 0));
 
-        const bar = document.createElement('div');
-        bar.className = 'admin-hours-bar';
+                const bar = document.createElement("div");
+                bar.className = "admin-hours-bar";
 
-        const fill = document.createElement('div');
-        fill.className = 'admin-hours-bar-fill';
+                const fill = document.createElement("div");
+                fill.className = "admin-hours-bar-fill";
 
-        const h = Number(d.totalHours || 0);
-        const pct = Math.max(0, Math.min(1, h / 8)) * 100;
-        fill.style.width = `${pct}%`;
+                const h = Number(d.totalHours || 0);
+                const pct = Math.max(0, Math.min(1, h / 8)) * 100;
+                fill.style.width = `${pct}%`;
 
-        bar.appendChild(fill);
-        dayCenter.appendChild(hoursText);
-        dayCenter.appendChild(bar);
+                bar.appendChild(fill);
+                dayCenter.appendChild(hoursText);
+                dayCenter.appendChild(bar);
 
-        const dayRight = document.createElement('div');
-        dayRight.className = `admin-status ${d.status || 'missing'}`;
+                const dayRight = document.createElement("div");
+                dayRight.className = `admin-status ${d.status || "missing"}`;
 
-        const sdot = document.createElement('span');
-        sdot.className = 'admin-status-dot';
+                const sdot = document.createElement("span");
+                sdot.className = "admin-status-dot";
 
-        const stxt = document.createElement('span');
-        stxt.textContent = adminStatusText(d.status);
+                const stxt = document.createElement("span");
+                stxt.textContent = adminStatusText(d.status);
 
-        dayRight.appendChild(sdot);
-        dayRight.appendChild(stxt);
+                dayRight.appendChild(sdot);
+                dayRight.appendChild(stxt);
 
-        row.appendChild(dayLeft);
-        row.appendChild(dayCenter);
-        row.appendChild(dayRight);
-        dayList.appendChild(row);
-      });
+                row.appendChild(dayLeft);
+                row.appendChild(dayCenter);
+                row.appendChild(dayRight);
+                dayList.appendChild(row);
+              });
 
-      block.appendChild(headerRow);
-      block.appendChild(dayList);
-      weekList.appendChild(block);
-    });
-
+              block.appendChild(headerRow);
+              block.appendChild(dayList);
+              weekList.appendChild(block);
+            });
           }
         }
 
@@ -5193,26 +5409,26 @@ function renderUsersBarsToPng(users) {
       });
     })
     .catch((err) => {
-      console.error('Admin summary error', err);
-      adminSummaryContainer.innerHTML = '<p>Fehler beim Laden der Übersicht.</p>';
+      console.error("Admin summary error", err);
+      adminSummaryContainer.innerHTML =
+        "<p>Fehler beim Laden der Übersicht.</p>";
     });
 }
 
-  
-
-
-
 // --- Flags: apply + save per day --- //
 
+/**
+ * Push weekday checkbox and flag inputs into the current day draft object and persist them.
+ */
 function applyFlagsForCurrentDay() {
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) return;
 
   const dateKey = getCurrentDateKey();
   const dayData = getOrCreateDayData(dateKey);
   const flags = dayData.flags;
 
-  const flagInputs = activeSection.querySelectorAll('.day-flag');
+  const flagInputs = activeSection.querySelectorAll(".day-flag");
   flagInputs.forEach((input) => {
     const key = input.dataset.flag;
     input.checked = !!flags[key];
@@ -5221,7 +5437,7 @@ function applyFlagsForCurrentDay() {
 
 // --- Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank) --- //
 function applyDayHoursForCurrentDay() {
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) return;
 
   const dateKey = getCurrentDateKey();
@@ -5232,48 +5448,49 @@ function applyDayHoursForCurrentDay() {
     arztKrank: 0,
   };
 
-  const inputs = activeSection.querySelectorAll('.day-hours-input');
+  const inputs = activeSection.querySelectorAll(".day-hours-input");
   inputs.forEach((input) => {
     const key = input.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
     if (!key) return;
 
     const val = dayHours[key];
-    if (typeof val === 'number' && !Number.isNaN(val) && val !== 0) {
-      input.value = val.toString().replace('.', ',');
+    if (typeof val === "number" && !Number.isNaN(val) && val !== 0) {
+      input.value = val.toString().replace(".", ",");
     } else {
-      input.value = '';
+      input.value = "";
     }
   });
 }
 
-
 // --- Helper function for Meal selection --- //
 function applyMealAllowanceForCurrentDay() {
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) return;
 
   const dateKey = getCurrentDateKey();
   const dayData = getOrCreateDayData(dateKey);
   const mealAllowance = dayData.mealAllowance || {
-    '1': false,
-    '2': false,
-    '3': false,
+    1: false,
+    2: false,
+    3: false,
   };
 
-  const pills = activeSection.querySelectorAll('.meal-pill');
+  const pills = activeSection.querySelectorAll(".meal-pill");
   pills.forEach((pill) => {
     const key = pill.dataset.meal; // "1", "2", "3"
     if (!key) return;
     const isOn = !!mealAllowance[key];
-    pill.classList.toggle('active', isOn);
+    pill.classList.toggle("active", isOn);
   });
 }
 
-
 // --- Kom.Nummer + Stunden: apply per day --- //
 
+/**
+ * Push Kommissionsnummer rows into the current day draft object and persist them.
+ */
 function applyKomForCurrentDay() {
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) return;
 
   const dateKey = getCurrentDateKey();
@@ -5283,17 +5500,17 @@ function applyKomForCurrentDay() {
     dayData.entries = [createEmptyEntry()];
   }
 
-  const komSection = activeSection.querySelector('.kom-section');
+  const komSection = activeSection.querySelector(".kom-section");
   if (!komSection) return;
 
-  let addWrapper = komSection.querySelector('.kom-add-wrapper');
+  let addWrapper = komSection.querySelector(".kom-add-wrapper");
   if (!addWrapper) {
-    addWrapper = document.createElement('div');
-    addWrapper.className = 'kom-add-wrapper';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'kom-add-btn';
-    btn.textContent = '+ Kom.Nummer hinzufügen';
+    addWrapper = document.createElement("div");
+    addWrapper.className = "kom-add-wrapper";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "kom-add-btn";
+    btn.textContent = "+ Kom.Nummer hinzufügen";
     addWrapper.appendChild(btn);
     komSection.appendChild(addWrapper);
   } else if (addWrapper.parentElement !== komSection) {
@@ -5301,68 +5518,74 @@ function applyKomForCurrentDay() {
     komSection.appendChild(addWrapper);
   }
 
-  const oldCards = komSection.querySelectorAll('.kom-card');
+  const oldCards = komSection.querySelectorAll(".kom-card");
   oldCards.forEach((card) => card.remove());
 
-  const optionKeys = ['option1', 'option2', 'option3', 'option4', 'option5', 'option6'];
+  const optionKeys = [
+    "option1",
+    "option2",
+    "option3",
+    "option4",
+    "option5",
+    "option6",
+  ];
 
   dayData.entries.forEach((entry, index) => {
-    const card = document.createElement('div');
-    card.className = 'kom-card';
+    const card = document.createElement("div");
+    card.className = "kom-card";
     card.dataset.entryIndex = String(index);
 
-    const header = document.createElement('div');
-    header.className = 'kom-card-header';
+    const header = document.createElement("div");
+    header.className = "kom-card-header";
 
-    const label = document.createElement('label');
-    label.className = 'kom-label';
+    const label = document.createElement("label");
+    label.className = "kom-label";
 
-    const labelSpan = document.createElement('span');
-    labelSpan.textContent = 'Kommissions Nummer';
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = "Kommissions Nummer";
 
-    const komInput = document.createElement('input');
-    komInput.type = 'text';
-    komInput.className = 'kom-input';
-    komInput.placeholder = 'z.B. 123456';
-    komInput.value = entry.komNr || '';
+    const komInput = document.createElement("input");
+    komInput.type = "text";
+    komInput.className = "kom-input";
+    komInput.placeholder = "z.B. 123456";
+    komInput.value = entry.komNr || "";
 
     label.appendChild(labelSpan);
     label.appendChild(komInput);
 
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'kom-remove-btn';
-    removeBtn.textContent = '✕';
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "kom-remove-btn";
+    removeBtn.textContent = "✕";
 
     header.appendChild(label);
     header.appendChild(removeBtn);
 
-    const grid = document.createElement('div');
-    grid.className = 'kom-grid';
+    const grid = document.createElement("div");
+    grid.className = "kom-grid";
 
     optionKeys.forEach((key, idx) => {
-      const optDiv = document.createElement('div');
-      optDiv.className = 'kom-option';
+      const optDiv = document.createElement("div");
+      optDiv.className = "kom-option";
 
-      const optLabel = document.createElement('span');
-      optLabel.className = 'kom-option-label';
+      const optLabel = document.createElement("span");
+      optLabel.className = "kom-option-label";
       optLabel.textContent = `Option ${idx + 1}`;
 
       const labelText = OPTION_LABELS[key] ?? `Option ${idx + 1}`;
       optLabel.textContent = labelText;
 
-
-      const input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.step = '0.25';
-      input.className = 'hours-input';
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.step = "0.25";
+      input.className = "hours-input";
       input.dataset.option = key;
-      input.placeholder = '0,0';
+      input.placeholder = "0,0";
 
       const val = entry.hours && entry.hours[key];
-      if (typeof val === 'number' && !Number.isNaN(val) && val !== 0) {
-        input.value = val.toString().replace('.', ',');
+      if (typeof val === "number" && !Number.isNaN(val) && val !== 0) {
+        input.value = val.toString().replace(".", ",");
       }
 
       optDiv.appendChild(optLabel);
@@ -5377,14 +5600,17 @@ function applyKomForCurrentDay() {
   });
 }
 
+/**
+ * Push special booking rows into the current day draft object and persist them.
+ */
 function applySpecialEntriesForCurrentDay() {
-  const activeSection = document.querySelector('.day-content.active');
+  const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) return;
 
-  const section = activeSection.querySelector('.special-section');
+  const section = activeSection.querySelector(".special-section");
   if (!section) return;
 
-  const listEl = section.querySelector('.special-list');
+  const listEl = section.querySelector(".special-list");
   if (!listEl) return;
 
   const dateKey = getCurrentDateKey();
@@ -5394,118 +5620,122 @@ function applySpecialEntriesForCurrentDay() {
     dayData.specialEntries = [];
   }
 
-  listEl.innerHTML = '';
+  listEl.innerHTML = "";
 
   if (dayData.specialEntries.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'special-empty-text';
-    empty.textContent = 'Keine Spezialbuchungen erfasst.';
+    const empty = document.createElement("div");
+    empty.className = "special-empty-text";
+    empty.textContent = "Keine Spezialbuchungen erfasst.";
     listEl.appendChild(empty);
     return;
   }
 
   dayData.specialEntries.forEach((entry, index) => {
-    const row = document.createElement('div');
-    row.className = 'special-row';
+    const row = document.createElement("div");
+    row.className = "special-row";
     row.dataset.specialIndex = String(index);
 
     // --- Top: Art + Stunden + Entfernen ---
-    const top = document.createElement('div');
-    top.className = 'special-row-top';
+    const top = document.createElement("div");
+    top.className = "special-row-top";
 
     // Art (Regie / Fehler)
-    const typeField = document.createElement('label');
-    typeField.className = 'special-field';
-    const typeLabel = document.createElement('span');
-    typeLabel.textContent = 'Art';
+    const typeField = document.createElement("label");
+    typeField.className = "special-field";
+    const typeLabel = document.createElement("span");
+    typeLabel.textContent = "Art";
 
-    const typeSelect = document.createElement('select');
-    typeSelect.className = 'special-type-select';
+    const typeSelect = document.createElement("select");
+    typeSelect.className = "special-type-select";
 
-    const optRegie = document.createElement('option');
-    optRegie.value = 'regie';
-    optRegie.textContent = 'Regiearbeit';
+    const optRegie = document.createElement("option");
+    optRegie.value = "regie";
+    optRegie.textContent = "Regiearbeit";
 
-    const optFehler = document.createElement('option');
-    optFehler.value = 'fehler';
-    optFehler.textContent = 'Fehler';
+    const optFehler = document.createElement("option");
+    optFehler.value = "fehler";
+    optFehler.textContent = "Fehler";
 
     typeSelect.appendChild(optRegie);
     typeSelect.appendChild(optFehler);
-    typeSelect.value = entry.type === 'fehler' ? 'fehler' : 'regie';
+    typeSelect.value = entry.type === "fehler" ? "fehler" : "regie";
 
     typeField.appendChild(typeLabel);
     typeField.appendChild(typeSelect);
 
     // Stunden
-    const hoursField = document.createElement('label');
-    hoursField.className = 'special-field small';
-    const hoursLabel = document.createElement('span');
-    hoursLabel.textContent = 'Stunden';
+    const hoursField = document.createElement("label");
+    hoursField.className = "special-field small";
+    const hoursLabel = document.createElement("span");
+    hoursLabel.textContent = "Stunden";
 
-    const hoursInput = document.createElement('input');
-    hoursInput.type = 'number';
-    hoursInput.min = '0';
-    hoursInput.step = '0.25';
-    hoursInput.placeholder = '0,0';
-    hoursInput.className = 'special-hours-input';
+    const hoursInput = document.createElement("input");
+    hoursInput.type = "number";
+    hoursInput.min = "0";
+    hoursInput.step = "0.25";
+    hoursInput.placeholder = "0,0";
+    hoursInput.className = "special-hours-input";
 
-    if (typeof entry.hours === 'number' && !Number.isNaN(entry.hours) && entry.hours !== 0) {
-      hoursInput.value = entry.hours.toString().replace('.', ',');
+    if (
+      typeof entry.hours === "number" &&
+      !Number.isNaN(entry.hours) &&
+      entry.hours !== 0
+    ) {
+      hoursInput.value = entry.hours.toString().replace(".", ",");
     }
 
     hoursField.appendChild(hoursLabel);
     hoursField.appendChild(hoursInput);
 
     // Remove
-    const removeBtn = document.createElement('button');
-    removeBtn.type = 'button';
-    removeBtn.className = 'special-remove-btn';
-    removeBtn.textContent = '✕';
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "special-remove-btn";
+    removeBtn.textContent = "✕";
 
     top.appendChild(typeField);
     top.appendChild(hoursField);
     top.appendChild(removeBtn);
 
     // --- Mitte: Kom.Nummer ---
-    const middle = document.createElement('div');
-    middle.className = 'special-row-middle';
+    const middle = document.createElement("div");
+    middle.className = "special-row-middle";
 
-    const komField = document.createElement('label');
-    komField.className = 'special-field';
-    const komLabel = document.createElement('span');
-    komLabel.textContent = 'Kom.Nummer';
-    const komInput = document.createElement('input');
-    komInput.type = 'text';
-    komInput.className = 'special-kom-input';
-    komInput.placeholder = 'z.B. 123456';
-    komInput.value = entry.komNr || '';
+    const komField = document.createElement("label");
+    komField.className = "special-field";
+    const komLabel = document.createElement("span");
+    komLabel.textContent = "Kom.Nummer";
+    const komInput = document.createElement("input");
+    komInput.type = "text";
+    komInput.className = "special-kom-input";
+    komInput.placeholder = "z.B. 123456";
+    komInput.value = entry.komNr || "";
 
     komField.appendChild(komLabel);
     komField.appendChild(komInput);
     middle.appendChild(komField);
 
     // --- Unten: Rapport-Nr. oder Fehlerbeschreibung ---
-    const bottom = document.createElement('div');
-    bottom.className = 'special-row-bottom';
+    const bottom = document.createElement("div");
+    bottom.className = "special-row-bottom";
 
-    const detailField = document.createElement('label');
-    detailField.className = 'special-field';
-    const detailLabel = document.createElement('span');
-    detailLabel.className = 'special-detail-label';
+    const detailField = document.createElement("label");
+    detailField.className = "special-field";
+    const detailLabel = document.createElement("span");
+    detailLabel.className = "special-detail-label";
 
-    const detailInput = document.createElement('input');
-    detailInput.type = 'text';
-    detailInput.className = 'special-detail-input';
+    const detailInput = document.createElement("input");
+    detailInput.type = "text";
+    detailInput.className = "special-detail-input";
 
-    if (entry.type === 'fehler') {
-      detailLabel.textContent = 'Fehlerbeschreibung';
-      detailInput.placeholder = 'kurze Beschreibung';
-      detailInput.value = entry.description || '';
+    if (entry.type === "fehler") {
+      detailLabel.textContent = "Fehlerbeschreibung";
+      detailInput.placeholder = "kurze Beschreibung";
+      detailInput.value = entry.description || "";
     } else {
-      detailLabel.textContent = 'Rapport-Nr.';
-      detailInput.placeholder = 'z.B. R-2025-001';
-      detailInput.value = entry.rapportNr || '';
+      detailLabel.textContent = "Rapport-Nr.";
+      detailInput.placeholder = "z.B. R-2025-001";
+      detailInput.value = entry.rapportNr || "";
     }
 
     detailField.appendChild(detailLabel);
@@ -5520,49 +5750,47 @@ function applySpecialEntriesForCurrentDay() {
   });
 }
 
-
 // --- Global input listener: Stunden + Kom.Nummer im Wochenplan --- //
 
-document.addEventListener('input', (event) => {
+document.addEventListener("input", (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
   // Stunden-Felder: Gesamt aktualisieren + in Store schreiben
-if (target.classList.contains('hours-input')) {
-  // ignore if it's a Pikett hours field (we handle those in the other listener)
-  if (target.classList.contains('pikett-hours')) return;
+  if (target.classList.contains("hours-input")) {
+    // ignore if it's a Pikett hours field (we handle those in the other listener)
+    if (target.classList.contains("pikett-hours")) return;
 
-  const dateKey = getCurrentDateKey();
-  const dayData = getOrCreateDayData(dateKey);
-
-  const card = target.closest('.kom-card');
-  if (!card) return;
-  const entryIndex = Number(card.dataset.entryIndex || '0');
-  const entry = getOrCreateEntry(dayData, entryIndex);
-
-  const optionKey = target.dataset.option;
-  if (optionKey) {
-    const raw = target.value.trim();
-    let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-    if (!Number.isNaN(num)) {
-      num = roundToQuarter(num);
-    }
-    entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
-  }
-
-  saveToStorage();
-  updateDayTotalFromInputs();
-}
-
-
-  // Kom.Nummer-Eingabe im Wochenplan: in Store schreiben
-  if (target.classList.contains('kom-input')) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
-    const card = target.closest('.kom-card');
+    const card = target.closest(".kom-card");
     if (!card) return;
-    const entryIndex = Number(card.dataset.entryIndex || '0');
+    const entryIndex = Number(card.dataset.entryIndex || "0");
+    const entry = getOrCreateEntry(dayData, entryIndex);
+
+    const optionKey = target.dataset.option;
+    if (optionKey) {
+      const raw = target.value.trim();
+      let num = raw ? parseFloat(raw.replace(",", ".")) : 0;
+      if (!Number.isNaN(num)) {
+        num = roundToQuarter(num);
+      }
+      entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
+    }
+
+    saveToStorage();
+    updateDayTotalFromInputs();
+  }
+
+  // Kom.Nummer-Eingabe im Wochenplan: in Store schreiben
+  if (target.classList.contains("kom-input")) {
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
+
+    const card = target.closest(".kom-card");
+    if (!card) return;
+    const entryIndex = Number(card.dataset.entryIndex || "0");
     const entry = getOrCreateEntry(dayData, entryIndex);
 
     const normalized = normalizeKomNr(target.value);
@@ -5572,38 +5800,36 @@ if (target.classList.contains('hours-input')) {
     saveToStorage();
   }
 
-    // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
-  if (target.classList.contains('day-hours-input')) {
-  const dateKey = getCurrentDateKey();
-  const dayData = getOrCreateDayData(dateKey);
+  // Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
+  if (target.classList.contains("day-hours-input")) {
+    const dateKey = getCurrentDateKey();
+    const dayData = getOrCreateDayData(dateKey);
 
-  const key = target.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
-  if (!key) return;
+    const key = target.dataset.dayhour; // "schulung", "sitzungKurs", "arztKrank"
+    if (!key) return;
 
-  const raw = target.value.trim();
-  let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-  if (!Number.isNaN(num)) {
-    num = roundToQuarter(num);
+    const raw = target.value.trim();
+    let num = raw ? parseFloat(raw.replace(",", ".")) : 0;
+    if (!Number.isNaN(num)) {
+      num = roundToQuarter(num);
+    }
+    dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
+
+    saveToStorage();
+    updateDayTotalFromInputs();
   }
-  dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
 
-
-  saveToStorage();
-  updateDayTotalFromInputs();
-  }
-
-
-    // Spezialbuchungen-Felder
+  // Spezialbuchungen-Felder
   if (
-    target.classList.contains('special-type-select') ||
-    target.classList.contains('special-kom-input') ||
-    target.classList.contains('special-hours-input') ||
-    target.classList.contains('special-detail-input')
+    target.classList.contains("special-type-select") ||
+    target.classList.contains("special-kom-input") ||
+    target.classList.contains("special-hours-input") ||
+    target.classList.contains("special-detail-input")
   ) {
-    const row = target.closest('.special-row');
+    const row = target.closest(".special-row");
     if (!row) return;
 
-    const index = Number(row.dataset.specialIndex || '0');
+    const index = Number(row.dataset.specialIndex || "0");
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
@@ -5616,31 +5842,27 @@ if (target.classList.contains('hours-input')) {
 
     const special = dayData.specialEntries[index];
 
-    if (target.classList.contains('special-type-select')) {
-      special.type = target.value === 'fehler' ? 'fehler' : 'regie';
+    if (target.classList.contains("special-type-select")) {
+      special.type = target.value === "fehler" ? "fehler" : "regie";
       saveToStorage();
       applySpecialEntriesForCurrentDay(); // Label/Placeholder aktualisieren
       updateDayTotalFromInputs();
       return;
     }
 
-    if (target.classList.contains('special-kom-input')) {
+    if (target.classList.contains("special-kom-input")) {
       const normalized = normalizeKomNr(target.value);
       target.value = normalized;
       special.komNr = normalized;
-      } else if (target.classList.contains('special-hours-input')) {
+    } else if (target.classList.contains("special-hours-input")) {
       const raw = target.value.trim();
-      let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
+      let num = raw ? parseFloat(raw.replace(",", ".")) : 0;
       if (!Number.isNaN(num)) {
         num = roundToQuarter(num);
       }
       special.hours = Number.isNaN(num) ? 0 : num;
-
-   
-      }
-
-    else if (target.classList.contains('special-detail-input')) {
-      if (special.type === 'fehler') {
+    } else if (target.classList.contains("special-detail-input")) {
+      if (special.type === "fehler") {
         special.description = target.value;
       } else {
         special.rapportNr = target.value;
@@ -5650,18 +5872,12 @@ if (target.classList.contains('hours-input')) {
     saveToStorage();
     updateDayTotalFromInputs();
   }
-
-
 });
 
 // Tages-Flags speichern
-document.addEventListener('change', (event) => {
+document.addEventListener("change", (event) => {
   const target = event.target;
-  if (
-    !target ||
-    !target.classList ||
-    !target.classList.contains('day-flag')
-  ) {
+  if (!target || !target.classList || !target.classList.contains("day-flag")) {
     return;
   }
 
@@ -5673,23 +5889,22 @@ document.addEventListener('change', (event) => {
     dayData.flags = {};
   }
 
-// Ferien is now only set via absence requests, skip if somehow triggered
-  if (flagKey === 'ferien') {
+  // Ferien is now only set via absence requests, skip if somehow triggered
+  if (flagKey === "ferien") {
     return;
   }
-  
+
   dayData.flags[flagKey] = target.checked;
 
   saveToStorage();
 });
 
-
 // Status eines Abwesenheits-Antrags ändern (Offen / Akzeptiert / Abgelehnt)
-document.addEventListener('change', (event) => {
+document.addEventListener("change", (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
-  if (!target.classList.contains('absence-status-select')) {
+  if (!target.classList.contains("absence-status-select")) {
     return;
   }
 
@@ -5701,11 +5916,7 @@ document.addEventListener('change', (event) => {
   if (!req) return;
 
   const value = select.value;
-  if (
-    value !== 'pending' &&
-    value !== 'accepted' &&
-    value !== 'rejected'
-  ) {
+  if (value !== "pending" && value !== "accepted" && value !== "rejected") {
     return;
   }
 
@@ -5713,23 +5924,23 @@ document.addEventListener('change', (event) => {
   saveAbsenceRequests();
 
   // Badge im gleichen Item updaten
-  const container = select.closest('.absence-item');
+  const container = select.closest(".absence-item");
   if (!container) return;
 
-  const badge = container.querySelector('.absence-status-badge');
+  const badge = container.querySelector(".absence-status-badge");
   if (!badge) return;
 
-  badge.classList.remove('pending', 'accepted', 'rejected');
+  badge.classList.remove("pending", "accepted", "rejected");
 
-  if (value === 'pending') {
-    badge.classList.add('pending');
-    badge.textContent = 'Offen';
-  } else if (value === 'accepted') {
-    badge.classList.add('accepted');
-    badge.textContent = 'Akzeptiert';
+  if (value === "pending") {
+    badge.classList.add("pending");
+    badge.textContent = "Offen";
+  } else if (value === "accepted") {
+    badge.classList.add("accepted");
+    badge.textContent = "Akzeptiert";
   } else {
-    badge.classList.add('rejected');
-    badge.textContent = 'Abgelehnt';
+    badge.classList.add("rejected");
+    badge.textContent = "Abgelehnt";
   }
 
   // Ferien-Stand aktualisieren
@@ -5738,14 +5949,13 @@ document.addEventListener('change', (event) => {
   updateDashboardWeekListForCurrentMonth();
 });
 
-
 // Add / remove Kom cards + Verpflegungspauschale + info
-document.addEventListener('click', (event) => {
+document.addEventListener("click", (event) => {
   const target = event.target;
   if (!target) return;
 
   // + Kom.Nummer hinzufügen
-  if (target.classList.contains('kom-add-btn')) {
+  if (target.classList.contains("kom-add-btn")) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
@@ -5758,36 +5968,36 @@ document.addEventListener('click', (event) => {
 
   // ✕ auf einer Kom-Karte: inline Bestätigung einblenden (nicht für Pikett)
   if (
-    target.classList.contains('kom-remove-btn') &&
-    !target.classList.contains('pikett-remove-btn')
+    target.classList.contains("kom-remove-btn") &&
+    !target.classList.contains("pikett-remove-btn")
   ) {
-    const card = target.closest('.kom-card');
+    const card = target.closest(".kom-card");
     if (!card) return;
 
     // Wenn bereits im Bestätigungsmodus → nichts tun
-    if (card.classList.contains('kom-confirm-mode')) {
+    if (card.classList.contains("kom-confirm-mode")) {
       return;
     }
 
-    card.classList.add('kom-confirm-mode');
+    card.classList.add("kom-confirm-mode");
 
     // Bestätigungszeile bauen
-    const row = document.createElement('div');
-    row.className = 'kom-confirm-row';
+    const row = document.createElement("div");
+    row.className = "kom-confirm-row";
 
-    const text = document.createElement('span');
-    text.className = 'kom-confirm-text';
-    text.textContent = 'Kommission wirklich löschen?';
+    const text = document.createElement("span");
+    text.className = "kom-confirm-text";
+    text.textContent = "Kommission wirklich löschen?";
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'kom-confirm-cancel';
-    cancelBtn.textContent = 'Abbrechen';
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "kom-confirm-cancel";
+    cancelBtn.textContent = "Abbrechen";
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'kom-confirm-delete';
-    deleteBtn.textContent = 'Löschen';
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "kom-confirm-delete";
+    deleteBtn.textContent = "Löschen";
 
     row.appendChild(text);
     row.appendChild(cancelBtn);
@@ -5797,24 +6007,24 @@ document.addEventListener('click', (event) => {
   }
 
   // Klick auf "Abbrechen" in der Bestätigungszeile
-  if (target.classList.contains('kom-confirm-cancel')) {
-    const card = target.closest('.kom-card');
+  if (target.classList.contains("kom-confirm-cancel")) {
+    const card = target.closest(".kom-card");
     if (!card) return;
 
-    const row = card.querySelector('.kom-confirm-row');
+    const row = card.querySelector(".kom-confirm-row");
     if (row) row.remove();
 
-    card.classList.remove('kom-confirm-mode');
+    card.classList.remove("kom-confirm-mode");
   }
 
   // Klick auf "Löschen" in der Bestätigungszeile
-  if (target.classList.contains('kom-confirm-delete')) {
-    const card = target.closest('.kom-card');
+  if (target.classList.contains("kom-confirm-delete")) {
+    const card = target.closest(".kom-card");
     if (!card) return;
 
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
-    const index = Number(card.dataset.entryIndex || '0');
+    const index = Number(card.dataset.entryIndex || "0");
 
     if (dayData.entries && dayData.entries.length > 1) {
       dayData.entries.splice(index, 1);
@@ -5829,9 +6039,9 @@ document.addEventListener('click', (event) => {
   }
 
   // Verpflegungspauschale-Pills (1, 2, 3) toggeln
-  if (target.classList.contains('meal-pill')) {
-    const activeSection = target.closest('.day-content');
-    if (!activeSection || !activeSection.classList.contains('active')) {
+  if (target.classList.contains("meal-pill")) {
+    const activeSection = target.closest(".day-content");
+    if (!activeSection || !activeSection.classList.contains("active")) {
       // nur aktuell aktiver Tag reagiert
       return;
     }
@@ -5840,7 +6050,7 @@ document.addEventListener('click', (event) => {
     const dayData = getOrCreateDayData(dateKey);
 
     if (!dayData.mealAllowance) {
-      dayData.mealAllowance = { '1': false, '2': false, '3': false };
+      dayData.mealAllowance = { 1: false, 2: false, 3: false };
     }
 
     const key = target.dataset.meal; // "1", "2", "3"
@@ -5854,14 +6064,14 @@ document.addEventListener('click', (event) => {
   }
 
   // Info-Button für Verpflegungspauschale
-  if (target.classList.contains('meal-info-btn')) {
-    const section = target.closest('.meal-section');
+  if (target.classList.contains("meal-info-btn")) {
+    const section = target.closest(".meal-section");
     if (!section) return;
-    section.classList.toggle('open-info');
+    section.classList.toggle("open-info");
   }
 
-    // + Spezialbuchung hinzufügen
-  if (target.classList.contains('special-add-btn')) {
+  // + Spezialbuchung hinzufügen
+  if (target.classList.contains("special-add-btn")) {
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
@@ -5875,34 +6085,34 @@ document.addEventListener('click', (event) => {
     updateDayTotalFromInputs();
   }
 
-      // Spezialbuchung entfernen – mit Bestätigung
-  if (target.classList.contains('special-remove-btn')) {
-    const row = target.closest('.special-row');
+  // Spezialbuchung entfernen – mit Bestätigung
+  if (target.classList.contains("special-remove-btn")) {
+    const row = target.closest(".special-row");
     if (!row) return;
 
     // Schon im Bestätigungsmodus? Dann nichts tun.
-    if (row.classList.contains('special-confirm-mode')) {
+    if (row.classList.contains("special-confirm-mode")) {
       return;
     }
 
-    row.classList.add('special-confirm-mode');
+    row.classList.add("special-confirm-mode");
 
-    const confirmRow = document.createElement('div');
-    confirmRow.className = 'special-confirm-row';
+    const confirmRow = document.createElement("div");
+    confirmRow.className = "special-confirm-row";
 
-    const text = document.createElement('span');
-    text.className = 'special-confirm-text';
-    text.textContent = 'Spezialbuchung wirklich löschen?';
+    const text = document.createElement("span");
+    text.className = "special-confirm-text";
+    text.textContent = "Spezialbuchung wirklich löschen?";
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'special-confirm-cancel';
-    cancelBtn.textContent = 'Abbrechen';
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "special-confirm-cancel";
+    cancelBtn.textContent = "Abbrechen";
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'special-confirm-delete';
-    deleteBtn.textContent = 'Löschen';
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "special-confirm-delete";
+    deleteBtn.textContent = "Löschen";
 
     confirmRow.appendChild(text);
     confirmRow.appendChild(cancelBtn);
@@ -5912,22 +6122,22 @@ document.addEventListener('click', (event) => {
   }
 
   // Bestätigung abbrechen
-  if (target.classList.contains('special-confirm-cancel')) {
-    const row = target.closest('.special-row');
+  if (target.classList.contains("special-confirm-cancel")) {
+    const row = target.closest(".special-row");
     if (!row) return;
 
-    const confirmRow = row.querySelector('.special-confirm-row');
+    const confirmRow = row.querySelector(".special-confirm-row");
     if (confirmRow) confirmRow.remove();
 
-    row.classList.remove('special-confirm-mode');
+    row.classList.remove("special-confirm-mode");
   }
 
   // Endgültig löschen
-  if (target.classList.contains('special-confirm-delete')) {
-    const row = target.closest('.special-row');
+  if (target.classList.contains("special-confirm-delete")) {
+    const row = target.closest(".special-row");
     if (!row) return;
 
-    const index = Number(row.dataset.specialIndex || '0');
+    const index = Number(row.dataset.specialIndex || "0");
     const dateKey = getCurrentDateKey();
     const dayData = getOrCreateDayData(dateKey);
 
@@ -5939,77 +6149,74 @@ document.addEventListener('click', (event) => {
     applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
   }
-
-
 });
 
-
-
-
-
-// --- Week navigation buttons --- //
+/**
+ * Event wiring / week navigation
+ */
 
 if (weekPrevBtn) {
-  weekPrevBtn.addEventListener('click', (event) => {
+  weekPrevBtn.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     weekOffset -= 1;
     renderWeekInfo();
     updateDayTitleWithDate(); // NEU
-    applyFlagsForCurrentDay(); 
-    applyDayHoursForCurrentDay(); 
-    applyMealAllowanceForCurrentDay();  
+    applyFlagsForCurrentDay();
+    applyDayHoursForCurrentDay();
+    applyMealAllowanceForCurrentDay();
     applyKomForCurrentDay();
-    applySpecialEntriesForCurrentDay(); 
+    applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
   });
 }
 
 if (weekNextBtn) {
-  weekNextBtn.addEventListener('click', (event) => {
+  weekNextBtn.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     weekOffset += 1;
     renderWeekInfo();
     updateDayTitleWithDate(); // NEU
     applyFlagsForCurrentDay();
-    applyMealAllowanceForCurrentDay();  
+    applyMealAllowanceForCurrentDay();
     applyKomForCurrentDay();
-    applySpecialEntriesForCurrentDay(); 
+    applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
   });
 }
 
-// --- Day switching logic --- //
+/**
+ * View helpers / active weekday switching
+ */
 function showDay(dayId) {
   currentDayId = dayId;
 
   daySections.forEach((section) => {
-    section.classList.toggle('active', section.id === dayId);
+    section.classList.toggle("active", section.id === dayId);
   });
 
   // Titel "Montag 22/02/2020" aktualisieren
   updateDayTitleWithDate();
 }
 
-
 adminInnerTabButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener("click", () => {
     const target = btn.dataset.adminTab;
     if (!target) return;
 
     adminActiveInnerTab = target;
 
-    adminInnerTabButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+    adminInnerTabButtons.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
 
-    document.querySelectorAll('.admin-tab-content').forEach((c) => {
-      c.classList.remove('active');
-      if (c.dataset.adminContent === target) c.classList.add('active');
+    document.querySelectorAll(".admin-tab-content").forEach((c) => {
+      c.classList.remove("active");
+      if (c.dataset.adminContent === target) c.classList.add("active");
     });
-    if (target === 'overview') {
+    if (target === "overview") {
       loadAdminSummary();
-    } else if (target === 'anlagen') {
+    } else if (target === "anlagen") {
       const previouslySelectedKomNr = selectedKomNr;
 
       anlagenSummaryCache.clear();
@@ -6021,23 +6228,21 @@ adminInnerTabButtons.forEach((btn) => {
         selectedKomNr = previouslySelectedKomNr;
         loadAdminAnlagenDetail(previouslySelectedKomNr, { force: true });
       }
-    } else if (target === 'personnel') {
+    } else if (target === "personnel") {
       loadAdminPersonnel();
-    } else if (target === 'payroll') {
+    } else if (target === "payroll") {
       loadAdminPayroll();
     }
-      });
+  });
 });
 
-
-
 dayButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener("click", () => {
     const day = btn.dataset.day;
 
     // Aktiven Button setzen
-    dayButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
+    dayButtons.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
 
     // WICHTIG: Inhalt + Titel aktualisieren
     showDay(day);
@@ -6051,14 +6256,17 @@ dayButtons.forEach((btn) => {
   });
 });
 
+/**
+ * Reload all per-user draft stores after login/logout/session restoration and refresh the visible UI.
+ */
 function reloadAllDataForCurrentUser() {
   const user = getCurrentUser();
   updateStorageKeysForUser(user);
 
   // Laden
   Object.keys(dayStore).forEach((k) => delete dayStore[k]);
-  loadFromStorage();                 // uses STORAGE_KEY now for this user
-  pikettStore = loadPikettStore();   // uses PIKETT_STORAGE_KEY
+  loadFromStorage(); // uses STORAGE_KEY now for this user
+  pikettStore = loadPikettStore(); // uses PIKETT_STORAGE_KEY
   absenceRequests = loadAbsenceRequests(); // uses ABSENCE_STORAGE_KEY
 
   // UI neu aufbauen
@@ -6076,7 +6284,7 @@ function reloadAllDataForCurrentUser() {
   updateOvertimeYearCard();
 }
 
-
-
+/**
+ * Bootstrap
+ */
 initAuthView();
-

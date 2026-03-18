@@ -1,3 +1,7 @@
+
+// ============================================================================
+// Runtime dependencies and app bootstrap
+// ============================================================================
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -7,15 +11,24 @@ const PDFDocument = require('pdfkit');
 const exportPdfBody = express.json({ limit: '10mb' });
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 
-// ---- Middleware ----
+// ============================================================================
+// Global middleware
+// ============================================================================
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
+app.use('/src', express.static(path.join(__dirname, 'src')));
+app.use(express.static(__dirname));
 
-// ---- "Database": users + sessions (in memory for now) ----
+
+// ============================================================================
+// In-memory identity data and option labels
+// ============================================================================
+// Note: users and sessions still behave exactly like before.
+// This section remains intentionally simple until a later persistence/auth upgrade.
 
 // Teams
 const TEAMS = [
@@ -60,7 +73,9 @@ function createToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// ---- Auth middleware ----
+// ============================================================================
+// Authentication / authorization helpers
+// ============================================================================
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -100,7 +115,10 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ---- Admin month overview helpers ----
+// ============================================================================
+// Shared date, number and month-overview helpers
+// ============================================================================
+// These utilities are used across admin views, month summaries and payroll logic.
 
 function safeReadJson(filePath, fallback) {
   try {
@@ -128,7 +146,7 @@ function formatDateDisplayEU(dateKey) {
   return `${dd}.${mm}.${yyyy}`;
 }
 
-// Same ISO week logic as your frontend (UTC-based)
+// Same ISO week logic as frontend (UTC-based)
 function getISOWeekInfo(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -141,7 +159,7 @@ function getISOWeekInfo(date) {
 
 function makeMonthLabel(year, monthIndex) {
   const d = new Date(year, monthIndex, 1);
-  // de-DE or de-CH is fine; keep it consistent with your app language
+
   const label = d.toLocaleString('de-DE', { month: 'long', year: 'numeric' });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
@@ -392,7 +410,6 @@ function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey) 
 }
 
 
-
 /**
  * Build month overview from a saved submission file.
  * Missing rule (matches your dashboard):
@@ -512,6 +529,9 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 // ---- Auth routes ----
 
 // Login: POST /api/auth/login
+// ============================================================================
+// Authentication routes
+// ============================================================================
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
 
@@ -560,18 +580,27 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 });
 
 // ---- Health check ----
+// ============================================================================
+// Basic health check
+// ============================================================================
 app.get('/health', (req, res) => {
   res.json({ ok: true, message: 'Backend is running 🚀' });
 });
 
 // ---- File storage helpers ----
 
-const BASE_DATA_DIR = path.join(__dirname, 'data');
+// ============================================================================
+// Data directories and per-domain persistence helpers
+// ============================================================================
+const BASE_DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(BASE_DATA_DIR)) {
   fs.mkdirSync(BASE_DATA_DIR, { recursive: true });
 }
 
 // ---- Absenzen (persistent, per user file) ----
+// ----------------------------------------------------------------------------
+// Absence persistence helpers
+// ----------------------------------------------------------------------------
 const ABSENCES_DIR = path.join(BASE_DATA_DIR, 'absences');
 if (!fs.existsSync(ABSENCES_DIR)) fs.mkdirSync(ABSENCES_DIR, { recursive: true });
 
@@ -611,6 +640,9 @@ function findAcceptedAbsenceForDate(absences, dateKey) {
 }
 
 // ---- Konten (persistent, idempotent by user-month snapshot) ----
+// ----------------------------------------------------------------------------
+// Konten helpers
+// ----------------------------------------------------------------------------
 const KONTEN_PATH = path.join(BASE_DATA_DIR, 'konten.json');
 
 function readKonten() {
@@ -706,8 +738,6 @@ function calculateAbsenceVacationDays(absence) {
 }
 
 
-
-
 // vacation day fraction = max(0, 1 - (hoursWorked/8))
 function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
   const DAILY_SOLL = 8.0;
@@ -741,6 +771,7 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
   return Math.round(used * 100) / 100;
 }
 
+// Apply a month's transmitted totals to the running Konten state.
 function updateKontenFromSubmission({ username, teamId, year, monthIndex, totals, payload, updatedBy }) {
   const data = readKonten();
   const user = ensureKontenUser(data, username, teamId);
@@ -784,6 +815,9 @@ function updateKontenFromSubmission({ username, teamId, year, monthIndex, totals
 
 // ---- Week locks (persistent) ----
 // Stored globally, keyed by username -> weekKey -> { locked:true, lockedAt, lockedBy }
+// ----------------------------------------------------------------------------
+// Week locks, date ranges and payroll-period helpers
+// ----------------------------------------------------------------------------
 const WEEK_LOCKS_PATH = path.join(BASE_DATA_DIR, 'weekLocks.json');
 
 function readWeekLocks() {
@@ -873,6 +907,7 @@ function absenceOverlapsLockedDates(abs, lockedDateKeys) {
   return false;
 }
 
+// Load the newest saved snapshot for a specific user/month combination.
 function loadLatestMonthSubmission(username, year, monthIndex) {
   const userDir = getUserDir(username);
   const indexPath = path.join(userDir, 'index.json');
@@ -979,6 +1014,7 @@ function round1(n) {
   return Math.round((Number(n) || 0) * 10) / 10;
 }
 
+// Core payroll aggregation for one transmitted submission inside a selected period.
 function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById) {
   const result = {
     stunden: 0,
@@ -1082,7 +1118,7 @@ function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById
 }
 
 
-
+// Preserve already-locked day payloads during retransmission of the same month.
 function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys) {
   const merged = { ...newPayload };
 
@@ -1158,6 +1194,7 @@ function toNumber(val) {
   return 0;
 }
 
+// Summarise a transmitted month payload for index metadata and overview cards.
 function computeTransmissionTotals(payload) {
   let kom = 0;        // Kommissionsstunden + Spezialbuchungen (ÜZ1)
   let dayHours = 0;   // Tagesbezogene Stunden
@@ -1220,6 +1257,9 @@ function computeTransmissionTotals(payload) {
   };
 }
 
+// ============================================================================
+// Admin transmission overview routes
+// ============================================================================
 app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, (req, res) => {
   const username = req.params.username;
   const user = USERS.find((u) => u.username === username);
@@ -1249,6 +1289,9 @@ app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, (
 // ---- Anlagen: global index + daily ledger + per-user-month snapshots ----
 
 
+// ============================================================================
+// Anlagen domain helpers and persistence
+// ============================================================================
 const ANLAGEN_LEDGER_PATH = path.join(BASE_DATA_DIR, 'anlagenLedger.json');
 const ANLAGEN_SNAP_DIR    = path.join(BASE_DATA_DIR, 'anlagenSnapshots');
 
@@ -1300,6 +1343,7 @@ function normalizeKomNr(v) {
   return s ? s.replace(/\s+/g, '') : '';
 }
 
+// Reduce one transmitted payload to the anlagen-relevant snapshot structure.
 function extractAnlagenSnapshotFromPayload(payload, username) {
   // returns: { [komNr]: { totalHours, byOperation, byDate, lastActivity } }
   const snap = {};
@@ -1605,6 +1649,7 @@ function extractAnlagenFromSubmission(submission, username) {
 }
 
 // Apply delta (new - old) for one user/month submission to the global index.
+// Apply a before/after delta when a month transmission changes anlagen data.
 function applyAnlagenDelta(teamId, username, newMap, oldMap) {
   const index = readAnlagenIndex();
   if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') index.teams[teamId] = {};
@@ -1716,9 +1761,11 @@ function rebuildAnlagenIndex() {
 }
 
 
-
 // POST /api/admin/anlagen-export-pdf
 // body: { teamId, komNr, donutPngDataUrl?, usersPngDataUrl? }
+// ============================================================================
+// Anlagen routes
+// ============================================================================
 app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, (req, res) => {
   const teamId = String(req.body?.teamId || req.user.teamId || '');
   const komNr = normalizeKomNr(req.body?.komNr);
@@ -1746,7 +1793,6 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
   // charts from frontend 
   const donutUrl = req.body?.donutPngDataUrl;
   const usersUrl = req.body?.usersPngDataUrl;
-
 
 
   function dataUrlToPngBuffer(url) {
@@ -1911,9 +1957,6 @@ doc.y = chartsTopY + donutBoxH + 18;
 
   doc.end();
 });
-
-
-
 
 
 // ---- Admin: Anlagen summary (global) ----
@@ -2082,6 +2125,11 @@ app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, (req, res) => 
 // ---- Month transmission routes ----
 
 // Receive monthly transmission (protected)
+// ============================================================================
+// User month transmission routes
+// ============================================================================
+// The transmission endpoint is the authoritative handoff from local draft data
+// to server-stored month snapshots that admin/payroll features can safely consume.
 app.post('/api/transmit-month', requireAuth, (req, res) => {
   const payload = req.body;
 
@@ -2179,8 +2227,6 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
       .status(500)
       .json({ ok: false, error: 'Could not save data on server' });
   }
-
-
 
 
   // 2) Update user's index.json (simple list of transmissions)
@@ -2412,6 +2458,9 @@ app.get('/api/transmissions', requireAuth, (req, res) => {
 // ---- Absenzen: user APIs ----
 
 // GET /api/absences  -> list my absences
+// ============================================================================
+// Absence routes (user + admin)
+// ============================================================================
 app.get('/api/absences', requireAuth, (req, res) => {
   const username = req.user.username;
   return res.json({ ok: true, absences: readUserAbsences(username) });
@@ -2520,7 +2569,6 @@ app.post('/api/absences/:id/cancel', requireAuth, (req, res) => {
 });
 
 
-
 // ---- Absenzen: admin APIs ----
 
 // GET /api/admin/absences?status=pending|accepted|rejected|all
@@ -2626,10 +2674,12 @@ const list = readUserAbsences(username);
 });
 
 
-
 // ---- Konten APIs ----
 
 // GET /api/konten/me
+// ============================================================================
+// Konten routes
+// ============================================================================
 app.get('/api/konten/me', requireAuth, (req, res) => {
   const data = readKonten();
   const username = req.user.username;
@@ -2686,8 +2736,10 @@ app.post('/api/admin/konten/set', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-
       // ---- Admin: month overview (per user, month-specific) ----
+// ============================================================================
+// Admin month overview and day detail routes
+// ============================================================================
 app.get(
   '/api/admin/month-overview',
   requireAuth,
@@ -2849,8 +2901,6 @@ app.get(
 );
 
 
-
-
 // ---- Admin: lock/unlock a week ----
 // POST /api/admin/week-lock
 // body: { username, weekYear, week, locked?: boolean }
@@ -2921,9 +2971,9 @@ app.post('/api/admin/week-lock', requireAuth, requireAdmin, (req, res) => {
 });
 
 
-
 // ---- Admin: day details (fetch on demand) ----
 // GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01
+// Detailed admin inspection for a single transmitted day.
 app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
   const username = String(req.query.username || '');
   const year = Number(req.query.year);
@@ -3053,6 +3103,9 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
   });
 });
 
+// ============================================================================
+// Payroll helpers and routes
+// ============================================================================
 app.get('/api/admin/payroll-users', requireAuth, requireAdmin, (req, res) => {
   const teamId = String(req.user.teamId || '');
 
@@ -3115,6 +3168,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
   return rowMap.get(dateKey);
 }
 
+// Build one payroll-period card for a single employee using transmitted months only.
 function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const num = (v) => {
     const n = Number(v);
@@ -3423,7 +3477,6 @@ function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
 }
 
 
-
 app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
   const fromRaw = String(req.query?.from || '').slice(0, 10);
   const toRaw = String(req.query?.to || '').slice(0, 10);
@@ -3642,7 +3695,9 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, (req, res) =
 });
 
 
-// ---- Admin: summary of transmissions per user ----
+// ============================================================================
+// Admin transmission summary route
+// ============================================================================
 // Only accessible for admins
 app.get(
   '/api/admin/transmissions-summary',
@@ -3668,8 +3723,6 @@ app.get(
           );
         }
       }
-
-
 
 
       const transmissionsCount = transmissions.length;
@@ -3734,7 +3787,14 @@ app.get(
 );
 
 
-// ---- Start server ----
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+
+// ============================================================================
+// Server startup
+// ============================================================================
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
 });
