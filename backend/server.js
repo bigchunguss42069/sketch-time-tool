@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const { Pool } = require('pg');
+const argon2 = require('argon2');
 const exportPdfBody = express.json({ limit: '10mb' });
 
 const app = express();
@@ -48,10 +49,10 @@ const TEAMS = [
   // später: { id: 'service', name: 'Team Service' }, ...
 ];
 
-const USERS = [
-  { id: 'u1', username: 'demo',  password: 'demo123',  role: 'user',  teamId: 'montage' },
-  { id: 'u2', username: 'chef',  password: 'chef123',  role: 'admin', teamId: 'montage' },
-  { id: 'u3', username: 'markus',  password: 'markus',  role: 'user', teamId: 'montage' },
+const INITIAL_USERS = [
+  { id: 'u1', username: 'demo', passwordEnv: 'SEED_PASSWORD_DEMO', role: 'user', teamId: 'montage' },
+  { id: 'u2', username: 'chef', passwordEnv: 'SEED_PASSWORD_CHEF', role: 'admin', teamId: 'montage' },
+  { id: 'u3', username: 'markus', passwordEnv: 'SEED_PASSWORD_MARKUS', role: 'user', teamId: 'montage' },
 ];
 
 const OPTION_LABELS = {
@@ -69,16 +70,113 @@ function getOperationLabel(opKey) {
   return OPTION_LABELS[opKey] || opKey;
 }
 
-const sessions = new Map(); // token -> userId
+const sessions = new Map();
 
-function findUserByCredentials(username, password) {
-  return USERS.find(
-    (u) => u.username === username && u.password === password
-  );
+function mapDbUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    teamId: row.team_id || null,
+    active: row.active,
+  };
 }
 
-function findUserById(id) {
-  return USERS.find((u) => u.id === id);
+async function ensureUsersTable() {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'admin')),
+      team_id TEXT,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function seedInitialUsers() {
+  if (!db) return;
+
+  const existing = await db.query('SELECT COUNT(*)::int AS count FROM users');
+  const count = existing.rows[0]?.count || 0;
+
+  if (count > 0) return;
+
+  for (const user of INITIAL_USERS) {
+    const plainPassword = process.env[user.passwordEnv];
+
+    if (!plainPassword) {
+      throw new Error(`Missing required env var: ${user.passwordEnv}`);
+    }
+
+    const passwordHash = await argon2.hash(plainPassword, {
+      type: argon2.argon2id,
+    });
+
+    await db.query(
+      `
+        INSERT INTO users (
+          id,
+          username,
+          password_hash,
+          role,
+          team_id,
+          active
+        )
+        VALUES ($1, $2, $3, $4, $5, TRUE)
+      `,
+      [user.id, user.username, passwordHash, user.role, user.teamId]
+    );
+  }
+
+  console.log('Initial users seeded into Postgres.');
+}
+
+async function findUserByCredentials(username, password) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT id, username, password_hash, role, team_id, active
+      FROM users
+      WHERE username = $1
+      LIMIT 1
+    `,
+    [username]
+  );
+
+  const row = result.rows[0];
+  if (!row || !row.active) return null;
+
+  const passwordOk = await argon2.verify(row.password_hash, password);
+  if (!passwordOk) return null;
+
+  return mapDbUser(row);
+}
+
+async function findUserById(id) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT id, username, role, team_id, active
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [id]
+  );
+
+  const row = result.rows[0];
+  if (!row || !row.active) return null;
+
+  return mapDbUser(row);
 }
 
 function createToken() {
@@ -89,33 +187,38 @@ function createToken() {
 // Authentication / authorization helpers
 // ============================================================================
 
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || '';
-  const [scheme, token] = header.split(' ');
+async function requireAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const [scheme, token] = header.split(' ');
 
-  if (scheme !== 'Bearer' || !token) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Missing or invalid Authorization header' });
+    if (scheme !== 'Bearer' || !token) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Missing or invalid Authorization header' });
+    }
+
+    const userId = sessions.get(token);
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Invalid or expired token' });
+    }
+
+    const user = await findUserById(userId);
+    if (!user) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'User not found for this token' });
+    }
+
+    req.user = user;
+    req.token = token;
+    next();
+  } catch (err) {
+    console.error('requireAuth failed', err);
+    return res.status(500).json({ ok: false, error: 'Authentication failed' });
   }
-
-  const userId = sessions.get(token);
-  if (!userId) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Invalid or expired token' });
-  }
-
-  const user = findUserById(userId);
-  if (!user) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'User not found for this token' });
-  }
-
-  req.user = user;
-  req.token = token;
-  next();
 }
 
 function requireAdmin(req, res, next) {
@@ -544,36 +647,41 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 // ============================================================================
 // Authentication routes
 // ============================================================================
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body || {};
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
 
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ ok: false, error: 'Missing username or password' });
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Missing username or password' });
+    }
+
+    const user = await findUserByCredentials(username, password);
+
+    if (!user) {
+      return res
+        .status(401)
+        .json({ ok: false, error: 'Ungültige Zugangsdaten' });
+    }
+
+    const token = createToken();
+    sessions.set(token, user.id);
+
+    return res.json({
+      ok: true,
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        teamId: user.teamId,
+      },
+    });
+  } catch (err) {
+    console.error('Login failed', err);
+    return res.status(500).json({ ok: false, error: 'Login failed' });
   }
-
-  const user = findUserByCredentials(username, password);
-  if (!user) {
-    return res
-      .status(401)
-      .json({ ok: false, error: 'Ungültige Zugangsdaten' });
-  }
-
-  const token = createToken();
-  // Store the session by *user.id* (stable, independent of username text)
-  sessions.set(token, user.id);
-
-  return res.json({
-    ok: true,
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      teamId: user.teamId,
-    },
-  });
 });
 
 
@@ -3832,6 +3940,16 @@ app.get(
 // ============================================================================
 // Server startup
 // ============================================================================
-app.listen(PORT, () => {
-  console.log(`Backend listening on http://localhost:${PORT}`);
+async function startServer() {
+  await ensureUsersTable();
+  await seedInitialUsers();
+
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('Server startup failed', err);
+  process.exit(1);
 });
