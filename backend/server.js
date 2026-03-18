@@ -8,10 +8,24 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
+const { Pool } = require('pg');
 const exportPdfBody = express.json({ limit: '10mb' });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const DATABASE_URL = process.env.DATABASE_URL || '';
+
+const db = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+    })
+  : null;
+
+if (db) {
+  db.on('error', (err) => {
+    console.error('Postgres pool error', err);
+  });
+}
 
 
 // ============================================================================
@@ -583,6 +597,34 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 // ============================================================================
 app.get('/health', (req, res) => {
   res.json({ ok: true, message: 'Backend is running 🚀' });
+});
+
+app.get('/health/db', async (req, res) => {
+  if (!db) {
+    return res.status(500).json({
+      ok: false,
+      error: 'DATABASE_URL is not configured',
+    });
+  }
+
+  try {
+    const result = await db.query(
+      'select now() as now, current_database() as database'
+    );
+
+    return res.json({
+      ok: true,
+      database: result.rows[0]?.database || null,
+      now: result.rows[0]?.now || null,
+    });
+  } catch (err) {
+    console.error('Database health check failed', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Database connection failed',
+      detail: err.message,
+    });
+  }
 });
 
 // ---- File storage helpers ----
