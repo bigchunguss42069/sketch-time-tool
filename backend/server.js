@@ -20,8 +20,6 @@ const PORT = Number(process.env.PORT) || 3000;
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 
-app.use('/src', express.static(path.join(__dirname, 'src')));
-app.use(express.static(__dirname));
 
 
 // ============================================================================
@@ -3787,9 +3785,6 @@ app.get(
 );
 
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
 
 
 // ============================================================================
