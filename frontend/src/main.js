@@ -124,9 +124,24 @@ const loginForm = document.getElementById("loginForm");
 const loginUsernameInput = document.getElementById("loginUsername");
 const loginPasswordInput = document.getElementById("loginPassword");
 const loginErrorEl = document.getElementById("loginError");
+const loginSubmitBtn = document.getElementById("loginSubmitBtn");
+const loginLoader = document.getElementById("loginLoader");
 const userDisplayEl = document.getElementById("userDisplay");
 const logoutBtn = document.getElementById("logoutBtn");
+function setLoginLoading(isLoading) {
+  if (loginSubmitBtn) {
+    loginSubmitBtn.disabled = isLoading;
+    loginSubmitBtn.textContent = isLoading ? "Prüfe…" : "Anmelden";
+  }
 
+  if (loginUsernameInput) loginUsernameInput.disabled = isLoading;
+  if (loginPasswordInput) loginPasswordInput.disabled = isLoading;
+
+  if (loginLoader) {
+    loginLoader.classList.toggle("hidden", !isLoading);
+    loginLoader.setAttribute("aria-hidden", isLoading ? "false" : "true");
+  }
+}
 /**
  * Auth / sync status pill
  */
@@ -3929,7 +3944,7 @@ function updateDayTotalFromInputs() {
 }
 
 if (loginForm) {
-  loginForm.addEventListener("submit", (event) => {
+  loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const username = loginUsernameInput.value.trim();
@@ -3937,47 +3952,11 @@ if (loginForm) {
 
     if (!username || !password) {
       if (loginErrorEl) {
-        loginErrorEl.textContent = "Bitte Benutzername und Passwort eingeben.";
+        loginErrorEl.textContent =
+          "Bitte Benutzername und Passwort eingeben.";
         loginErrorEl.style.display = "block";
       }
       return;
-    }
-
-    // Call backend
-    fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username, password }),
- })
-  .then(async (res) => {
-    const text = await res.text();
-    let data = null;
-
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      throw new Error(`Login-Antwort war kein JSON (${res.status})`);
-    }
-
-    if (!res.ok) {
-      throw new Error(data?.error || `Login fehlgeschlagen (${res.status})`);
-    }
-
-    return data;
-  })
-  .then((data) => {
-    if (!data?.ok || !data?.token) {
-      throw new Error(data?.error || "Login fehlgeschlagen");
-    }
-
-    const user = data.user || { username };
-    setAuthSession(data.token, user);
-    updateUIForRole();
-    reloadAllDataForCurrentUser();
-    syncMyAbsencesFromServer();
-
-    if (userDisplayEl) {
-      userDisplayEl.textContent = user.username || username;
     }
 
     if (loginErrorEl) {
@@ -3985,24 +3964,63 @@ if (loginForm) {
       loginErrorEl.style.display = "none";
     }
 
-    loginPasswordInput.value = "";
-    showApp();
+    setLoginLoading(true);
 
-    if (user.role === "admin") {
-      switchToView("admin");
-    } else {
-      switchToView("wochenplan");
-    }
+    try {
+      const res = await fetch(`${BACKEND_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
 
-    loadSyncStatus();
-  })
-  .catch((err) => {
-    console.error("Login error", err);
-    if (loginErrorEl) {
-      loginErrorEl.textContent = err.message || "Login fehlgeschlagen.";
-      loginErrorEl.style.display = "block";
+      const text = await res.text();
+      let data = null;
+
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        throw new Error(`Login-Antwort war kein JSON (${res.status})`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || `Login fehlgeschlagen (${res.status})`);
+      }
+
+      if (!data?.ok || !data?.token) {
+        throw new Error(data?.error || "Login fehlgeschlagen");
+      }
+
+      const user = data.user || { username };
+
+      setAuthSession(data.token, user);
+      updateUIForRole();
+      reloadAllDataForCurrentUser();
+      syncMyAbsencesFromServer();
+
+      if (userDisplayEl) {
+        userDisplayEl.textContent = user.username || username;
+      }
+
+      loginPasswordInput.value = "";
+      showApp();
+
+      if (user.role === "admin") {
+        switchToView("admin");
+      } else {
+        switchToView("wochenplan");
+      }
+
+      loadSyncStatus();
+    } catch (err) {
+      console.error("Login error", err);
+
+      if (loginErrorEl) {
+        loginErrorEl.textContent = err.message || "Login fehlgeschlagen.";
+        loginErrorEl.style.display = "block";
+      }
+    } finally {
+      setLoginLoading(false);
     }
-  });
   });
 }
 

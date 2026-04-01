@@ -3094,3 +3094,120 @@ display: none;
 .admin-payroll-metrics--secondary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+
+.login-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  filter: none;
+}
+
+.login-loader {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+
+  --shaft-height: 96px;
+  --cabin-size: 28px;
+  --loader-speed: 1.9s;
+}
+
+.login-loader-text {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.elevator-container {
+  width: 78px;
+  height: var(--shaft-height);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 12px;
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0.95),
+    rgba(2, 6, 23, 0.92)
+  );
+  overflow: hidden;
+}
+
+.pulley-system {
+  position: absolute;
+  inset: 0;
+}
+
+.pulley-system::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 15%;
+  right: 15%;
+  height: 2px;
+  background: rgba(148, 163, 184, 0.65);
+  border-radius: 999px;
+}
+
+.cabin {
+  width: var(--cabin-size);
+  height: 24px;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  border-radius: 8px;
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35);
+  animation: move-cabin var(--loader-speed) infinite ease-in-out;
+}
+
+.counterweight {
+  width: 10px;
+  height: 20px;
+  background: linear-gradient(180deg, #f87171, #dc2626);
+  border-radius: 999px;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  animation: move-weight var(--loader-speed) infinite ease-in-out;
+}
+
+.cabin::before,
+.counterweight::before {
+  content: "";
+  position: absolute;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.7);
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.cabin::before {
+  height: calc(var(--shaft-height) - 20px);
+}
+
+.counterweight::before {
+  height: calc(var(--shaft-height) - 20px);
+}
+
+@keyframes move-cabin {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(calc(-1 * (var(--shaft-height) - 44px)));
+  }
+}
+
+@keyframes move-weight {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(calc(var(--shaft-height) - 44px));
+  }
+}

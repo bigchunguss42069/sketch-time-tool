@@ -42,7 +42,20 @@
             style="display: none;"
           ></div>
 
-          <button type="submit" class="login-button">Anmelden</button>
+          <button type="submit" class="login-button" id="loginSubmitBtn">
+              Anmelden
+            </button>
+
+            <div id="loginLoader" class="login-loader hidden" aria-hidden="true">
+              <div class="elevator-container">
+                <div class="pulley-system">
+                  <div class="rope"></div>
+                  <div class="cabin"></div>
+                  <div class="counterweight"></div>
+                </div>
+              </div>
+              <div class="login-loader-text">Anmeldung wird geprüft …</div>
+            </div>
         </form>
       </div>
     </div>
