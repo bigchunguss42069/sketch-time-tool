@@ -3948,7 +3948,7 @@ if (loginForm) {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ username, password }),
-})
+ })
   .then(async (res) => {
     const text = await res.text();
     let data = null;

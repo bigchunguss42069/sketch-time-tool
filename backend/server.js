@@ -100,6 +100,237 @@ async function ensureUsersTable() {
   `);
 }
 
+async function ensureMonthSubmissionsTable() {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS month_submissions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      team_id TEXT,
+      year INTEGER NOT NULL,
+      month_index INTEGER NOT NULL CHECK (month_index BETWEEN 0 AND 11),
+      month_label TEXT NOT NULL,
+      sent_at TIMESTAMPTZ NOT NULL,
+      received_at TIMESTAMPTZ NOT NULL,
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      totals JSONB NOT NULL DEFAULT '{}'::jsonb,
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_month_submissions_username_month_sent_at
+    ON month_submissions (username, year, month_index, sent_at DESC, created_at DESC)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_month_submissions_username_sent_at
+    ON month_submissions (username, sent_at DESC, created_at DESC)
+  `);
+}
+
+function mapTransmissionMeta(row) {
+  return {
+    id: row.id,
+    year: row.year,
+    monthIndex: row.month_index,
+    monthLabel: row.month_label,
+    sentAt:
+      row.sent_at instanceof Date
+        ? row.sent_at.toISOString()
+        : String(row.sent_at || ''),
+    sizeBytes: Number(row.size_bytes) || 0,
+    totals: row.totals || null,
+  };
+}
+
+async function findUserByUsername(username) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT id, username, role, team_id, active
+      FROM users
+      WHERE username = $1
+      LIMIT 1
+    `,
+    [username]
+  );
+
+  const row = result.rows[0];
+  if (!row || !row.active) return null;
+
+  return mapDbUser(row);
+}
+
+async function listUsersFromDb({ role = null, teamId = null } = {}) {
+  if (!db) return [];
+
+  const params = [];
+  let sql = `
+    SELECT id, username, role, team_id, active
+    FROM users
+    WHERE active = TRUE
+  `;
+
+  if (role) {
+    params.push(role);
+    sql += ` AND role = $${params.length}`;
+  }
+
+  if (teamId) {
+    params.push(teamId);
+    sql += ` AND team_id = $${params.length}`;
+  }
+
+  sql += ` ORDER BY username ASC`;
+
+  const result = await db.query(sql, params);
+  return result.rows.map(mapDbUser);
+}
+
+async function insertMonthSubmission({
+  id,
+  userId,
+  username,
+  teamId,
+  year,
+  monthIndex,
+  monthLabel,
+  sentAt,
+  receivedAt,
+  sizeBytes,
+  totals,
+  payload,
+}) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  await db.query(
+    `
+      INSERT INTO month_submissions (
+        id,
+        user_id,
+        username,
+        team_id,
+        year,
+        month_index,
+        month_label,
+        sent_at,
+        received_at,
+        size_bytes,
+        totals,
+        payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
+    `,
+    [
+      id,
+      userId,
+      username,
+      teamId,
+      year,
+      monthIndex,
+      monthLabel,
+      sentAt,
+      receivedAt,
+      sizeBytes,
+      JSON.stringify(totals || {}),
+      JSON.stringify(payload || {}),
+    ]
+  );
+}
+
+async function deleteMonthSubmissionById(id) {
+  if (!db) return;
+  await db.query(`DELETE FROM month_submissions WHERE id = $1`, [id]);
+}
+
+async function listUserTransmissions(username) {
+  if (!db) return [];
+
+  const result = await db.query(
+    `
+      SELECT
+        id,
+        year,
+        month_index,
+        month_label,
+        sent_at,
+        size_bytes,
+        totals
+      FROM month_submissions
+      WHERE username = $1
+      ORDER BY sent_at DESC, created_at DESC
+    `,
+    [username]
+  );
+
+  return result.rows.map(mapTransmissionMeta);
+}
+
+async function getLatestTransmissionMeta(username) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT
+        id,
+        year,
+        month_index,
+        month_label,
+        sent_at,
+        size_bytes,
+        totals
+      FROM month_submissions
+      WHERE username = $1
+      ORDER BY sent_at DESC, created_at DESC
+      LIMIT 1
+    `,
+    [username]
+  );
+
+  const row = result.rows[0];
+  return row ? mapTransmissionMeta(row) : null;
+}
+
+async function getLatestMonthSubmissionRecord(username, year, monthIndex) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT
+        id,
+        year,
+        month_index,
+        month_label,
+        sent_at,
+        size_bytes,
+        totals,
+        payload
+      FROM month_submissions
+      WHERE username = $1
+        AND year = $2
+        AND month_index = $3
+      ORDER BY sent_at DESC, created_at DESC
+      LIMIT 1
+    `,
+    [username, year, monthIndex]
+  );
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    meta: mapTransmissionMeta(row),
+    submission: row.payload || null,
+  };
+}
+
 async function seedInitialUsers() {
   if (!db) return;
 
@@ -1056,31 +1287,10 @@ function absenceOverlapsLockedDates(abs, lockedDateKeys) {
 }
 
 // Load the newest saved snapshot for a specific user/month combination.
-function loadLatestMonthSubmission(username, year, monthIndex) {
-  const userDir = getUserDir(username);
-  const indexPath = path.join(userDir, 'index.json');
-  const transmissions = safeReadJson(indexPath, []);
-
-  const monthTxList = Array.isArray(transmissions)
-    ? transmissions.filter((tx) => tx && tx.year === year && tx.monthIndex === monthIndex)
-    : [];
-
-  if (monthTxList.length === 0) return null;
-
-  const latest = monthTxList.reduce((best, tx) => {
-    if (!tx || !tx.sentAt) return best;
-    const d = new Date(tx.sentAt);
-    if (Number.isNaN(d.getTime())) return best;
-    if (!best) return { tx, date: d };
-    return d > best.date ? { tx, date: d } : best;
-  }, null);
-
-  if (!latest || !latest.tx || !latest.tx.id) return null;
-
-  const filePath = path.join(userDir, latest.tx.id);
-  return safeReadJson(filePath, null);
+async function loadLatestMonthSubmission(username, year, monthIndex) {
+  const record = await getLatestMonthSubmissionRecord(username, year, monthIndex);
+  return record ? record.submission : null;
 }
-
 
 function parseIsoDateOnly(value) {
   const raw = String(value || '').slice(0, 10);
@@ -1408,31 +1618,27 @@ function computeTransmissionTotals(payload) {
 // ============================================================================
 // Admin transmission overview routes
 // ============================================================================
-app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, (req, res) => {
-  const username = req.params.username;
-  const user = USERS.find((u) => u.username === username);
-  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
-
-  const userDir = getUserDir(user.username);
-  const indexPath = path.join(userDir, 'index.json');
-
-  let transmissions = [];
+app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, async (req, res) => {
   try {
-    if (fs.existsSync(indexPath)) {
-      const raw = fs.readFileSync(indexPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) transmissions = parsed;
+    const username = req.params.username;
+    const user = await findUserByUsername(username);
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
     }
-  } catch {
-    transmissions = [];
+
+    const transmissions = await listUserTransmissions(username);
+
+    return res.json({
+      ok: true,
+      username,
+      transmissions,
+    });
+  } catch (err) {
+    console.error('Failed to load user transmissions', err);
+    return res.status(500).json({ ok: false, error: 'Could not load transmissions' });
   }
-
-  // newest first
-  transmissions.sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0));
-
-  res.json({ ok: true, username, transmissions });
 });
-
 
 // ---- Anlagen: global index + daily ledger + per-user-month snapshots ----
 
@@ -1852,51 +2058,46 @@ function applyAnlagenDelta(teamId, username, newMap, oldMap) {
 }
 
 
-function rebuildAnlagenIndex() {
+async function rebuildAnlagenIndex() {
   const index = { version: 1, updatedAt: null, teams: {} };
+  const users = await listUsersFromDb();
 
-  // group transmissions by user + month -> latest sentAt
-  for (const u of USERS) {
-    const userDir = getUserDir(u.username);
-    const indexPath = path.join(userDir, 'index.json');
-    const transmissions = safeReadJson(indexPath, []);
+  for (const user of users) {
+    const result = await db.query(
+      `
+        SELECT DISTINCT ON (year, month_index)
+          payload
+        FROM month_submissions
+        WHERE username = $1
+        ORDER BY year, month_index, sent_at DESC, created_at DESC
+      `,
+      [user.username]
+    );
 
-    if (!Array.isArray(transmissions) || transmissions.length === 0) continue;
-
-    const latestByMonth = new Map(); // "YYYY-MM" -> meta
-    for (const tx of transmissions) {
-      if (!tx || typeof tx.year !== 'number' || typeof tx.monthIndex !== 'number' || !tx.sentAt || !tx.id) continue;
-      const monthNum = tx.monthIndex + 1;
-      const mk = `${tx.year}-${String(monthNum).padStart(2, '0')}`;
-      const existing = latestByMonth.get(mk);
-      if (!existing) {
-        latestByMonth.set(mk, tx);
-        continue;
-      }
-      const dA = new Date(existing.sentAt);
-      const dB = new Date(tx.sentAt);
-      if (!Number.isNaN(dB.getTime()) && (Number.isNaN(dA.getTime()) || dB > dA)) {
-        latestByMonth.set(mk, tx);
-      }
-    }
-
-    // merge all months for this user
-    for (const tx of latestByMonth.values()) {
-      const filePath = path.join(userDir, tx.id);
-      const sub = safeReadJson(filePath, null);
+    for (const row of result.rows) {
+      const sub = row.payload;
       if (!sub) continue;
 
-      const teamId = (sub.teamId || u.teamId || '') || 'unknown';
+      const teamId = (sub.teamId || user.teamId || '') || 'unknown';
       if (!index.teams[teamId]) index.teams[teamId] = {};
       const teamObj = index.teams[teamId];
 
-      const local = extractAnlagenFromSubmission(sub, u.username);
+      const local = extractAnlagenFromSubmission(sub, user.username);
       for (const [komNr, rec] of local.entries()) {
         const g = ensureAnlageRec(teamObj, komNr);
         g.totalHours = round1((Number(g.totalHours || 0)) + (Number(rec.totalHours || 0)));
-        for (const [k, v] of Object.entries(rec.byOperation || {})) addNum(g.byOperation, k, v);
-        for (const [name, v] of Object.entries(rec.byUser || {})) addNum(g.byUser, name, v);
-        if (rec.lastActivity && (!g.lastActivity || rec.lastActivity > g.lastActivity)) g.lastActivity = rec.lastActivity;
+
+        for (const [k, v] of Object.entries(rec.byOperation || {})) {
+          addNum(g.byOperation, k, v);
+        }
+
+        for (const [name, v] of Object.entries(rec.byUser || {})) {
+          addNum(g.byUser, name, v);
+        }
+
+        if (rec.lastActivity && (!g.lastActivity || rec.lastActivity > g.lastActivity)) {
+          g.lastActivity = rec.lastActivity;
+        }
 
         cleanupZeroish(g.byOperation);
         cleanupZeroish(g.byUser);
@@ -1907,7 +2108,6 @@ function rebuildAnlagenIndex() {
   writeAnlagenIndex(index);
   return index;
 }
-
 
 // POST /api/admin/anlagen-export-pdf
 // body: { teamId, komNr, donutPngDataUrl?, usersPngDataUrl? }
@@ -2260,9 +2460,9 @@ app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, (req, res) => 
 
 // ---- Admin: rebuild Anlagen index  ----
 // POST /api/admin/anlagen-rebuild
-app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const idx = rebuildAnlagenIndex();
+    const idx = await rebuildAnlagenIndex();
     return res.json({ ok: true, updatedAt: idx.updatedAt || null });
   } catch (e) {
     console.error('Anlagen rebuild failed:', e);
@@ -2278,13 +2478,12 @@ app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, (req, res) => 
 // ============================================================================
 // The transmission endpoint is the authoritative handoff from local draft data
 // to server-stored month snapshots that admin/payroll features can safely consume.
-app.post('/api/transmit-month', requireAuth, (req, res) => {
+app.post('/api/transmit-month', requireAuth, async (req, res) => {
   const payload = req.body;
 
   console.log('Received monthly transmission from', req.user.username);
   console.log(JSON.stringify(payload, null, 2));
 
-  // Basic validation
   if (
     typeof payload.year !== 'number' ||
     typeof payload.monthIndex !== 'number' ||
@@ -2293,67 +2492,70 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     return res.status(400).json({ ok: false, error: 'Invalid payload' });
   }
 
-  // Logged-in user → we store by username
   const userId = req.user.username;
-
-  // ---- Enforce week locks on server side (freeze locked weeks) ----
   let payloadToSave = payload;
 
-
-  // Load previous submission once (needed for lock enforcement AND Anlagen delta)
   let previousMonthSubmission = null;
   try {
-    previousMonthSubmission = loadLatestMonthSubmission(userId, payload.year, payload.monthIndex);
+    previousMonthSubmission = await loadLatestMonthSubmission(
+      userId,
+      payload.year,
+      payload.monthIndex
+    );
   } catch (e) {
-    console.error('Failed to load previous month submission (continuing as first transmission):', e);
+    console.error(
+      'Failed to load previous month submission (continuing as first transmission):',
+      e
+    );
     previousMonthSubmission = null;
   }
 
-  // 1) Read locks (hard fail if unreadable)
   let allLocks;
   try {
     allLocks = readWeekLocks();
   } catch (e) {
     console.error('Failed to read weekLocks.json:', e);
-    return res.status(500).json({ ok: false, error: 'Lock file unreadable. Please contact admin.' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Lock file unreadable. Please contact admin.' });
   }
 
-  // 2) Enforce locks (hard fail if enforcement breaks)
   try {
-    const userLocks = (allLocks[userId] && typeof allLocks[userId] === 'object')
-      ? allLocks[userId]
-      : {};
+    const userLocks =
+      allLocks[userId] && typeof allLocks[userId] === 'object'
+        ? allLocks[userId]
+        : {};
 
-    const { lockedDateKeys, lockedWeekKeys } =
-      collectLockedDatesForMonth(userLocks, payload.year, payload.monthIndex);
+    const { lockedDateKeys, lockedWeekKeys } = collectLockedDatesForMonth(
+      userLocks,
+      payload.year,
+      payload.monthIndex
+    );
 
-    if (lockedDateKeys.size > 0) {
-      const previous = previousMonthSubmission;
+    if (lockedDateKeys.size > 0 && previousMonthSubmission) {
+      payloadToSave = mergeLockedWeeksPayload(
+        payload,
+        previousMonthSubmission,
+        lockedDateKeys
+      );
 
-      if (previous) {
-        payloadToSave = mergeLockedWeeksPayload(payload, previous, lockedDateKeys);
-        payloadToSave._lockInfo = {
-          preservedWeekKeys: Array.from(lockedWeekKeys),
-          preservedDaysCount: lockedDateKeys.size,
-        };
-      }
+      payloadToSave._lockInfo = {
+        preservedWeekKeys: Array.from(lockedWeekKeys),
+        preservedDaysCount: lockedDateKeys.size,
+      };
     }
   } catch (e) {
     console.error('Lock enforcement failed:', e);
-    return res.status(500).json({ ok: false, error: 'Could not enforce locks. Submission rejected.' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not enforce locks. Submission rejected.' });
   }
-    
 
-  const monthNumber = payload.monthIndex + 1; // 0–11 -> 1–12
+  const monthNumber = payload.monthIndex + 1;
   const monthStr = String(monthNumber).padStart(2, '0');
-
   const now = new Date();
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
-
   const fileName = `${payload.year}-${monthStr}-${timestamp}.json`;
-
-  const userDir = getUserDir(userId);
-  const filePath = path.join(userDir, fileName);
 
   const totals = computeTransmissionTotals(payloadToSave);
 
@@ -2365,66 +2567,31 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     totals,
   };
 
+  const serializedSubmission = JSON.stringify(submission, null, 2);
+  const sizeBytes = Buffer.byteLength(serializedSubmission, 'utf8');
 
-  // 1) Save full submission
   try {
-    fs.writeFileSync(filePath, JSON.stringify(submission, null, 2), 'utf8');
+    await insertMonthSubmission({
+      id: fileName,
+      userId: req.user.id,
+      username: req.user.username,
+      teamId: req.user.teamId || null,
+      year: payload.year,
+      monthIndex: payload.monthIndex,
+      monthLabel: payload.monthLabel,
+      sentAt: now.toISOString(),
+      receivedAt: now.toISOString(),
+      sizeBytes,
+      totals,
+      payload: submission,
+    });
   } catch (err) {
-    console.error('Failed to save submission:', err);
+    console.error('Failed to save submission in Postgres:', err);
     return res
       .status(500)
       .json({ ok: false, error: 'Could not save data on server' });
   }
 
-
-  // 2) Update user's index.json (simple list of transmissions)
-  const indexPath = path.join(userDir, 'index.json');
-  let index = [];
-  try {
-    if (fs.existsSync(indexPath)) {
-      const raw = fs.readFileSync(indexPath, 'utf8');
-      index = JSON.parse(raw);
-      if (!Array.isArray(index)) index = [];
-    }
-  } catch (err) {
-    console.warn('Could not read existing index.json, starting fresh', err);
-    index = [];
-  }
-
-  const stats = fs.statSync(filePath);
-  const meta = {
-    id: fileName,
-    year: payload.year,
-    monthIndex: payload.monthIndex,
-    monthLabel: payload.monthLabel,
-    sentAt: now.toISOString(),
-    sizeBytes: stats.size,
-    totals,
-  };
-
-  index.push(meta);
-
-  try {
-    writeJsonAtomic(indexPath, index);
-  } catch (err) {
-  console.error('Failed to update index.json:', err);
-
-  // Remove the just-saved submission file 
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch (unlinkErr) {
-    console.error('Failed to delete submission file after index.json failure:', unlinkErr);
-  }
-
-  return res.status(500).json({
-    ok: false,
-    error: 'Could not persist submission index.json. Submission rejected.',
-  });
-}
-
-
- 
-      // ---- Strict persisted side effects: Anlagen + Konten ----
   const strictTeamId = String(req.user.teamId || '');
   const strictUsername = req.user.username;
   const strictYear = payload.year;
@@ -2444,6 +2611,7 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
         strictYear,
         strictMonthIndex
       );
+
       const newSnap = extractAnlagenSnapshotFromPayload(
         payloadToSave,
         strictUsername
@@ -2541,15 +2709,9 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
     }
 
     try {
-      rollbackTransmissionIndex(indexPath, fileName);
+      await deleteMonthSubmissionById(fileName);
     } catch (rollbackErr) {
-      console.error('Failed to roll back transmission index:', rollbackErr);
-    }
-
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (rollbackErr) {
-      console.error('Failed to delete rolled-back submission file:', rollbackErr);
+      console.error('Failed to roll back month submission row:', rollbackErr);
     }
 
     return res.status(500).json({
@@ -2574,32 +2736,23 @@ app.post('/api/transmit-month', requireAuth, (req, res) => {
       absences: payloadToSave.absences || [],
     },
   });
-
 });
 
 
+
 // List all transmissions for the logged-in user
-app.get('/api/transmissions', requireAuth, (req, res) => {
-  const userId = req.user.username; // consistent with above
-  const userDir = getUserDir(userId);
-  const indexPath = path.join(userDir, 'index.json');
-
-  let index = [];
+app.get('/api/transmissions', requireAuth, async (req, res) => {
   try {
-    if (fs.existsSync(indexPath)) {
-      const raw = fs.readFileSync(indexPath, 'utf8');
-      index = JSON.parse(raw);
-      if (!Array.isArray(index)) index = [];
-    }
-  } catch (err) {
-    console.error('Failed to read index.json:', err);
-    index = [];
-  }
+    const transmissions = await listUserTransmissions(req.user.username);
 
-  res.json({
-    ok: true,
-    transmissions: index,
-  });
+    return res.json({
+      ok: true,
+      transmissions,
+    });
+  } catch (err) {
+    console.error('Failed to load transmissions:', err);
+    return res.status(500).json({ ok: false, error: 'Could not load transmissions' });
+  }
 });
 
 
@@ -2888,165 +3041,124 @@ app.post('/api/admin/konten/set', requireAuth, requireAdmin, (req, res) => {
 // ============================================================================
 // Admin month overview and day detail routes
 // ============================================================================
-app.get(
-  '/api/admin/month-overview',
-  requireAuth,
-  requireAdmin,
-  (req, res) => {
-    const year = Number(req.query.year);
-    const monthIndex = Number(req.query.monthIndex);
-    let allLocks;
-    try { allLocks = readWeekLocks(); }
-    catch (e) { return res.status(500).json({ ok:false, error: e.message }); }
+app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res) => {
+  const year = Number(req.query.year);
+  const monthIndex = Number(req.query.monthIndex);
 
-        
+  let allLocks;
+  try {
+    allLocks = readWeekLocks();
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
+  }
 
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(monthIndex) ||
+    monthIndex < 0 ||
+    monthIndex > 11
+  ) {
+    return res.status(400).json({ ok: false, error: 'Invalid year or monthIndex' });
+  }
 
-    if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-      return res.status(400).json({ ok: false, error: 'Invalid year or monthIndex' });
-    }
-
+  try {
     const monthLabel = makeMonthLabel(year, monthIndex);
+    const users = await listUsersFromDb();
 
-    const users = USERS.map((user) => {
-      const team = TEAMS.find((t) => t.id === user.teamId) || null;
+    const rows = await Promise.all(
+      users.map(async (user) => {
+        const team = TEAMS.find((t) => t.id === user.teamId) || null;
+        const latestOverall = await getLatestTransmissionMeta(user.username);
+        const monthRecord = await getLatestMonthSubmissionRecord(
+          user.username,
+          year,
+          monthIndex
+        );
 
-      // Read index.json (all transmissions) for this user
-      const userDir = getUserDir(user.username); // stored by username in your current server
-      const indexPath = path.join(userDir, 'index.json');
-      const transmissions = safeReadJson(indexPath, []);
-
-      // overall latest for sync pill
-      let lastSentAt = null;
-      if (Array.isArray(transmissions) && transmissions.length > 0) {
-        const latestOverall = transmissions.reduce((best, tx) => {
-          if (!tx || !tx.sentAt) return best;
-          const d = new Date(tx.sentAt);
-          if (Number.isNaN(d.getTime())) return best;
-          if (!best) return { tx, date: d };
-          return d > best.date ? { tx, date: d } : best;
-        }, null);
-
-        if (latestOverall) {
-          lastSentAt = latestOverall.date.toISOString();
+        if (!monthRecord || !monthRecord.submission) {
+          return {
+            userId: user.id,
+            username: user.username,
+            role: user.role,
+            teamId: user.teamId || null,
+            teamName: team ? team.name : null,
+            lastSentAt: latestOverall ? latestOverall.sentAt : null,
+            month: {
+              year,
+              monthIndex,
+              monthLabel,
+              transmitted: false,
+              sentAt: null,
+              monthTotalHours: null,
+              weeks: [],
+            },
+          };
         }
-      }
 
-      // find latest transmission for the selected month
-      const monthTxList = Array.isArray(transmissions)
-        ? transmissions.filter((tx) => tx && tx.year === year && tx.monthIndex === monthIndex)
-        : [];
+        const submission = monthRecord.submission;
+        const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+        const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
 
-      let monthTx = null;
-      if (monthTxList.length > 0) {
-        monthTx = monthTxList.reduce((best, tx) => {
-          if (!tx || !tx.sentAt) return best;
-          const d = new Date(tx.sentAt);
-          if (Number.isNaN(d.getTime())) return best;
-          if (!best) return { tx, date: d };
-          return d > best.date ? { tx, date: d } : best;
-        }, null);
-      }
+        const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+          readUserAbsences(user.username),
+          monthStartKey,
+          monthEndKey
+        );
 
-      // default: not transmitted for that month
-      if (!monthTx) {
-        return {
-          userId: user.id,
-          username: user.username,
-          role: user.role,
-          teamId: user.teamId || null,
-          teamName: team ? team.name : null,
-          lastSentAt,                // for sync pill
-          month: {
-            year,
-            monthIndex,
-            monthLabel,
-            transmitted: false,
-            sentAt: null,
-            monthTotalHours: null,
-            weeks: [],
-          },
-        };
-      }
-
-      // read submission file
-      const fileName = monthTx.tx.id;
-      const filePath = path.join(userDir, fileName);
-      const submission = safeReadJson(filePath, null);
-
-      // If file missing/corrupt, treat as not transmitted (safe fallback)
-      if (!submission) {
-        return {
-          userId: user.id,
-          username: user.username,
-          role: user.role,
-          teamId: user.teamId || null,
-          teamName: team ? team.name : null,
-          lastSentAt,
-          month: {
-            year,
-            monthIndex,
-            monthLabel,
-            transmitted: false,
-            sentAt: null,
-            monthTotalHours: null,
-            weeks: [],
-          },
-        };
-      }
-
-      const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
-      const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
-      const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
-        readUserAbsences(user.username),
-        monthStartKey,
-        monthEndKey
-      );
-
-      const overview = buildMonthOverviewFromSubmission(submission, year, monthIndex, acceptedAbsenceDays);
-
-      const userLocks = (allLocks[user.username] && typeof allLocks[user.username] === 'object')
-        ? allLocks[user.username]
-        : {};
-
-      const weeksWithLocks = overview.weeks.map((w) => {
-        const wk = weekKey(w.weekYear, w.week);
-        const meta = getLockMeta(userLocks, wk);
-        return {
-          ...w,
-          locked: meta.locked,
-          lockedAt: meta.lockedAt,
-          lockedBy: meta.lockedBy,
-        };
-       });
-
-
-      return {
-        userId: user.id,
-        username: user.username,
-        role: user.role,
-        teamId: user.teamId || null,
-        teamName: team ? team.name : null,
-        lastSentAt,
-        month: {
+        const overview = buildMonthOverviewFromSubmission(
+          submission,
           year,
           monthIndex,
-          monthLabel,
-          transmitted: true,
-          sentAt: monthTx.date.toISOString(),
-          monthTotalHours: overview.monthTotalHours,
-          weeks: weeksWithLocks,
-        },
-      };
-    });
+          acceptedAbsenceDays
+        );
 
-    res.json({
+        const userLocks =
+          allLocks[user.username] && typeof allLocks[user.username] === 'object'
+            ? allLocks[user.username]
+            : {};
+
+        const weeksWithLocks = overview.weeks.map((w) => {
+          const wk = weekKey(w.weekYear, w.week);
+          const meta = getLockMeta(userLocks, wk);
+
+          return {
+            ...w,
+            locked: meta.locked,
+            lockedAt: meta.lockedAt,
+            lockedBy: meta.lockedBy,
+          };
+        });
+
+        return {
+          userId: user.id,
+          username: user.username,
+          role: user.role,
+          teamId: user.teamId || null,
+          teamName: team ? team.name : null,
+          lastSentAt: latestOverall ? latestOverall.sentAt : null,
+          month: {
+            year,
+            monthIndex,
+            monthLabel,
+            transmitted: true,
+            sentAt: monthRecord.meta.sentAt,
+            monthTotalHours: overview.monthTotalHours,
+            weeks: weeksWithLocks,
+          },
+        };
+      })
+    );
+
+    return res.json({
       ok: true,
       month: { year, monthIndex, monthLabel },
-      users,
+      users: rows,
     });
+  } catch (err) {
+    console.error('Failed to build admin month overview', err);
+    return res.status(500).json({ ok: false, error: 'Could not build month overview' });
   }
-);
+});
 
 
 // ---- Admin: lock/unlock a week ----
@@ -3122,155 +3234,167 @@ app.post('/api/admin/week-lock', requireAuth, requireAdmin, (req, res) => {
 // ---- Admin: day details (fetch on demand) ----
 // GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01
 // Detailed admin inspection for a single transmitted day.
-app.get('/api/admin/day-detail', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.query.username || '');
   const year = Number(req.query.year);
   const monthIndex = Number(req.query.monthIndex);
   const dateKey = String(req.query.date || '').slice(0, 10);
 
-  if (!username || !Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
-    return res.status(400).json({ ok: false, error: 'Invalid username/year/monthIndex' });
+  if (
+    !username ||
+    !Number.isInteger(year) ||
+    !Number.isInteger(monthIndex) ||
+    monthIndex < 0 ||
+    monthIndex > 11
+  ) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'Invalid username/year/monthIndex' });
   }
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
     return res.status(400).json({ ok: false, error: 'Invalid date (expected YYYY-MM-DD)' });
   }
 
-  const user = USERS.find((u) => u.username === username);
-  if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
+  try {
+    const user = await findUserByUsername(username);
+    if (!user) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
 
-  const userDir = getUserDir(user.username);
-  const indexPath = path.join(userDir, 'index.json');
-  const transmissions = safeReadJson(indexPath, []);
+    const monthRecord = await getLatestMonthSubmissionRecord(username, year, monthIndex);
 
-  // find latest transmission for that month
-  const monthTxList = Array.isArray(transmissions)
-    ? transmissions.filter((tx) => tx && tx.year === year && tx.monthIndex === monthIndex)
-    : [];
+    if (!monthRecord || !monthRecord.submission) {
+      return res.json({
+        ok: true,
+        username,
+        dateKey,
+        transmitted: false,
+        error: null,
+      });
+    }
 
-  if (monthTxList.length === 0) {
+    const submission = monthRecord.submission;
+    const dayData = submission.days && submission.days[dateKey] ? submission.days[dateKey] : null;
+
+    const storedAbsences = readUserAbsences(username);
+    const acceptedAbsence = findAcceptedAbsenceForDate(
+      storedAbsences.length ? storedAbsences : submission.absences,
+      dateKey
+    );
+
+    const pikettEntries = Array.isArray(submission.pikett)
+      ? submission.pikett.filter((p) => p && p.date === dateKey)
+      : [];
+
+    const pikettHours = pikettEntries.reduce((sum, p) => sum + toNumber(p.hours), 0);
+
+    const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
+    const specialEntries = Array.isArray(dayData?.specialEntries) ? dayData.specialEntries : [];
+    const flags =
+      dayData && dayData.flags && typeof dayData.flags === 'object'
+        ? dayData.flags
+        : {};
+
+    const mealAllowance =
+      dayData && dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
+        ? dayData.mealAllowance
+        : { '1': false, '2': false, '3': false };
+
+    let komHours = 0;
+    komEntries.forEach((e) => {
+      if (!e || !e.hours || typeof e.hours !== 'object') return;
+      Object.values(e.hours).forEach((v) => {
+        komHours += toNumber(v);
+      });
+    });
+
+    let specialHours = 0;
+    specialEntries.forEach((s) => {
+      specialHours += toNumber(s?.hours);
+    });
+
+    const dayHoursObj =
+      dayData && dayData.dayHours && typeof dayData.dayHours === 'object'
+        ? dayData.dayHours
+        : {};
+
+    const schulung = toNumber(dayHoursObj.schulung);
+    const sitzungKurs = toNumber(dayHoursObj.sitzungKurs);
+    const arztKrank = toNumber(dayHoursObj.arztKrank);
+
+    const dayHoursTotal = schulung + sitzungKurs + arztKrank;
+    const nonPikettTotal = komHours + specialHours + dayHoursTotal;
+    const totalHours = nonPikettTotal + pikettHours;
+
+    const ferien = !!flags.ferien;
+    let status = 'missing';
+    if (ferien) status = 'ferien';
+    else if (acceptedAbsence) status = 'absence';
+    else if (totalHours > 0) status = 'ok';
+
     return res.json({
       ok: true,
       username,
+      transmitted: true,
+      month: {
+        year,
+        monthIndex,
+        monthLabel: submission.monthLabel || makeMonthLabel(year, monthIndex),
+        sentAt: monthRecord.meta.sentAt,
+      },
       dateKey,
-      transmitted: false,
-      error: null,
+      status,
+      flags,
+      mealAllowance,
+      acceptedAbsence: acceptedAbsence
+        ? {
+            type: acceptedAbsence.type || '',
+            from: acceptedAbsence.from,
+            to: acceptedAbsence.to,
+            comment: acceptedAbsence.comment || '',
+          }
+        : null,
+      totals: {
+        komHours: Math.round(komHours * 10) / 10,
+        specialHours: Math.round(specialHours * 10) / 10,
+        dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
+        pikettHours: Math.round(pikettHours * 10) / 10,
+        totalHours: Math.round(totalHours * 10) / 10,
+      },
+      breakdown: {
+        dayHours: { schulung, sitzungKurs, arztKrank },
+      },
+      entries: komEntries,
+      specialEntries,
+      pikettEntries,
     });
+  } catch (err) {
+    console.error('Failed to build admin day detail', err);
+    return res.status(500).json({ ok: false, error: 'Could not load day detail' });
   }
-
-  const latestMonth = monthTxList.reduce((best, tx) => {
-    const d = tx && tx.sentAt ? new Date(tx.sentAt) : null;
-    if (!d || Number.isNaN(d.getTime())) return best;
-    if (!best) return { tx, date: d };
-    return d > best.date ? { tx, date: d } : best;
-  }, null);
-
-  if (!latestMonth || !latestMonth.tx || !latestMonth.tx.id) {
-    return res.json({ ok: true, username, dateKey, transmitted: false, error: null });
-  }
-
-  const filePath = path.join(userDir, latestMonth.tx.id);
-  const submission = safeReadJson(filePath, null);
-  if (!submission) {
-    return res.json({ ok: true, username, dateKey, transmitted: false, error: 'Submission file missing/corrupt' });
-  }
-
-  const dayData = (submission.days && submission.days[dateKey]) ? submission.days[dateKey] : null;
-
-  // accepted absence covering this day (authoritative store)
-  const storedAbsences = readUserAbsences(username);
-  const acceptedAbsence = findAcceptedAbsenceForDate(
-    storedAbsences.length ? storedAbsences : submission.absences,
-    dateKey
-  );
-
-  // pikett entries for that date
-  const pikettEntries = Array.isArray(submission.pikett)
-    ? submission.pikett.filter((p) => p && p.date === dateKey)
-    : [];
-
-  const pikettHours = pikettEntries.reduce((sum, p) => sum + toNumber(p.hours), 0);
-
-  // compute hour breakdown
-  const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
-  const specialEntries = Array.isArray(dayData?.specialEntries) ? dayData.specialEntries : [];
-  const flags = (dayData && dayData.flags && typeof dayData.flags === 'object') ? dayData.flags : {};
-  const mealAllowance = (dayData && dayData.mealAllowance && typeof dayData.mealAllowance === 'object')
-    ? dayData.mealAllowance
-    : { '1': false, '2': false, '3': false };
-
-  let komHours = 0;
-  komEntries.forEach((e) => {
-    if (!e || !e.hours || typeof e.hours !== 'object') return;
-    Object.values(e.hours).forEach((v) => (komHours += toNumber(v)));
-  });
-
-  let specialHours = 0;
-  specialEntries.forEach((s) => (specialHours += toNumber(s?.hours)));
-
-  const dayHoursObj = (dayData && dayData.dayHours && typeof dayData.dayHours === 'object') ? dayData.dayHours : {};
-  const schulung = toNumber(dayHoursObj.schulung);
-  const sitzungKurs = toNumber(dayHoursObj.sitzungKurs);
-  const arztKrank = toNumber(dayHoursObj.arztKrank);
-  const dayHoursTotal = schulung + sitzungKurs + arztKrank;
-
-  const nonPikettTotal = komHours + specialHours + dayHoursTotal;
-  const totalHours = nonPikettTotal + pikettHours;
-
-  // status (same rule family)
-  const ferien = !!flags.ferien;
-  let status = 'missing';
-  if (ferien) status = 'ferien';
-  else if (acceptedAbsence) status = 'absence';
-  else if (totalHours > 0) status = 'ok';
-
-  return res.json({
-    ok: true,
-    username,
-    transmitted: true,
-    month: { year, monthIndex, monthLabel: submission.monthLabel || makeMonthLabel(year, monthIndex), sentAt: latestMonth.date.toISOString() },
-    dateKey,
-    status,
-    flags,
-    mealAllowance,
-    acceptedAbsence: acceptedAbsence
-      ? { type: acceptedAbsence.type || '', from: acceptedAbsence.from, to: acceptedAbsence.to, comment: acceptedAbsence.comment || '' }
-      : null,
-    totals: {
-      komHours: Math.round(komHours * 10) / 10,
-      specialHours: Math.round(specialHours * 10) / 10,
-      dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
-      pikettHours: Math.round(pikettHours * 10) / 10,
-      totalHours: Math.round(totalHours * 10) / 10,
-    },
-    breakdown: {
-      dayHours: { schulung, sitzungKurs, arztKrank },
-    },
-    entries: komEntries,
-    specialEntries,
-    pikettEntries,
-  });
 });
 
 // ============================================================================
 // Payroll helpers and routes
 // ============================================================================
-app.get('/api/admin/payroll-users', requireAuth, requireAdmin, (req, res) => {
-  const teamId = String(req.user.teamId || '');
+app.get('/api/admin/payroll-users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const teamId = String(req.user.teamId || '');
+    const users = await listUsersFromDb({ role: 'user', teamId: teamId || null });
 
-  const users = USERS
-    .filter((u) => u.role === 'user')
-    .filter((u) => !teamId || u.teamId === teamId)
-    .map((u) => ({
-      id: u.id,
-      username: u.username,
-      displayName: u.username,
-    }))
-    .sort((a, b) => a.displayName.localeCompare(b.displayName, 'de'));
-
-  res.json({
-    ok: true,
-    users,
-  });
+    return res.json({
+      ok: true,
+      users: users.map((u) => ({
+        id: u.id,
+        username: u.username,
+        displayName: u.username,
+      })),
+    });
+  } catch (err) {
+    console.error('Failed to load payroll users', err);
+    return res.status(500).json({ ok: false, error: 'Could not load payroll users' });
+  }
 });
 
 
@@ -3317,7 +3441,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
 }
 
 // Build one payroll-period card for a single employee using transmitted months only.
-function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
+async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const num = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
@@ -3360,7 +3484,7 @@ function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const missingMonths = [];
 
   for (const month of monthRange) {
-    const submission = loadLatestMonthSubmission(
+    const submission = await loadLatestMonthSubmission(
       user.username,
       month.year,
       month.monthIndex
@@ -3529,7 +3653,7 @@ function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const ytdMonthRange = getMonthRangeBetween(selectedYearStart, periodEnd);
 
   for (const month of ytdMonthRange) {
-    const submission = loadLatestMonthSubmission(
+    const submission = await loadLatestMonthSubmission(
       user.username,
       month.year,
       month.monthIndex
@@ -3624,8 +3748,7 @@ function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   };
 }
 
-
-app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/payroll-period', requireAuth, requireAdmin, async (req, res) => {
   const fromRaw = String(req.query?.from || '').slice(0, 10);
   const toRaw = String(req.query?.to || '').slice(0, 10);
 
@@ -3641,41 +3764,39 @@ app.get('/api/admin/payroll-period', requireAuth, requireAdmin, (req, res) => {
 
   const periodStart = fromDate <= toDate ? fromDate : toDate;
   const periodEnd = fromDate <= toDate ? toDate : fromDate;
-
   const fromKey = formatDateKey(periodStart);
   const toKey = formatDateKey(periodEnd);
-
-  const monthRange = getMonthRangeBetween(periodStart, periodEnd);
   const teamId = String(req.user.teamId || '');
 
-  const users = USERS
-    .filter((u) => u.role === 'user')
-    .filter((u) => !teamId || u.teamId === teamId)
-    .sort((a, b) => String(a.username).localeCompare(String(b.username), 'de'));
+  try {
+    const users = await listUsersFromDb({ role: 'user', teamId: teamId || null });
+    const rows = await Promise.all(
+      users.map((user) => buildPayrollPeriodDataForUser(user, periodStart, periodEnd))
+    );
 
- const rows = users.map((user) =>
-  buildPayrollPeriodDataForUser(user, periodStart, periodEnd)
-);
+    const summary = {
+      usersCount: rows.length,
+      completeUsers: rows.filter((r) => r.coverage.missingMonths.length === 0).length,
+      incompleteUsers: rows.filter((r) => r.coverage.missingMonths.length > 0).length,
+    };
 
-  const summary = {
-    usersCount: rows.length,
-    completeUsers: rows.filter((r) => r.coverage.missingMonths.length === 0).length,
-    incompleteUsers: rows.filter((r) => r.coverage.missingMonths.length > 0).length,
-  };
-
-  return res.json({
-    ok: true,
-    period: {
-      from: fromKey,
-      to: toKey,
-    },
-    summary,
-    rows,
-  });
+    return res.json({
+      ok: true,
+      period: {
+        from: fromKey,
+        to: toKey,
+      },
+      summary,
+      rows,
+    });
+  } catch (err) {
+    console.error('Failed to build payroll period', err);
+    return res.status(500).json({ ok: false, error: 'Could not build payroll period' });
+  }
 });
 
 
-app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.query?.username || '').trim();
   const fromRaw = String(req.query?.from || '').slice(0, 10);
   const toRaw = String(req.query?.to || '').slice(0, 10);
@@ -3698,241 +3819,190 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, (req, res) =
   const periodEnd = fromDate <= toDate ? toDate : fromDate;
   const teamId = String(req.user.teamId || '');
 
-  const targetUser = USERS.find(
-    (u) =>
-      u.role === 'user' &&
-      u.username === username &&
-      (!teamId || u.teamId === teamId)
-  );
+  try {
+    const targetUser = await findUserByUsername(username);
 
-  if (!targetUser) {
-    return res.status(404).json({
-      ok: false,
-      error: 'Mitarbeiter wurde nicht gefunden.',
-    });
-  }
-
-  const row = buildPayrollPeriodDataForUser(targetUser, periodStart, periodEnd);
-
-  const fmtHours = (v) => `${(Number(v) || 0).toFixed(1).replace('.', ',')} h`;
-  const fmtSignedHours = (v) => {
-    const n = Number(v) || 0;
-    const abs = Math.abs(n).toFixed(1).replace('.', ',');
-    if (n > 0) return `+${abs} h`;
-    if (n < 0) return `-${abs} h`;
-    return '0,0 h';
-  };
-  const fmtDays = (v) => `${String(Number(v) || 0).replace('.', ',')} Tage`;
-  const fmtCount = (v) => String(Math.round(Number(v) || 0));
-
-  const safeUser = String(targetUser.username).replace(/[^a-zA-Z0-9_-]+/g, '_');
-  const filename = `Lohnabrechnung_${safeUser}_${formatDateKey(periodStart)}_${formatDateKey(periodEnd)}.pdf`;
-
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-  const doc = new PDFDocument({
-    margin: 42,
-    size: 'A4',
-    info: {
-      Title: `Lohnabrechnung ${targetUser.username} ${formatDateKey(periodStart)}-${formatDateKey(periodEnd)}`,
-      Author: 'Hours App',
-    },
-  });
-
-  doc.pipe(res);
-
-  function ensurePdfSpace(height = 24) {
-    if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
-      doc.addPage();
+    if (!targetUser || targetUser.role !== 'user' || (teamId && targetUser.teamId !== teamId)) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Mitarbeiter wurde nicht gefunden.',
+      });
     }
-  }
 
-  function sectionTitle(text) {
-    ensurePdfSpace(28);
-    doc.moveDown(0.5);
-    doc.font('Helvetica-Bold').fontSize(11).text(text);
-    doc.moveDown(0.25);
-  }
+    const row = await buildPayrollPeriodDataForUser(targetUser, periodStart, periodEnd);
 
-  function writeMetricLines(items) {
-    items.forEach(([label, value]) => {
-      ensurePdfSpace(16);
-      doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
-      doc.font('Helvetica').fontSize(9).text(value);
+    const fmtHours = (v) => `${(Number(v) || 0).toFixed(1).replace('.', ',')} h`;
+    const fmtSignedHours = (v) => {
+      const n = Number(v) || 0;
+      const abs = Math.abs(n).toFixed(1).replace('.', ',');
+      if (n > 0) return `+${abs} h`;
+      if (n < 0) return `-${abs} h`;
+      return '0,0 h';
+    };
+    const fmtDays = (v) => `${String(Number(v) || 0).replace('.', ',')} Tage`;
+    const fmtCount = (v) => String(Math.round(Number(v) || 0));
+
+    const safeUser = String(targetUser.username).replace(/[^a-zA-Z0-9_-]+/g, '_');
+    const filename = `Lohnabrechnung_${safeUser}_${formatDateKey(periodStart)}_${formatDateKey(periodEnd)}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const doc = new PDFDocument({
+      margin: 42,
+      size: 'A4',
+      info: {
+        Title: `Lohnabrechnung ${targetUser.username} ${formatDateKey(periodStart)}-${formatDateKey(periodEnd)}`,
+        Author: 'Hours App',
+      },
     });
-  }
 
-  doc.font('Helvetica-Bold').fontSize(16).text('Lohnabrechnung – Audit Export');
-  doc.moveDown(0.4);
+    doc.pipe(res);
 
-  doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
-  doc.text(`Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`);
-  doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
-  doc.text(`Exportiert von: ${req.user.username}`);
-  doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
-
-  sectionTitle('Lohndaten im Zeitraum');
-  writeMetricLines([
-    ['Arzt / Krank', fmtHours(row.totals.arztKrankHours)],
-    ['Ferien', fmtDays(row.totals.ferienDays)],
-    ['Stunden', fmtHours(row.totals.stunden)],
-    ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
-    ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
-    ['Abendessen', fmtCount(row.totals.abendessenCount)],
-    ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
-    ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
-    ['Pikett', fmtHours(row.totals.pikettHours)],
-  ]);
-
-  sectionTitle('Überzeit in dieser Lohnperiode');
-  writeMetricLines([
-    ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
-    ['Vorarbeit angerechnet', fmtSignedHours(row.overtime.vorarbeitApplied)],
-    ['ÜZ1 nach Vorarbeit', fmtSignedHours(row.overtime.ueZ1AfterVorarbeit)],
-    ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
-    ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
-  ]);
-
-  sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
-  writeMetricLines([
-    ['Stand per Periodenende', `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`],
-    ['Änderung im Zeitraum', fmtSignedHours(row.vorarbeit.changeInPeriod)],
-  ]);
-
-  sectionTitle('Berücksichtigte Übertragungen');
-  writeMetricLines([
-    ['Monate berücksichtigt', (row.coverage.transmittedMonths || []).join(', ') || '–'],
-    ['Monate fehlend', (row.coverage.missingMonths || []).join(', ') || '–'],
-  ]);
-
-  sectionTitle('Tagesdetails');
-  if (!row.auditRows.length) {
-    doc.font('Helvetica').fontSize(9).text('Keine relevanten Einträge im ausgewählten Zeitraum.');
-  } else {
-    row.auditRows.forEach((entry) => {
-      ensurePdfSpace(42);
-
-      doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
-
-      doc.font('Helvetica').fontSize(8.5).text(
-        `Stunden: ${fmtHours(entry.stunden)}   |   Arzt/Krank: ${fmtHours(entry.arztKrankHours)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
-      );
-
-      doc.text(
-        `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
-      );
-
-      doc.text(
-        `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
-      );
-
-      doc.text(
-        `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
-      );
-
-      if (entry.absencesText) {
-        doc.text(`Abwesenheiten / Bemerkungen: ${entry.absencesText}`);
+    function ensurePdfSpace(height = 24) {
+      if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
       }
+    }
 
-      doc.moveDown(0.35);
-    });
+    function sectionTitle(text) {
+      ensurePdfSpace(28);
+      doc.moveDown(0.5);
+      doc.font('Helvetica-Bold').fontSize(11).text(text);
+      doc.moveDown(0.25);
+    }
+
+    function writeMetricLines(items) {
+      items.forEach(([label, value]) => {
+        ensurePdfSpace(16);
+        doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
+        doc.font('Helvetica').fontSize(9).text(value);
+      });
+    }
+
+    doc.font('Helvetica-Bold').fontSize(16).text('Lohnabrechnung – Audit Export');
+    doc.moveDown(0.4);
+
+    doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
+    doc.text(`Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`);
+    doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
+    doc.text(`Exportiert von: ${req.user.username}`);
+    doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
+
+    sectionTitle('Lohndaten im Zeitraum');
+    writeMetricLines([
+      ['Arzt / Krank', fmtHours(row.totals.arztKrankHours)],
+      ['Ferien', fmtDays(row.totals.ferienDays)],
+      ['Stunden', fmtHours(row.totals.stunden)],
+      ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
+      ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
+      ['Abendessen', fmtCount(row.totals.abendessenCount)],
+      ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
+      ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
+      ['Pikett', fmtHours(row.totals.pikettHours)],
+    ]);
+
+    sectionTitle('Überzeit in dieser Lohnperiode');
+    writeMetricLines([
+      ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
+      ['Vorarbeit angerechnet', fmtSignedHours(row.overtime.vorarbeitApplied)],
+      ['ÜZ1 nach Vorarbeit', fmtSignedHours(row.overtime.ueZ1AfterVorarbeit)],
+      ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
+      ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
+    ]);
+
+    sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
+    writeMetricLines([
+      [
+        'Stand per Periodenende',
+        `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`,
+      ],
+      ['Änderung im Zeitraum', fmtSignedHours(row.vorarbeit.changeInPeriod)],
+    ]);
+
+    sectionTitle('Berücksichtigte Übertragungen');
+    writeMetricLines([
+      ['Monate berücksichtigt', (row.coverage.transmittedMonths || []).join(', ') || '–'],
+      ['Monate fehlend', (row.coverage.missingMonths || []).join(', ') || '–'],
+    ]);
+
+    sectionTitle('Tagesdetails');
+    if (!row.auditRows.length) {
+      doc.font('Helvetica').fontSize(9).text('Keine relevanten Einträge im ausgewählten Zeitraum.');
+    } else {
+      row.auditRows.forEach((entry) => {
+        ensurePdfSpace(42);
+
+        doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+
+        doc.font('Helvetica').fontSize(8.5).text(
+          `Stunden: ${fmtHours(entry.stunden)}   |   Arzt/Krank: ${fmtHours(entry.arztKrankHours)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
+        );
+
+        doc.text(
+          `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
+        );
+
+        doc.text(
+          `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
+        );
+
+        doc.text(
+          `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
+        );
+
+        if (entry.absencesText) {
+          doc.text(`Abwesenheiten / Bemerkungen: ${entry.absencesText}`);
+        }
+
+        doc.moveDown(0.35);
+      });
+    }
+
+    doc.end();
+  } catch (err) {
+    console.error('Failed to export payroll PDF', err);
+    return res.status(500).json({ ok: false, error: 'PDF export failed' });
   }
-
-  doc.end();
 });
-
 
 // ============================================================================
 // Admin transmission summary route
 // ============================================================================
 // Only accessible for admins
-app.get(
-  '/api/admin/transmissions-summary',
-  requireAuth,
-  requireAdmin,
-  (req, res) => {
-    const summaries = USERS.map((user) => {
-      const userDir = getUserDir(user.username); // stored by username
-      const indexPath = path.join(userDir, 'index.json');
+app.get('/api/admin/transmissions-summary', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await listUsersFromDb();
 
-      let transmissions = [];
-      if (fs.existsSync(indexPath)) {
-        try {
-          const raw = fs.readFileSync(indexPath, 'utf8');
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            transmissions = parsed;
-          }
-        } catch (err) {
-          console.warn(
-            `Could not read index.json for user ${user.username}`,
-            err
-          );
-        }
-      }
+    const summaries = await Promise.all(
+      users.map(async (user) => {
+        const transmissions = await listUserTransmissions(user.username);
+        const latest = transmissions[0] || null;
+        const team = TEAMS.find((t) => t.id === user.teamId) || null;
 
+        return {
+          userId: user.id,
+          username: user.username,
+          role: user.role,
+          teamId: user.teamId || null,
+          teamName: team ? team.name : null,
+          transmissionsCount: transmissions.length,
+          lastSentAt: latest ? latest.sentAt : null,
+          lastMonthLabel: latest ? latest.monthLabel || null : null,
+          lastTotals: latest ? latest.totals || null : null,
+        };
+      })
+    );
 
-      const transmissionsCount = transmissions.length;
-      let lastSentAt = null;
-      let lastMonthLabel = null;
-
-      let lastTotals = null;
-
-      if (transmissionsCount > 0) {
-        const latest = transmissions.reduce((best, tx) => {
-          if (!tx.sentAt) return best;
-          const d = new Date(tx.sentAt);
-          if (Number.isNaN(d.getTime())) return best;
-
-          if (!best) return { tx, date: d };
-          return d > best.date ? { tx, date: d } : best;
-        }, null);
-
-        if (latest) {
-          lastSentAt = latest.date.toISOString();
-          lastMonthLabel = latest.tx.monthLabel || null;
-
-          // NEW: totals (prefer meta.totals, fallback read full file for older data)
-          if (latest.tx.totals) {
-            lastTotals = latest.tx.totals;
-          } else {
-            const fullPath = path.join(userDir, latest.tx.id);
-            if (fs.existsSync(fullPath)) {
-              try {
-                const raw = fs.readFileSync(fullPath, 'utf8');
-                const parsed = JSON.parse(raw);
-                lastTotals = parsed.totals || computeTransmissionTotals(parsed);
-              } catch (e) {
-                // ignore
-              }
-            }
-          }
-        }
-      }
-
-
-      const team = TEAMS.find((t) => t.id === user.teamId) || null;
-
-      return {
-        userId: user.id,
-        username: user.username,
-        role: user.role,
-        teamId: user.teamId || null,
-        teamName: team ? team.name : null,
-        transmissionsCount,
-        lastSentAt,
-        lastMonthLabel,
-        lastTotals,
-      };
-    });
-
-    res.json({
+    return res.json({
       ok: true,
       users: summaries,
     });
+  } catch (err) {
+    console.error('Failed to build transmissions summary', err);
+    return res.status(500).json({ ok: false, error: 'Could not load summary' });
   }
-);
+});
 
 
 
@@ -3942,6 +4012,7 @@ app.get(
 // ============================================================================
 async function startServer() {
   await ensureUsersTable();
+  await ensureMonthSubmissionsTable();
   await seedInitialUsers();
 
   app.listen(PORT, () => {
