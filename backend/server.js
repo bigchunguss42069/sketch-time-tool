@@ -40,8 +40,8 @@ app.use(express.json({ limit: '25mb' }));
 // ============================================================================
 // In-memory identity data and option labels
 // ============================================================================
-// Note: users and sessions still behave exactly like before.
-// This section remains intentionally simple until a later persistence/auth upgrade.
+// Note: Now users are in postgres with argon2 hashes
+// 
 
 // Teams
 const TEAMS = [
