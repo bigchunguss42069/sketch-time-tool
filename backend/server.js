@@ -1018,51 +1018,319 @@ function findAcceptedAbsenceForDate(absences, dateKey) {
   );
 }
 
-// ---- Konten (persistent, idempotent by user-month snapshot) ----
+// ---- Konten (Postgres-backed, idempotent by user-month snapshot) ----
 // ----------------------------------------------------------------------------
 // Konten helpers
 // ----------------------------------------------------------------------------
-const KONTEN_PATH = path.join(BASE_DATA_DIR, 'konten.json');
-
-function readKonten() {
-  const fallback = { version: 1, updatedAt: null, users: {}, snapshots: {} };
-  const data = safeReadJson(KONTEN_PATH, fallback);
-  if (!data || typeof data !== 'object') return fallback;
-  if (!data.users || typeof data.users !== 'object') data.users = {};
-  if (!data.snapshots || typeof data.snapshots !== 'object') data.snapshots = {};
-  if (!data.version) data.version = 1;
-  if (!('updatedAt' in data)) data.updatedAt = null;
-  return data;
-}
-
-function writeKonten(data) {
-  data.updatedAt = new Date().toISOString();
-  writeJsonAtomic(KONTEN_PATH, data);
-}
-
-function ensureKontenUser(data, username, teamId) {
-  if (!data.users[username]) {
-    data.users[username] = {
-      teamId: teamId || null,
-      ueZ1: 0,
-      ueZ2: 0,
-      ueZ3: 0,
-      ueZ1PositiveByYear: {},      // { "2025": 50, "2026": 20 } - positive hours per year for Vorarbeit
-      vacationDays: 0,
-      vacationDaysPerYear: 21,
-      creditedYears: {},
-      updatedAt: null,
-      updatedBy: null,
-    };
-  }
-  if (!data.snapshots[username]) data.snapshots[username] = {};
-  if (!data.users[username].creditedYears) data.users[username].creditedYears = {};
-  if (!data.users[username].ueZ1PositiveByYear) data.users[username].ueZ1PositiveByYear = {};
-  return data.users[username];
-}
-
 function kontenMonthKey(year, monthIndex) {
-  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`; // e.g. 2026-01
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+}
+
+async function ensureKontenTables() {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS konten (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL UNIQUE,
+      team_id TEXT,
+      ue_z1 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z2 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z3 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z1_positive_by_year JSONB NOT NULL DEFAULT '{}'::jsonb,
+      vacation_days DOUBLE PRECISION NOT NULL DEFAULT 0,
+      vacation_days_per_year DOUBLE PRECISION NOT NULL DEFAULT 21,
+      credited_years JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ,
+      updated_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS konten_snapshots (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      month_index INTEGER NOT NULL CHECK (month_index BETWEEN 0 AND 11),
+      month_key TEXT NOT NULL,
+      ue_z1 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z1_positive DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z2 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      ue_z3 DOUBLE PRECISION NOT NULL DEFAULT 0,
+      vac_used DOUBLE PRECISION NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, year, month_index)
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_konten_snapshots_username_month
+    ON konten_snapshots (username, year, month_index)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_konten_snapshots_username_month_key
+    ON konten_snapshots (username, month_key)
+  `);
+}
+
+function normalizeKontenObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value
+    : {};
+}
+
+function mapKontenRow(row, fallback = {}) {
+  const updatedAtRaw = row?.updated_at;
+
+  return {
+    teamId: row?.team_id ?? fallback.teamId ?? null,
+    ueZ1: Number(row?.ue_z1) || 0,
+    ueZ2: Number(row?.ue_z2) || 0,
+    ueZ3: Number(row?.ue_z3) || 0,
+    ueZ1PositiveByYear: normalizeKontenObject(row?.ue_z1_positive_by_year),
+    vacationDays: Number(row?.vacation_days) || 0,
+    vacationDaysPerYear: Number(row?.vacation_days_per_year) || 21,
+    creditedYears: normalizeKontenObject(row?.credited_years),
+    updatedAt:
+      updatedAtRaw instanceof Date
+        ? updatedAtRaw.toISOString()
+        : updatedAtRaw || null,
+    updatedBy: row?.updated_by || null,
+  };
+}
+
+function mapKontenSnapshotRow(row) {
+  return {
+    ueZ1: Number(row?.ue_z1) || 0,
+    ueZ1Positive: Number(row?.ue_z1_positive) || 0,
+    ueZ2: Number(row?.ue_z2) || 0,
+    ueZ3: Number(row?.ue_z3) || 0,
+    vacUsed: Number(row?.vac_used) || 0,
+  };
+}
+
+async function ensureKontenUserRecord({ username, teamId = null, client = db }) {
+  if (!client) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const userResult = await client.query(
+    `
+      SELECT id, username, team_id, active
+      FROM users
+      WHERE username = $1
+      LIMIT 1
+    `,
+    [username]
+  );
+
+  const userRow = userResult.rows[0];
+  if (!userRow || !userRow.active) {
+    throw new Error(`User not found for konten: ${username}`);
+  }
+
+  const effectiveTeamId = teamId || userRow.team_id || null;
+
+  let kontenResult = await client.query(
+    `
+      SELECT *
+      FROM konten
+      WHERE user_id = $1
+      LIMIT 1
+    `,
+    [userRow.id]
+  );
+
+  let kontenRow = kontenResult.rows[0];
+
+  if (!kontenRow) {
+    kontenResult = await client.query(
+      `
+        INSERT INTO konten (
+          user_id,
+          username,
+          team_id,
+          ue_z1,
+          ue_z2,
+          ue_z3,
+          ue_z1_positive_by_year,
+          vacation_days,
+          vacation_days_per_year,
+          credited_years,
+          updated_at,
+          updated_by
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          0,
+          0,
+          0,
+          '{}'::jsonb,
+          0,
+          21,
+          '{}'::jsonb,
+          NULL,
+          NULL
+        )
+        RETURNING *
+      `,
+      [userRow.id, userRow.username, effectiveTeamId]
+    );
+
+    kontenRow = kontenResult.rows[0];
+  } else if (effectiveTeamId && kontenRow.team_id !== effectiveTeamId) {
+    kontenResult = await client.query(
+      `
+        UPDATE konten
+        SET team_id = $2
+        WHERE user_id = $1
+        RETURNING *
+      `,
+      [userRow.id, effectiveTeamId]
+    );
+
+    kontenRow = kontenResult.rows[0];
+  }
+
+  return {
+    userId: userRow.id,
+    username: userRow.username,
+    teamId: effectiveTeamId,
+    konto: mapKontenRow(kontenRow, { teamId: effectiveTeamId }),
+  };
+}
+
+async function persistKontenUserRecord({
+  client,
+  userId,
+  username,
+  teamId,
+  konto,
+}) {
+  if (!client) {
+    throw new Error('Missing DB client');
+  }
+
+  await client.query(
+    `
+      UPDATE konten
+      SET
+        username = $2,
+        team_id = $3,
+        ue_z1 = $4,
+        ue_z2 = $5,
+        ue_z3 = $6,
+        ue_z1_positive_by_year = $7::jsonb,
+        vacation_days = $8,
+        vacation_days_per_year = $9,
+        credited_years = $10::jsonb,
+        updated_at = $11,
+        updated_by = $12
+      WHERE user_id = $1
+    `,
+    [
+      userId,
+      username,
+      teamId,
+      Number(konto.ueZ1) || 0,
+      Number(konto.ueZ2) || 0,
+      Number(konto.ueZ3) || 0,
+      JSON.stringify(konto.ueZ1PositiveByYear || {}),
+      Number(konto.vacationDays) || 0,
+      Number(konto.vacationDaysPerYear) || 21,
+      JSON.stringify(konto.creditedYears || {}),
+      konto.updatedAt || null,
+      konto.updatedBy || null,
+    ]
+  );
+}
+
+async function listKontenMonthKeys(username, client = db) {
+  if (!client) return [];
+
+  const result = await client.query(
+    `
+      SELECT month_key
+      FROM konten_snapshots
+      WHERE username = $1
+      ORDER BY year ASC, month_index ASC
+    `,
+    [username]
+  );
+
+  return result.rows.map((row) => row.month_key);
+}
+
+async function listKontenRowsForUsers(users) {
+  return Promise.all(
+    users.map(async (user) => {
+      const ensured = await ensureKontenUserRecord({
+        username: user.username,
+        teamId: user.teamId || null,
+      });
+
+      return {
+        username: user.username,
+        teamId: user.teamId || null,
+        konto: ensured.konto,
+      };
+    })
+  );
+}
+
+async function updateKontenManualValues({ username, values, updatedBy }) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const ensured = await ensureKontenUserRecord({ username, client });
+    const next = {
+      ...ensured.konto,
+      updatedAt: new Date().toISOString(),
+      updatedBy: updatedBy || username,
+    };
+
+    const fields = [
+      ['ueZ1', 'ueZ1'],
+      ['ueZ2', 'ueZ2'],
+      ['ueZ3', 'ueZ3'],
+      ['vacationDays', 'vacationDays'],
+      ['vacationDaysPerYear', 'vacationDaysPerYear'],
+    ];
+
+    for (const [incomingKey, stateKey] of fields) {
+      if (values[incomingKey] == null) continue;
+      const n = Number(values[incomingKey]);
+      if (Number.isFinite(n)) {
+        next[stateKey] = n;
+      }
+    }
+
+    await persistKontenUserRecord({
+      client,
+      userId: ensured.userId,
+      username: ensured.username,
+      teamId: ensured.teamId,
+      konto: next,
+    });
+
+    await client.query('COMMIT');
+    return next;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Same holiday list as frontend (extend yearly as needed)
@@ -1078,44 +1346,40 @@ function isBernHolidayKey(dateKey) {
   return !!(set && set.has(dateKey));
 }
 
-
 // Calculate vacation days for an absence (weekdays minus holidays)
 function calculateAbsenceVacationDays(absence) {
   if (!absence || !absence.from || !absence.to) return 0;
-  
+
   const type = String(absence.type || '').toLowerCase();
-  if (type !== 'ferien') return 0; // Only count Ferien type
-  
+  if (type !== 'ferien') return 0;
+
   let fromDate = new Date(absence.from + 'T00:00:00');
   let toDate = new Date(absence.to + 'T00:00:00');
-  
+
   if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return 0;
-  
-  // Swap if dates are reversed
+
   if (toDate < fromDate) {
     const tmp = fromDate;
     fromDate = toDate;
     toDate = tmp;
   }
-  
+
   let days = 0;
   const cursor = new Date(fromDate);
-  
+
   while (cursor <= toDate) {
-    const weekday = cursor.getDay(); // 0=Sun, 6=Sat
+    const weekday = cursor.getDay();
     const dateKey = formatDateKey(cursor);
-    
-    // Only count weekdays (Mon-Fri) that aren't holidays
+
     if (weekday >= 1 && weekday <= 5 && !isBernHolidayKey(dateKey)) {
       days += 1;
     }
-    
+
     cursor.setDate(cursor.getDate() + 1);
   }
-  
+
   return days;
 }
-
 
 // vacation day fraction = max(0, 1 - (hoursWorked/8))
 function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
@@ -1131,7 +1395,7 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
 
     if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
 
-    const weekday = d.getDay(); // 0..6
+    const weekday = d.getDay();
     if (weekday < 1 || weekday > 5) continue;
 
     const ferien = !!(dayData && dayData.flags && dayData.flags.ferien);
@@ -1142,7 +1406,6 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
     const worked = computeNonPikettHours(dayData);
     const fraction = Math.max(0, 1 - (worked / DAILY_SOLL));
 
-    
     const rounded = Math.round(fraction * 4) / 4;
     used += rounded;
   }
@@ -1150,46 +1413,247 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
   return Math.round(used * 100) / 100;
 }
 
-// Apply a month's transmitted totals to the running Konten state.
-function updateKontenFromSubmission({ username, teamId, year, monthIndex, totals, payload, updatedBy }) {
-  const data = readKonten();
-  const user = ensureKontenUser(data, username, teamId);
-
-  // Auto-credit yearly vacation entitlement once per year (supports carry-over policy)
-  if (!user.creditedYears[String(year)]) {
-    user.vacationDays += Number(user.vacationDaysPerYear) || 0;
-    user.creditedYears[String(year)] = true;
+async function updateKontenFromSubmission({
+  username,
+  teamId,
+  year,
+  monthIndex,
+  totals,
+  payload,
+  updatedBy,
+}) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
   }
 
-  const monthKey = kontenMonthKey(year, monthIndex);
-  const prevSnap = data.snapshots[username][monthKey] || { ueZ1: 0, ueZ2: 0, ueZ3: 0, ueZ1Positive: 0, vacUsed: 0 };
+  const client = await db.connect();
 
-  const nextSnap = {
-    ueZ1: computeUeZ1NetForMonth(payload, year, monthIndex),
-    ueZ1Positive: computeUeZ1PositiveForMonth(payload, year, monthIndex),
-    ueZ2: Number(totals?.pikett) || 0,
-    ueZ3: Number(totals?.overtime3) || 0,
-    vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
-  };
+  try {
+    await client.query('BEGIN');
 
-  // delta apply (idempotent even if same month is re-submitted daily)
-  user.ueZ1 += (nextSnap.ueZ1 - prevSnap.ueZ1);
-  user.ueZ2 += (nextSnap.ueZ2 - prevSnap.ueZ2);
-  user.ueZ3 += (nextSnap.ueZ3 - prevSnap.ueZ3);
+    const ensured = await ensureKontenUserRecord({
+      username,
+      teamId,
+      client,
+    });
 
-  user.vacationDays -= (nextSnap.vacUsed - prevSnap.vacUsed);
+    const monthKey = kontenMonthKey(year, monthIndex);
+    const yearStr = String(year);
 
-  // Track positive ÜZ1 per year (for Vorarbeit calculation)
-  const yearStr = String(year);
-  if (!user.ueZ1PositiveByYear[yearStr]) user.ueZ1PositiveByYear[yearStr] = 0;
-  user.ueZ1PositiveByYear[yearStr] += (nextSnap.ueZ1Positive - (prevSnap.ueZ1Positive || 0));
+    const snapResult = await client.query(
+      `
+        SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vac_used
+        FROM konten_snapshots
+        WHERE user_id = $1
+          AND year = $2
+          AND month_index = $3
+        LIMIT 1
+      `,
+      [ensured.userId, year, monthIndex]
+    );
 
-  user.updatedAt = new Date().toISOString();
-  user.updatedBy = updatedBy || username;
+    const prevSnap = snapResult.rows[0]
+      ? mapKontenSnapshotRow(snapResult.rows[0])
+      : {
+          ueZ1: 0,
+          ueZ1Positive: 0,
+          ueZ2: 0,
+          ueZ3: 0,
+          vacUsed: 0,
+        };
 
-  data.snapshots[username][monthKey] = nextSnap;
+    const nextSnap = {
+      ueZ1: computeUeZ1NetForMonth(payload, year, monthIndex),
+      ueZ1Positive: computeUeZ1PositiveForMonth(payload, year, monthIndex),
+      ueZ2: Number(totals?.pikett) || 0,
+      ueZ3: Number(totals?.overtime3) || 0,
+      vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
+    };
 
-  writeKonten(data);
+    const nextKonto = {
+      ...ensured.konto,
+      updatedAt: new Date().toISOString(),
+      updatedBy: updatedBy || username,
+    };
+
+    if (!nextKonto.creditedYears[yearStr]) {
+      nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
+      nextKonto.creditedYears[yearStr] = true;
+    }
+
+    nextKonto.ueZ1 += nextSnap.ueZ1 - prevSnap.ueZ1;
+    nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
+    nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
+    nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
+
+    if (!nextKonto.ueZ1PositiveByYear[yearStr]) {
+      nextKonto.ueZ1PositiveByYear[yearStr] = 0;
+    }
+
+    nextKonto.ueZ1PositiveByYear[yearStr] +=
+      nextSnap.ueZ1Positive - prevSnap.ueZ1Positive;
+
+    await persistKontenUserRecord({
+      client,
+      userId: ensured.userId,
+      username: ensured.username,
+      teamId: ensured.teamId,
+      konto: nextKonto,
+    });
+
+    await client.query(
+      `
+        INSERT INTO konten_snapshots (
+          user_id,
+          username,
+          year,
+          month_index,
+          month_key,
+          ue_z1,
+          ue_z1_positive,
+          ue_z2,
+          ue_z3,
+          vac_used,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        ON CONFLICT (user_id, year, month_index)
+        DO UPDATE SET
+          username = EXCLUDED.username,
+          month_key = EXCLUDED.month_key,
+          ue_z1 = EXCLUDED.ue_z1,
+          ue_z1_positive = EXCLUDED.ue_z1_positive,
+          ue_z2 = EXCLUDED.ue_z2,
+          ue_z3 = EXCLUDED.ue_z3,
+          vac_used = EXCLUDED.vac_used,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        ensured.userId,
+        ensured.username,
+        year,
+        monthIndex,
+        monthKey,
+        nextSnap.ueZ1,
+        nextSnap.ueZ1Positive,
+        nextSnap.ueZ2,
+        nextSnap.ueZ3,
+        nextSnap.vacUsed,
+        nextKonto.updatedAt,
+      ]
+    );
+
+    await client.query('COMMIT');
+    return nextKonto;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function restoreVacationDaysForCancelledAbsence({
+  username,
+  absence,
+  updatedBy,
+}) {
+  if (!db) return 0;
+
+  const vacDays = calculateAbsenceVacationDays(absence);
+  if (!(vacDays > 0)) return 0;
+
+  let fromDate = new Date(absence.from + 'T00:00:00');
+  let toDate = new Date(absence.to + 'T00:00:00');
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return 0;
+  }
+
+  if (toDate < fromDate) {
+    const tmp = fromDate;
+    fromDate = toDate;
+    toDate = tmp;
+  }
+
+  const affectedMonths = new Set();
+  const cursor = new Date(fromDate);
+
+  while (cursor <= toDate) {
+    affectedMonths.add(kontenMonthKey(cursor.getFullYear(), cursor.getMonth()));
+    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setDate(1);
+  }
+
+  const monthKeys = Array.from(affectedMonths);
+  if (!monthKeys.length) return 0;
+
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const ensured = await ensureKontenUserRecord({ username, client });
+
+    const snapResult = await client.query(
+      `
+        SELECT year, month_index, month_key, vac_used
+        FROM konten_snapshots
+        WHERE user_id = $1
+          AND month_key = ANY($2::text[])
+      `,
+      [ensured.userId, monthKeys]
+    );
+
+    if (!snapResult.rows.length) {
+      await client.query('ROLLBACK');
+      return 0;
+    }
+
+    const nextKonto = {
+      ...ensured.konto,
+      vacationDays: (Number(ensured.konto.vacationDays) || 0) + vacDays,
+      updatedAt: new Date().toISOString(),
+      updatedBy: updatedBy || username,
+    };
+
+    await persistKontenUserRecord({
+      client,
+      userId: ensured.userId,
+      username: ensured.username,
+      teamId: ensured.teamId,
+      konto: nextKonto,
+    });
+
+    for (const row of snapResult.rows) {
+      const nextVacUsed = Math.max(0, (Number(row.vac_used) || 0) - vacDays);
+
+      await client.query(
+        `
+          UPDATE konten_snapshots
+          SET vac_used = $4, updated_at = $5
+          WHERE user_id = $1
+            AND year = $2
+            AND month_index = $3
+        `,
+        [
+          ensured.userId,
+          row.year,
+          row.month_index,
+          nextVacUsed,
+          nextKonto.updatedAt,
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+    return vacDays;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- Week locks (persistent) ----
@@ -2597,7 +3061,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
   const strictYear = payload.year;
   const strictMonthIndex = payload.monthIndex;
 
-  const kontenBackup = deepCloneJson(readKonten());
+
   const anlagenIndexBackup = deepCloneJson(readAnlagenIndex());
   const anlagenLedgerBackup = deepCloneJson(readAnlagenLedger());
   const anlagenMonthSnapshotBackup = deepCloneJson(
@@ -2662,7 +3126,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       );
     }
 
-    updateKontenFromSubmission({
+    await updateKontenFromSubmission({
       username: strictUsername,
       teamId: req.user.teamId || null,
       year: strictYear,
@@ -2674,11 +3138,6 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('Strict transmission side-effect failed:', e);
 
-    try {
-      writeJsonAtomic(KONTEN_PATH, kontenBackup);
-    } catch (rollbackErr) {
-      console.error('Failed to restore konten backup:', rollbackErr);
-    }
 
     try {
       writeJsonAtomic(ANLAGEN_INDEX_PATH, anlagenIndexBackup);
@@ -2873,107 +3332,95 @@ app.post('/api/absences/:id/cancel', requireAuth, (req, res) => {
 // ---- Absenzen: admin APIs ----
 
 // GET /api/admin/absences?status=pending|accepted|rejected|all
-app.get('/api/admin/absences', requireAuth, requireAdmin, (req, res) => {
-  const status = String(req.query.status || 'pending');
+app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const status = String(req.query.status || 'pending');
+    const users = await listUsersFromDb();
 
-  const all = [];
-  USERS.forEach((u) => {
-    const list = readUserAbsences(u.username);
-    list.forEach((a) => all.push(a));
-  });
+    const all = [];
+    users.forEach((u) => {
+      const list = readUserAbsences(u.username);
+      list.forEach((a) => all.push(a));
+    });
 
-  const filtered =
-    (status === 'all')
-      ? all
-      : all.filter((a) => a && a.status === status);
+    const filtered =
+      status === 'all'
+        ? all
+        : all.filter((a) => a && a.status === status);
 
-  // sort newest first
-  filtered.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    filtered.sort((a, b) =>
+      String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+    );
 
-  res.json({ ok: true, absences: filtered });
+    return res.json({ ok: true, absences: filtered });
+  } catch (err) {
+    console.error('Failed to load admin absences', err);
+    return res.status(500).json({ ok: false, error: 'Could not load absences' });
+  }
 });
 
 // POST /api/admin/absences/decision
 // body: { username, id, status: 'accepted'|'rejected' }
-app.post('/api/admin/absences/decision', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.body?.username || '');
   const id = String(req.body?.id || '');
   const status = String(req.body?.status || '');
 
-  if (!username || !USERS.find((u) => u.username === username)) {
-    return res.status(400).json({ ok: false, error: 'Invalid username' });
-  }
-  if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
-  const allowed = new Set(['accepted', 'rejected', 'cancelled']);
-  if (!allowed.has(status)) {
-  return res.status(400).json({ ok: false, error: 'Invalid status' });
-}
+  try {
+    const targetUser = await findUserByUsername(username);
 
- 
-const list = readUserAbsences(username);
-  const item = list.find((a) => a && a.id === id);
-  if (!item) return res.status(404).json({ ok: false, error: 'Not found' });
-
-  const previousStatus = item.status;
-  
-  item.status = status;
-  item.decidedAt = new Date().toISOString();
-  item.decidedBy = req.user.username;
-
-  writeUserAbsences(username, list);
-
-  // Restore vacation days when cancelling an accepted/cancel_requested Ferien absence
-  let vacationRestored = 0;
-  if (status === 'cancelled' && (previousStatus === 'accepted' || previousStatus === 'cancel_requested')) {
-    const vacDays = calculateAbsenceVacationDays(item);
-    
-    if (vacDays > 0) {
-      // Check if any month in the absence range was transmitted (has a snapshot)
-      const kontenData = readKonten();
-      const userSnapshots = kontenData.snapshots[username] || {};
-      
-      // Get months covered by this absence
-      let fromDate = new Date(item.from + 'T00:00:00');
-      let toDate = new Date(item.to + 'T00:00:00');
-      if (toDate < fromDate) { const tmp = fromDate; fromDate = toDate; toDate = tmp; }
-      
-      const affectedMonths = new Set();
-      const cursor = new Date(fromDate);
-      while (cursor <= toDate) {
-        const mk = kontenMonthKey(cursor.getFullYear(), cursor.getMonth());
-        affectedMonths.add(mk);
-        cursor.setMonth(cursor.getMonth() + 1);
-        cursor.setDate(1);
-      }
-      
-      // Check if any affected month was transmitted
-      const hasTransmittedMonth = Array.from(affectedMonths).some(mk => userSnapshots[mk]);
-      
-      if (hasTransmittedMonth) {
-        const userKonto = ensureKontenUser(kontenData, username, null);
-        userKonto.vacationDays += vacDays;
-        userKonto.updatedAt = new Date().toISOString();
-        userKonto.updatedBy = req.user.username;
-        
-        // Update snapshots to prevent double-restoration on re-transmission
-        Array.from(affectedMonths).forEach(mk => {
-          if (userSnapshots[mk] && userSnapshots[mk].vacUsed > 0) {
-            // Reduce the recorded vacUsed (but not below 0)
-            userSnapshots[mk].vacUsed = Math.max(0, userSnapshots[mk].vacUsed - vacDays);
-          }
-        });
-        
-        writeKonten(kontenData);
-        vacationRestored = vacDays;
-        
-        console.log(`Restored ${vacDays} vacation days for ${username} (absence ${id} cancelled)`);
-      }  
+    if (!username || !targetUser) {
+      return res.status(400).json({ ok: false, error: 'Invalid username' });
     }
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Missing id' });
+    }
+
+    const allowed = new Set(['accepted', 'rejected', 'cancelled']);
+    if (!allowed.has(status)) {
+      return res.status(400).json({ ok: false, error: 'Invalid status' });
+    }
+
+    const list = readUserAbsences(username);
+    const item = list.find((a) => a && a.id === id);
+    if (!item) {
+      return res.status(404).json({ ok: false, error: 'Not found' });
+    }
+
+    const previousStatus = item.status;
+
+    item.status = status;
+    item.decidedAt = new Date().toISOString();
+    item.decidedBy = req.user.username;
+
+    writeUserAbsences(username, list);
+
+    let vacationRestored = 0;
+
+    if (
+      status === 'cancelled' &&
+      (previousStatus === 'accepted' || previousStatus === 'cancel_requested')
+    ) {
+      vacationRestored = await restoreVacationDaysForCancelledAbsence({
+        username,
+        absence: item,
+        updatedBy: req.user.username,
+      });
+
+      if (vacationRestored > 0) {
+        console.log(
+          `Restored ${vacationRestored} vacation days for ${username} (absence ${id} cancelled)`
+        );
+      }
+    }
+
+    return res.json({ ok: true, absence: item, vacationRestored });
+  } catch (err) {
+    console.error('Failed to decide absence', err);
+    return res.status(500).json({ ok: false, error: 'Decision failed' });
   }
-
-  return res.json({ ok: true, absence: item, vacationRestored });
 });
-
 
 // ---- Konten APIs ----
 
@@ -2981,61 +3428,63 @@ const list = readUserAbsences(username);
 // ============================================================================
 // Konten routes
 // ============================================================================
-app.get('/api/konten/me', requireAuth, (req, res) => {
-  const data = readKonten();
-  const username = req.user.username;
-  const u = ensureKontenUser(data, username, req.user.teamId || null);
-  // ensure persisted structure if it was missing
-  writeKonten(data);
+app.get('/api/konten/me', requireAuth, async (req, res) => {
+  try {
+    const ensured = await ensureKontenUserRecord({
+      username: req.user.username,
+      teamId: req.user.teamId || null,
+    });
 
-  // Get list of transmitted months (from snapshots)
-  const userSnapshots = data.snapshots[username] || {};
-  const transmittedMonths = Object.keys(userSnapshots); // e.g. ["2025-01", "2025-02"]
+    const transmittedMonths = await listKontenMonthKeys(req.user.username);
 
-  res.json({ 
-    ok: true, 
-    konto: u,
-    transmittedMonths 
-  });
+    return res.json({
+      ok: true,
+      konto: ensured.konto,
+      transmittedMonths,
+    });
+  } catch (err) {
+    console.error('Failed to load my konto', err);
+    return res.status(500).json({ ok: false, error: 'Could not load konto' });
+  }
 });
 
 // GET /api/admin/konten
-app.get('/api/admin/konten', requireAuth, requireAdmin, (req, res) => {
-  const data = readKonten();
+app.get('/api/admin/konten', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const users = await listUsersFromDb();
+    const rows = await listKontenRowsForUsers(users);
 
-  USERS.forEach((u) => ensureKontenUser(data, u.username, u.teamId || null));
-  writeKonten(data);
-
-  const rows = USERS.map((u) => ({ username: u.username, teamId: u.teamId || null, konto: data.users[u.username] }));
-  res.json({ ok: true, users: rows });
+    return res.json({ ok: true, users: rows });
+  } catch (err) {
+    console.error('Failed to load admin konten', err);
+    return res.status(500).json({ ok: false, error: 'Could not load konten' });
+  }
 });
 
 // POST /api/admin/konten/set
 // body: { username, ueZ1, ueZ2, ueZ3, vacationDays, vacationDaysPerYear }
-app.post('/api/admin/konten/set', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/konten/set', requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.body?.username || '');
-  if (!username || !USERS.find((u) => u.username === username)) {
-    return res.status(400).json({ ok: false, error: 'Invalid username' });
+
+  try {
+    const targetUser = await findUserByUsername(username);
+
+    if (!username || !targetUser) {
+      return res.status(400).json({ ok: false, error: 'Invalid username' });
+    }
+
+    const konto = await updateKontenManualValues({
+      username,
+      values: req.body || {},
+      updatedBy: req.user.username,
+    });
+
+    return res.json({ ok: true, konto });
+  } catch (err) {
+    console.error('Failed to save admin konto', err);
+    return res.status(500).json({ ok: false, error: 'Could not save konto' });
   }
-
-  const data = readKonten();
-  const user = ensureKontenUser(data, username, USERS.find((u) => u.username === username)?.teamId || null);
-
-  const fields = ['ueZ1','ueZ2','ueZ3','vacationDays','vacationDaysPerYear'];
-  fields.forEach((k) => {
-    if (req.body[k] == null) return;
-    const n = Number(req.body[k]);
-    if (Number.isFinite(n)) user[k] = n;
-  });
-
-  user.updatedAt = new Date().toISOString();
-  user.updatedBy = req.user.username;
-
-  writeKonten(data);
-
-  res.json({ ok: true, konto: user });
 });
-
 
       // ---- Admin: month overview (per user, month-specific) ----
 // ============================================================================
@@ -3164,70 +3613,83 @@ app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res)
 // ---- Admin: lock/unlock a week ----
 // POST /api/admin/week-lock
 // body: { username, weekYear, week, locked?: boolean }
-app.post('/api/admin/week-lock', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/week-lock', requireAuth, requireAdmin, async (req, res) => {
   const username = String(req.body?.username || '');
   const weekYear = Number(req.body?.weekYear);
   const week = Number(req.body?.week);
   const lockedParam = req.body?.locked;
 
-  if (!username || !USERS.find((u) => u.username === username)) {
-    return res.status(400).json({ ok: false, error: 'Invalid username' });
-  }
-  if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
-    return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
-  }
-  if (!Number.isInteger(week) || week < 1 || week > 53) {
-    return res.status(400).json({ ok: false, error: 'Invalid week' });
-  }
-
-  let allLocks;
-  try { allLocks = readWeekLocks(); }
-  catch (e) { return res.status(500).json({ ok:false, error: e.message }); }
-
-  const userLocks = (allLocks[username] && typeof allLocks[username] === 'object')
-    ? allLocks[username]
-    : {};
-
-  const wk = weekKey(weekYear, week);
-  const currentMeta = getLockMeta(userLocks, wk);
-  const nextLocked = (typeof lockedParam === 'boolean') ? lockedParam : !currentMeta.locked;
-
-  if (nextLocked) {
-    userLocks[wk] = {
-      locked: true,
-      lockedAt: new Date().toISOString(),
-      lockedBy: req.user.username,
-    };
-  } else {
-    delete userLocks[wk];
-  }
-
-  // clean-up empty user object
-  if (Object.keys(userLocks).length === 0) {
-    delete allLocks[username];
-  } else {
-    allLocks[username] = userLocks;
-  }
-
   try {
-    writeWeekLocks(allLocks);
-  } catch (e) {
-    console.error('Failed to write weekLocks.json', e);
-    return res.status(500).json({ ok: false, error: 'Could not persist lock state' });
+    const targetUser = await findUserByUsername(username);
+
+    if (!username || !targetUser) {
+      return res.status(400).json({ ok: false, error: 'Invalid username' });
+    }
+
+    if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
+      return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
+    }
+
+    if (!Number.isInteger(week) || week < 1 || week > 53) {
+      return res.status(400).json({ ok: false, error: 'Invalid week' });
+    }
+
+    let allLocks;
+    try {
+      allLocks = readWeekLocks();
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+
+    const userLocks =
+      allLocks[username] && typeof allLocks[username] === 'object'
+        ? allLocks[username]
+        : {};
+
+    const wk = weekKey(weekYear, week);
+    const currentMeta = getLockMeta(userLocks, wk);
+    const nextLocked =
+      typeof lockedParam === 'boolean' ? lockedParam : !currentMeta.locked;
+
+    if (nextLocked) {
+      userLocks[wk] = {
+        locked: true,
+        lockedAt: new Date().toISOString(),
+        lockedBy: req.user.username,
+      };
+    } else {
+      delete userLocks[wk];
+    }
+
+    if (Object.keys(userLocks).length === 0) {
+      delete allLocks[username];
+    } else {
+      allLocks[username] = userLocks;
+    }
+
+    try {
+      writeWeekLocks(allLocks);
+    } catch (e) {
+      console.error('Failed to write weekLocks.json', e);
+      return res.status(500).json({ ok: false, error: 'Could not persist lock state' });
+    }
+
+    const finalMeta = nextLocked ? userLocks[wk] : null;
+
+    return res.json({
+      ok: true,
+      username,
+      weekYear,
+      week,
+      weekKey: wk,
+      locked: nextLocked,
+      lockedAt: finalMeta?.lockedAt || null,
+      lockedBy: finalMeta?.lockedBy || null,
+    });
+  } catch (err) {
+    console.error('Failed to update week lock', err);
+    return res.status(500).json({ ok: false, error: 'Could not update lock state' });
   }
-
-  const finalMeta = nextLocked ? userLocks[wk] : null;
-
-  return res.json({
-    ok: true,
-    username,
-    weekYear,
-    week,
-    weekKey: wk,
-    locked: nextLocked,
-    lockedAt: finalMeta?.lockedAt || null,
-    lockedBy: finalMeta?.lockedBy || null,
-  });
 });
 
 
@@ -4013,6 +4475,7 @@ app.get('/api/admin/transmissions-summary', requireAuth, requireAdmin, async (re
 async function startServer() {
   await ensureUsersTable();
   await ensureMonthSubmissionsTable();
+  await ensureKontenTables();
   await seedInitialUsers();
 
   app.listen(PORT, () => {
