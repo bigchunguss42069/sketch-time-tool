@@ -2484,6 +2484,17 @@ async function ensureAnlagenTables() {
   `);
 
   await db.query(`
+    CREATE TABLE IF NOT EXISTS anlagen_ledger_entries (
+      team_id TEXT NOT NULL,
+      kom_nr TEXT NOT NULL,
+      username TEXT NOT NULL,
+      date_key DATE NOT NULL,
+      hours DOUBLE PRECISION NOT NULL,
+      PRIMARY KEY (team_id, kom_nr, username, date_key)
+    )
+  `);
+
+  await db.query(`
     CREATE INDEX IF NOT EXISTS idx_anlagen_archive_team
     ON anlagen_archive (team_id, kom_nr)
   `);
@@ -2492,14 +2503,140 @@ async function ensureAnlagenTables() {
     CREATE INDEX IF NOT EXISTS idx_anlagen_snapshots_username_month
     ON anlagen_month_snapshots (username, year, month_index)
   `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_anlagen_ledger_team_kom
+    ON anlagen_ledger_entries (team_id, kom_nr, username, date_key)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_anlagen_ledger_username_date
+    ON anlagen_ledger_entries (username, date_key)
+  `);
 }
 
-function readAnlagenLedger() {
-  return safeReadJson(ANLAGEN_LEDGER_PATH, {});
+async function readAnlagenLedger() {
+  if (!db) return {};
+
+  const result = await db.query(`
+    SELECT team_id, kom_nr, username, date_key, hours
+    FROM anlagen_ledger_entries
+    ORDER BY team_id ASC, kom_nr ASC, username ASC, date_key ASC
+  `);
+
+  const out = {};
+
+  for (const row of result.rows) {
+    const teamId = row.team_id;
+    const komNr = row.kom_nr;
+    const username = row.username;
+    const dateKey =
+      row.date_key instanceof Date
+        ? formatDateKey(row.date_key)
+        : String(row.date_key || '').slice(0, 10);
+
+    if (!teamId || !komNr || !username || !dateKey) continue;
+
+    if (!out[teamId]) out[teamId] = {};
+    if (!out[teamId][komNr]) out[teamId][komNr] = { byUser: {} };
+    if (!out[teamId][komNr].byUser[username]) {
+      out[teamId][komNr].byUser[username] = { byDate: {} };
+    }
+
+    out[teamId][komNr].byUser[username].byDate[dateKey] =
+      Number(row.hours) || 0;
+  }
+
+  return out;
 }
 
-function writeAnlagenLedger(data) {
-  writeJsonAtomic(ANLAGEN_LEDGER_PATH, data);
+function flattenAnlagenLedger(data) {
+  const rows = [];
+
+  if (!data || typeof data !== 'object') return rows;
+
+  for (const [teamId, teamObj] of Object.entries(data)) {
+    if (!teamObj || typeof teamObj !== 'object') continue;
+
+    for (const [komNr, komObj] of Object.entries(teamObj)) {
+      const byUser =
+        komObj && komObj.byUser && typeof komObj.byUser === 'object'
+          ? komObj.byUser
+          : {};
+
+      for (const [username, userObj] of Object.entries(byUser)) {
+        const byDate =
+          userObj && userObj.byDate && typeof userObj.byDate === 'object'
+            ? userObj.byDate
+            : {};
+
+        for (const [dateKey, rawHours] of Object.entries(byDate)) {
+          const hours = Number(rawHours) || 0;
+          if (!(hours > 0)) continue;
+
+          rows.push({
+            teamId,
+            komNr,
+            username,
+            dateKey: String(dateKey).slice(0, 10),
+            hours,
+          });
+        }
+      }
+    }
+  }
+
+  return rows;
+}
+
+async function writeAnlagenLedger(data) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const rows = flattenAnlagenLedger(data);
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM anlagen_ledger_entries');
+
+    if (rows.length > 0) {
+      const values = [];
+      const placeholders = rows.map((row, index) => {
+        const base = index * 5;
+        values.push(
+          row.teamId,
+          row.komNr,
+          row.username,
+          row.dateKey,
+          row.hours
+        );
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+      });
+
+      await client.query(
+        `
+          INSERT INTO anlagen_ledger_entries (
+            team_id,
+            kom_nr,
+            username,
+            date_key,
+            hours
+          )
+          VALUES ${placeholders.join(', ')}
+        `,
+        values
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 function monthKey(year, monthIndex) {
@@ -3126,7 +3263,7 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
  
 
   const index = readAnlagenIndex();
-  const ledger = readAnlagenLedger();
+  const ledger = await readAnlagenLedger();
   const meta = await readAnlagenArchive(); 
 
   const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
@@ -3595,7 +3732,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
 
 
   const anlagenIndexBackup = deepCloneJson(readAnlagenIndex());
-  const anlagenLedgerBackup = deepCloneJson(readAnlagenLedger());
+  const anlagenLedgerBackup = deepCloneJson(await readAnlagenLedger());
   const anlagenMonthSnapshotBackup = deepCloneJson(
     await readAnlagenSnapshot(strictUsername, strictYear, strictMonthIndex)
   );
@@ -3614,7 +3751,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       );
 
       const index = readAnlagenIndex();
-      const ledger = readAnlagenLedger();
+      const ledger = await readAnlagenLedger();
 
       const touched = new Set([
         ...Object.keys(oldSnap || {}),
@@ -3649,7 +3786,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       );
 
       writeAnlagenIndex(index);
-      writeAnlagenLedger(ledger);
+      await writeAnlagenLedger(ledger);
       await writeAnlagenSnapshot(
         strictUsername,
         strictYear,
@@ -3679,7 +3816,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
     }
 
     try {
-      writeJsonAtomic(ANLAGEN_LEDGER_PATH, anlagenLedgerBackup);
+      await writeAnlagenLedger(anlagenLedgerBackup);
     } catch (rollbackErr) {
       console.error('Failed to restore anlagenLedger backup:', rollbackErr);
     }
