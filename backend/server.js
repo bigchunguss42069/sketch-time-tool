@@ -2455,10 +2455,43 @@ app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, a
 // Anlagen domain helpers and persistence
 // ============================================================================
 const ANLAGEN_LEDGER_PATH = path.join(BASE_DATA_DIR, 'anlagenLedger.json');
-const ANLAGEN_SNAP_DIR    = path.join(BASE_DATA_DIR, 'anlagenSnapshots');
 
-function ensureDir(dirPath) {
-  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+async function ensureAnlagenTables() {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS anlagen_archive (
+      team_id TEXT NOT NULL,
+      kom_nr TEXT NOT NULL,
+      archived_at TIMESTAMPTZ NOT NULL,
+      archived_by TEXT,
+      PRIMARY KEY (team_id, kom_nr)
+    )
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS anlagen_month_snapshots (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      team_id TEXT,
+      year INTEGER NOT NULL,
+      month_index INTEGER NOT NULL CHECK (month_index BETWEEN 0 AND 11),
+      month_key TEXT NOT NULL,
+      snapshot JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, year, month_index)
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_anlagen_archive_team
+    ON anlagen_archive (team_id, kom_nr)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_anlagen_snapshots_username_month
+    ON anlagen_month_snapshots (username, year, month_index)
+  `);
 }
 
 function readAnlagenLedger() {
@@ -2474,19 +2507,188 @@ function monthKey(year, monthIndex) {
   return `${year}-${mm}`;
 }
 
-function getSnapshotPath(username, year, monthIndex) {
-  ensureDir(ANLAGEN_SNAP_DIR);
-  const userDir = path.join(ANLAGEN_SNAP_DIR, String(username).replace(/[^a-zA-Z0-9_-]/g, '_'));
-  ensureDir(userDir);
-  return path.join(userDir, `${monthKey(year, monthIndex)}.json`);
+function mapAnlagenArchiveRow(row) {
+  return {
+    archived: true,
+    archivedAt:
+      row?.archived_at instanceof Date
+        ? row.archived_at.toISOString()
+        : row?.archived_at || null,
+    archivedBy: row?.archived_by || null,
+  };
 }
 
-function readAnlagenSnapshot(username, year, monthIndex) {
-  return safeReadJson(getSnapshotPath(username, year, monthIndex), null); // null if none
+function buildAnlagenArchiveObject(rows) {
+  const out = {};
+
+  for (const row of rows || []) {
+    const teamId = row.team_id;
+    const komNr = row.kom_nr;
+
+    if (!out[teamId]) out[teamId] = {};
+    out[teamId][komNr] = mapAnlagenArchiveRow(row);
+  }
+
+  return out;
 }
 
-function writeAnlagenSnapshot(username, year, monthIndex, snap) {
-  writeJsonAtomic(getSnapshotPath(username, year, monthIndex), snap);
+async function readAnlagenArchive() {
+  if (!db) return {};
+
+  const result = await db.query(`
+    SELECT team_id, kom_nr, archived_at, archived_by
+    FROM anlagen_archive
+    ORDER BY team_id ASC, kom_nr ASC
+  `);
+
+  return buildAnlagenArchiveObject(result.rows);
+}
+
+async function setAnlagenArchiveState({ teamId, komNr, archived, archivedBy }) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  if (archived) {
+    const result = await db.query(
+      `
+        INSERT INTO anlagen_archive (
+          team_id,
+          kom_nr,
+          archived_at,
+          archived_by
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (team_id, kom_nr)
+        DO UPDATE SET
+          archived_at = EXCLUDED.archived_at,
+          archived_by = EXCLUDED.archived_by
+        RETURNING team_id, kom_nr, archived_at, archived_by
+      `,
+      [teamId, komNr, new Date().toISOString(), archivedBy || null]
+    );
+
+    return mapAnlagenArchiveRow(result.rows[0] || null);
+  }
+
+  await db.query(
+    `
+      DELETE FROM anlagen_archive
+      WHERE team_id = $1
+        AND kom_nr = $2
+    `,
+    [teamId, komNr]
+  );
+
+  return null;
+}
+
+async function findAnlagenSnapshotUser(username, client = db) {
+  if (!client) return null;
+
+  const result = await client.query(
+    `
+      SELECT id, username, team_id, active
+      FROM users
+      WHERE username = $1
+      LIMIT 1
+    `,
+    [username]
+  );
+
+  const row = result.rows[0];
+  if (!row || !row.active) return null;
+
+  return {
+    id: row.id,
+    username: row.username,
+    teamId: row.team_id || null,
+  };
+}
+
+async function readAnlagenSnapshot(username, year, monthIndex, client = db) {
+  if (!client) return null;
+
+  const user = await findAnlagenSnapshotUser(username, client);
+  if (!user) return null;
+
+  const result = await client.query(
+    `
+      SELECT snapshot
+      FROM anlagen_month_snapshots
+      WHERE user_id = $1
+        AND year = $2
+        AND month_index = $3
+      LIMIT 1
+    `,
+    [user.id, year, monthIndex]
+  );
+
+  return result.rows[0]?.snapshot || null;
+}
+
+async function writeAnlagenSnapshot(
+  username,
+  year,
+  monthIndex,
+  snap,
+  teamId = null,
+  client = db
+) {
+  if (!client) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const user = await findAnlagenSnapshotUser(username, client);
+  if (!user) {
+    throw new Error(`User not found for anlagen snapshot: ${username}`);
+  }
+
+  if (snap == null) {
+    await client.query(
+      `
+        DELETE FROM anlagen_month_snapshots
+        WHERE user_id = $1
+          AND year = $2
+          AND month_index = $3
+      `,
+      [user.id, year, monthIndex]
+    );
+    return;
+  }
+
+  await client.query(
+    `
+      INSERT INTO anlagen_month_snapshots (
+        user_id,
+        username,
+        team_id,
+        year,
+        month_index,
+        month_key,
+        snapshot,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+      ON CONFLICT (user_id, year, month_index)
+      DO UPDATE SET
+        username = EXCLUDED.username,
+        team_id = EXCLUDED.team_id,
+        month_key = EXCLUDED.month_key,
+        snapshot = EXCLUDED.snapshot,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      user.id,
+      user.username,
+      teamId || user.teamId || null,
+      year,
+      monthIndex,
+      monthKey(year, monthIndex),
+      JSON.stringify(snap),
+      new Date().toISOString(),
+    ]
+  );
 }
 
 function addNum(obj, key, val) {
@@ -2670,7 +2872,6 @@ function recomputeLastActivitiesForTeam(index, ledger, teamId, komNrs) {
 
 
 const ANLAGEN_INDEX_PATH = path.join(BASE_DATA_DIR, 'anlagenIndex.json');
-const ANLAGEN_ARCHIVE_PATH = path.join(BASE_DATA_DIR, 'anlagenArchive.json');
 
 // atomic write to avoid partially-written JSON on crash
 function writeJsonAtomic(filePath, data) {
@@ -2723,13 +2924,6 @@ function writeAnlagenIndex(data) {
   writeJsonAtomic(ANLAGEN_INDEX_PATH, data);
 }
 
-function readAnlagenArchive() {
-  return safeReadJson(ANLAGEN_ARCHIVE_PATH, {}); // { [teamId]: { [komNr]: { archived, archivedAt, archivedBy } } }
-}
-
-function writeAnlagenArchive(data) {
-  writeJsonAtomic(ANLAGEN_ARCHIVE_PATH, data);
-}
 
 function ensureAnlageRec(teamObj, komNr) {
   if (!teamObj[komNr] || typeof teamObj[komNr] !== 'object') {
@@ -2922,7 +3116,7 @@ async function rebuildAnlagenIndex() {
 // ============================================================================
 // Anlagen routes
 // ============================================================================
-app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, (req, res) => {
+app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, async (req, res) => {
   const teamId = String(req.body?.teamId || req.user.teamId || '');
   const komNr = normalizeKomNr(req.body?.komNr);
 
@@ -2933,7 +3127,7 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
 
   const index = readAnlagenIndex();
   const ledger = readAnlagenLedger();
-  const meta = readAnlagenArchive(); 
+  const meta = await readAnlagenArchive(); 
 
   const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
     ? index.teams[teamId]
@@ -3117,7 +3311,7 @@ doc.y = chartsTopY + donutBoxH + 18;
 
 // ---- Admin: Anlagen summary (global) ----
 // GET /api/admin/anlagen-summary?teamId=montage&status=active|archived|all&search=123
-app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, async (req, res) => {
   const status = String(req.query.status || 'active'); // default hide archived
   const teamId = String(req.query.teamId || req.user.teamId || '');
 
@@ -3129,7 +3323,7 @@ app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, (req, res) => {
     ? index.teams[teamId]
     : {};
 
-  const archive = readAnlagenArchive();
+  const archive = await readAnlagenArchive();
   const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
 
   const list = Object.entries(teamObj).map(([komNr, rec]) => {
@@ -3178,7 +3372,7 @@ app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, (req, res) => {
 
 // ---- Admin: Anlage detail (global) ----
 // GET /api/admin/anlagen-detail?komNr=12345&teamId=montage
-app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, async (req, res) => {
   const teamId = String(req.query.teamId || req.user.teamId || '');
   const komNr = normalizeKomNr(req.query.komNr);
 
@@ -3195,7 +3389,7 @@ app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, (req, res) => {
     return res.status(404).json({ ok: false, error: 'Anlage not found' });
   }
 
-  const archive = readAnlagenArchive();
+  const archive = await readAnlagenArchive();
   const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
   const m = teamArchive[komNr] || null;
 
@@ -3225,45 +3419,39 @@ app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, (req, res) => {
 // ---- Admin: archive/unarchive Anlage ----
 // POST /api/admin/anlagen-archive
 // body: { teamId, komNr, archived: true|false }
-app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, async (req, res) => {
   const teamId = String(req.body?.teamId || req.user.teamId || '');
   const komNr = normalizeKomNr(req.body?.komNr);
   const archived = !!req.body?.archived;
 
-  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
-  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
-
-  const meta = readAnlagenArchive();
-  const teamMeta = (meta[teamId] && typeof meta[teamId] === 'object') ? meta[teamId] : {};
-
-  if (archived) {
-    teamMeta[komNr] = {
-      archived: true,
-      archivedAt: new Date().toISOString(),
-      archivedBy: req.user.username,
-    };
-  } else {
-    delete teamMeta[komNr];
+  if (!teamId) {
+    return res.status(400).json({ ok: false, error: 'Missing teamId' });
   }
 
-  if (Object.keys(teamMeta).length === 0) delete meta[teamId];
-  else meta[teamId] = teamMeta;
+  if (!komNr) {
+    return res.status(400).json({ ok: false, error: 'Missing komNr' });
+  }
 
   try {
-    writeAnlagenArchive(meta);
-  } catch (e) {
-    console.error('Failed to write anlagenArchive.json:', e);
+    const meta = await setAnlagenArchiveState({
+      teamId,
+      komNr,
+      archived,
+      archivedBy: req.user.username,
+    });
+
+    return res.json({
+      ok: true,
+      teamId,
+      komNr,
+      archived,
+      archivedAt: meta?.archivedAt || null,
+      archivedBy: meta?.archivedBy || null,
+    });
+  } catch (err) {
+    console.error('Failed to persist anlagen archive state:', err);
     return res.status(500).json({ ok: false, error: 'Could not persist archive state' });
   }
-
-  return res.json({
-    ok: true,
-    teamId,
-    komNr,
-    archived,
-    archivedAt: archived ? teamMeta[komNr]?.archivedAt : null,
-    archivedBy: archived ? teamMeta[komNr]?.archivedBy : null,
-  });
 });
 
 // ---- Admin: rebuild Anlagen index  ----
@@ -3409,12 +3597,12 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
   const anlagenIndexBackup = deepCloneJson(readAnlagenIndex());
   const anlagenLedgerBackup = deepCloneJson(readAnlagenLedger());
   const anlagenMonthSnapshotBackup = deepCloneJson(
-    readAnlagenSnapshot(strictUsername, strictYear, strictMonthIndex)
+    await readAnlagenSnapshot(strictUsername, strictYear, strictMonthIndex)
   );
 
   try {
     if (strictTeamId) {
-      const oldSnap = readAnlagenSnapshot(
+      const oldSnap = await readAnlagenSnapshot(
         strictUsername,
         strictYear,
         strictMonthIndex
@@ -3462,11 +3650,12 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
 
       writeAnlagenIndex(index);
       writeAnlagenLedger(ledger);
-      writeAnlagenSnapshot(
+      await writeAnlagenSnapshot(
         strictUsername,
         strictYear,
         strictMonthIndex,
-        newSnap
+        newSnap,
+        strictTeamId || null
       );
     }
 
@@ -3496,20 +3685,16 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
     }
 
     try {
-      const snapshotPath = getSnapshotPath(
-        strictUsername,
-        strictYear,
-        strictMonthIndex
-      );
-
-      if (anlagenMonthSnapshotBackup == null) {
-        if (fs.existsSync(snapshotPath)) fs.unlinkSync(snapshotPath);
-      } else {
-        writeJsonAtomic(snapshotPath, anlagenMonthSnapshotBackup);
-      }
-    } catch (rollbackErr) {
-      console.error('Failed to restore anlagen month snapshot backup:', rollbackErr);
-    }
+  await writeAnlagenSnapshot(
+    strictUsername,
+    strictYear,
+    strictMonthIndex,
+    anlagenMonthSnapshotBackup,
+    strictTeamId || null
+    );
+   } catch (rollbackErr) {
+    console.error('Failed to restore anlagen month snapshot backup:', rollbackErr);
+}
 
     try {
       await deleteMonthSubmissionById(fileName);
@@ -4843,6 +5028,7 @@ async function startServer() {
   await ensureKontenTables();
   await ensureAbsencesTable();
   await ensureWeekLocksTable();
+  await ensureAnlagenTables();
   await seedInitialUsers();
 
   app.listen(PORT, () => {
