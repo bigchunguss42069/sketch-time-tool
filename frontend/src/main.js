@@ -128,20 +128,37 @@ const loginSubmitBtn = document.getElementById("loginSubmitBtn");
 const loginLoader = document.getElementById("loginLoader");
 const userDisplayEl = document.getElementById("userDisplay");
 const logoutBtn = document.getElementById("logoutBtn");
-function setLoginLoading(isLoading) {
-  if (loginSubmitBtn) {
-    loginSubmitBtn.disabled = isLoading;
-    loginSubmitBtn.textContent = isLoading ? "Prüfe…" : "Anmelden";
-  }
+let _floorInterval = null;
 
-  if (loginUsernameInput) loginUsernameInput.disabled = isLoading;
-  if (loginPasswordInput) loginPasswordInput.disabled = isLoading;
+/**
+ *  Login Loader
+ */
+
+function setLoginLoading(isLoading) {
+  const loginForm = document.getElementById("loginForm");
+
+  if (loginForm) loginForm.classList.toggle("hidden", isLoading);
 
   if (loginLoader) {
     loginLoader.classList.toggle("hidden", !isLoading);
     loginLoader.setAttribute("aria-hidden", isLoading ? "false" : "true");
   }
+
+  const floorNum = document.getElementById("loaderFloorNum");
+  const floors = ["G", "1", "2", "3", "4", "5"];
+  if (isLoading && floorNum) {
+    let i = 0;
+    _floorInterval = setInterval(() => {
+      i = (i + 1) % floors.length;
+      floorNum.textContent = floors[i];
+    }, 500);
+  } else {
+    if (_floorInterval) { clearInterval(_floorInterval); _floorInterval = null; }
+    if (floorNum) floorNum.textContent = "G";
+  }
 }
+
+
 /**
  * Auth / sync status pill
  */

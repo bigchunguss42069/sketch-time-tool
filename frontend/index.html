@@ -41,21 +41,18 @@
             class="login-error"
             style="display: none;"
           ></div>
-
           <button type="submit" class="login-button" id="loginSubmitBtn">
-              Anmelden
-            </button>
+            Anmelden
+          </button>
+          </form>
 
-            <div id="loginLoader" class="login-loader hidden" aria-hidden="true">
-              <div class="elevator-container">
-                <div class="pulley-system">
-                  <div class="rope"></div>
-                  <div class="cabin"></div>
-                  <div class="counterweight"></div>
-                </div>
-              </div>
-              <div class="login-loader-text">Anmeldung wird geprüft …</div>
+          <div id="loginLoader" class="login-loader hidden" aria-hidden="true">
+            <div class="floor-display">
+              <div class="floor-arrow-up" id="loaderArrow"></div>
+              <div class="floor-num" id="loaderFloorNum">G</div>
             </div>
+            <div class="login-loader-text">Anmeldung wird geprüft …</div>
+          </div>
         </form>
       </div>
     </div>
