@@ -1895,27 +1895,137 @@ async function restoreVacationDaysForCancelledAbsence({
 // ----------------------------------------------------------------------------
 // Week locks, date ranges and payroll-period helpers
 // ----------------------------------------------------------------------------
-const WEEK_LOCKS_PATH = path.join(BASE_DATA_DIR, 'weekLocks.json');
+async function ensureWeekLocksTable() {
+  if (!db) return;
 
-function readWeekLocks() {
-  if (!fs.existsSync(WEEK_LOCKS_PATH)) return {};
-  try {
-    const raw = fs.readFileSync(WEEK_LOCKS_PATH, 'utf8');
-    const parsed = JSON.parse(raw);
-    return (parsed && typeof parsed === 'object') ? parsed : {};
-  } catch (e) {
-    // quarantine corrupt file instead of wiping it
-    const badPath = WEEK_LOCKS_PATH.replace(/\.json$/, '') + `.corrupt-${Date.now()}.json`;
-    try { fs.renameSync(WEEK_LOCKS_PATH, badPath); } catch {}
-    throw new Error(`weekLocks.json is corrupt (moved aside): ${e.message}`);
-  }
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS week_locks (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      week_year INTEGER NOT NULL,
+      week INTEGER NOT NULL CHECK (week BETWEEN 1 AND 53),
+      locked_at TIMESTAMPTZ NOT NULL,
+      locked_by TEXT,
+      PRIMARY KEY (user_id, week_year, week)
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_week_locks_username_week
+    ON week_locks (username, week_year, week)
+  `);
 }
 
+function mapWeekLockRow(row) {
+  return {
+    locked: true,
+    lockedAt:
+      row?.locked_at instanceof Date
+        ? row.locked_at.toISOString()
+        : row?.locked_at || null,
+    lockedBy: row?.locked_by || null,
+  };
+}
 
-function writeWeekLocks(data) {
-  const tmpPath = WEEK_LOCKS_PATH + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmpPath, WEEK_LOCKS_PATH);
+function buildWeekLocksMap(rows) {
+  const out = {};
+
+  for (const row of rows || []) {
+    const username = row.username;
+    const wk = weekKey(row.week_year, row.week);
+
+    if (!out[username]) out[username] = {};
+    out[username][wk] = mapWeekLockRow(row);
+  }
+
+  return out;
+}
+
+async function readWeekLocksFromDb() {
+  if (!db) return {};
+
+  const result = await db.query(`
+    SELECT username, week_year, week, locked_at, locked_by
+    FROM week_locks
+    ORDER BY username ASC, week_year ASC, week ASC
+  `);
+
+  return buildWeekLocksMap(result.rows);
+}
+
+async function readUserWeekLocksFromDb(username) {
+  if (!db) return {};
+
+  const result = await db.query(
+    `
+      SELECT username, week_year, week, locked_at, locked_by
+      FROM week_locks
+      WHERE username = $1
+      ORDER BY week_year ASC, week ASC
+    `,
+    [username]
+  );
+
+  const all = buildWeekLocksMap(result.rows);
+  return all[username] || {};
+}
+
+async function setWeekLockState({
+  userId,
+  username,
+  weekYear,
+  week,
+  lockedBy,
+}) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const result = await db.query(
+    `
+      INSERT INTO week_locks (
+        user_id,
+        username,
+        week_year,
+        week,
+        locked_at,
+        locked_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id, week_year, week)
+      DO UPDATE SET
+        username = EXCLUDED.username,
+        locked_at = EXCLUDED.locked_at,
+        locked_by = EXCLUDED.locked_by
+      RETURNING username, week_year, week, locked_at, locked_by
+    `,
+    [
+      userId,
+      username,
+      weekYear,
+      week,
+      new Date().toISOString(),
+      lockedBy || null,
+    ]
+  );
+
+  return mapWeekLockRow(result.rows[0] || null);
+}
+
+async function clearWeekLockState({ userId, weekYear, week }) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  await db.query(
+    `
+      DELETE FROM week_locks
+      WHERE user_id = $1
+        AND week_year = $2
+        AND week = $3
+    `,
+    [userId, weekYear, week]
+  );
 }
 
 function weekKey(weekYear, week) {
@@ -3210,12 +3320,12 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
 
   let allLocks;
   try {
-    allLocks = readWeekLocks();
+  allLocks = await readWeekLocksFromDb();
   } catch (e) {
-    console.error('Failed to read weekLocks.json:', e);
-    return res
-      .status(500)
-      .json({ ok: false, error: 'Lock file unreadable. Please contact admin.' });
+  console.error('Failed to read week locks from Postgres:', e);
+  return res
+    .status(500)
+    .json({ ok: false, error: 'Lock data unreadable. Please contact admin.' });
   }
 
   try {
@@ -3767,9 +3877,9 @@ app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res)
 
   let allLocks;
   try {
-    allLocks = readWeekLocks();
+  allLocks = await readWeekLocksFromDb();
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message });
+  return res.status(500).json({ ok: false, error: e.message });
   }
 
   if (
@@ -3907,47 +4017,29 @@ app.post('/api/admin/week-lock', requireAuth, requireAdmin, async (req, res) => 
       return res.status(400).json({ ok: false, error: 'Invalid week' });
     }
 
-    let allLocks;
-    try {
-      allLocks = readWeekLocks();
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: e.message });
-    }
-
-    const userLocks =
-      allLocks[username] && typeof allLocks[username] === 'object'
-        ? allLocks[username]
-        : {};
-
+    const userLocks = await readUserWeekLocksFromDb(username);
     const wk = weekKey(weekYear, week);
     const currentMeta = getLockMeta(userLocks, wk);
     const nextLocked =
       typeof lockedParam === 'boolean' ? lockedParam : !currentMeta.locked;
 
+    let finalMeta = null;
+
     if (nextLocked) {
-      userLocks[wk] = {
-        locked: true,
-        lockedAt: new Date().toISOString(),
+      finalMeta = await setWeekLockState({
+        userId: targetUser.id,
+        username: targetUser.username,
+        weekYear,
+        week,
         lockedBy: req.user.username,
-      };
+      });
     } else {
-      delete userLocks[wk];
+      await clearWeekLockState({
+        userId: targetUser.id,
+        weekYear,
+        week,
+      });
     }
-
-    if (Object.keys(userLocks).length === 0) {
-      delete allLocks[username];
-    } else {
-      allLocks[username] = userLocks;
-    }
-
-    try {
-      writeWeekLocks(allLocks);
-    } catch (e) {
-      console.error('Failed to write weekLocks.json', e);
-      return res.status(500).json({ ok: false, error: 'Could not persist lock state' });
-    }
-
-    const finalMeta = nextLocked ? userLocks[wk] : null;
 
     return res.json({
       ok: true,
@@ -4750,6 +4842,7 @@ async function startServer() {
   await ensureMonthSubmissionsTable();
   await ensureKontenTables();
   await ensureAbsencesTable();
+  await ensureWeekLocksTable();
   await seedInitialUsers();
 
   app.listen(PORT, () => {
