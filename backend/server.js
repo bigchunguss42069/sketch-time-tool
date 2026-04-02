@@ -11,6 +11,8 @@ const PDFDocument = require('pdfkit');
 const { Pool } = require('pg');
 const argon2 = require('argon2');
 const exportPdfBody = express.json({ limit: '10mb' });
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -32,7 +34,12 @@ if (db) {
 // ============================================================================
 // Global middleware
 // ============================================================================
-app.use(cors());
+app.use(cors({
+  origin: 'https://sketch-time-tool-frontend.onrender.com',
+  methods: ['GET', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}))
+app.use(helmet());
 app.use(express.json({ limit: '25mb' }));
 
 
@@ -878,7 +885,19 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 // ============================================================================
 // Authentication routes
 // ============================================================================
-app.post('/api/auth/login', async (req, res) => {
+
+
+// Limiter for login
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 Minuten
+  max: 10, // max 10 Versuche pro 15 Minuten
+  message: { ok: false, error: 'Zu viele Login-Versuche, bitte warte 15 Minuten.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body || {};
 
