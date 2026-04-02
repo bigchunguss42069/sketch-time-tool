@@ -980,21 +980,254 @@ if (!fs.existsSync(BASE_DATA_DIR)) {
 // ----------------------------------------------------------------------------
 // Absence persistence helpers
 // ----------------------------------------------------------------------------
-const ABSENCES_DIR = path.join(BASE_DATA_DIR, 'absences');
-if (!fs.existsSync(ABSENCES_DIR)) fs.mkdirSync(ABSENCES_DIR, { recursive: true });
+async function ensureAbsencesTable() {
+  if (!db) return;
 
-function absencesFilePath(username) {
-  const safe = String(username).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(ABSENCES_DIR, `${safe}.json`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS absences (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      team_id TEXT,
+      type TEXT NOT NULL,
+      from_date DATE NOT NULL,
+      to_date DATE NOT NULL,
+      days DOUBLE PRECISION,
+      comment TEXT,
+      status TEXT NOT NULL CHECK (
+        status IN ('pending', 'accepted', 'rejected', 'cancel_requested', 'cancelled')
+      ),
+      created_at TIMESTAMPTZ NOT NULL,
+      created_by TEXT,
+      decided_at TIMESTAMPTZ,
+      decided_by TEXT,
+      cancel_requested_at TIMESTAMPTZ,
+      cancel_requested_by TEXT
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_absences_username_created
+    ON absences (username, created_at DESC)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_absences_status_created
+    ON absences (status, created_at DESC)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_absences_username_range
+    ON absences (username, from_date, to_date)
+  `);
 }
 
-function readUserAbsences(username) {
-  const list = safeReadJson(absencesFilePath(username), []);
-  return Array.isArray(list) ? list : [];
+function toDateOnlyString(value) {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return formatDateKey(value);
+  }
+
+  const raw = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
 }
 
-function writeUserAbsences(username, list) {
-  writeJsonAtomic(absencesFilePath(username), Array.isArray(list) ? list : []);
+function toIsoTimestamp(value) {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function mapAbsenceRow(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    username: row.username,
+    teamId: row.team_id || null,
+    type: row.type,
+    from: toDateOnlyString(row.from_date),
+    to: toDateOnlyString(row.to_date),
+    days:
+      row.days == null || row.days === ''
+        ? null
+        : Number.isFinite(Number(row.days))
+          ? Number(row.days)
+          : null,
+    comment: row.comment || '',
+    status: row.status,
+    createdAt: toIsoTimestamp(row.created_at),
+    createdBy: row.created_by || row.username,
+    decidedAt: toIsoTimestamp(row.decided_at),
+    decidedBy: row.decided_by || null,
+    cancelRequestedAt: toIsoTimestamp(row.cancel_requested_at),
+    cancelRequestedBy: row.cancel_requested_by || null,
+  };
+}
+
+async function listUserAbsencesFromDb(username, client = db) {
+  if (!client) return [];
+
+  const result = await client.query(
+    `
+      SELECT *
+      FROM absences
+      WHERE username = $1
+      ORDER BY created_at DESC, from_date DESC, id DESC
+    `,
+    [username]
+  );
+
+  return result.rows.map(mapAbsenceRow);
+}
+
+async function findAbsenceByUserAndId(username, id, client = db) {
+  if (!client) return null;
+
+  const result = await client.query(
+    `
+      SELECT *
+      FROM absences
+      WHERE username = $1
+        AND id = $2
+      LIMIT 1
+    `,
+    [username, id]
+  );
+
+  return mapAbsenceRow(result.rows[0] || null);
+}
+
+async function insertAbsenceForUser(
+  {
+    id,
+    userId,
+    username,
+    teamId,
+    type,
+    from,
+    to,
+    days,
+    comment,
+    status,
+    createdAt,
+    createdBy,
+    decidedAt,
+    decidedBy,
+    cancelRequestedAt,
+    cancelRequestedBy,
+  },
+  client = db
+) {
+  if (!client) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const result = await client.query(
+    `
+      INSERT INTO absences (
+        id,
+        user_id,
+        username,
+        team_id,
+        type,
+        from_date,
+        to_date,
+        days,
+        comment,
+        status,
+        created_at,
+        created_by,
+        decided_at,
+        decided_by,
+        cancel_requested_at,
+        cancel_requested_by
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16
+      )
+      RETURNING *
+    `,
+    [
+      id,
+      userId,
+      username,
+      teamId,
+      type,
+      from,
+      to,
+      days,
+      comment,
+      status,
+      createdAt,
+      createdBy,
+      decidedAt,
+      decidedBy,
+      cancelRequestedAt,
+      cancelRequestedBy,
+    ]
+  );
+
+  return mapAbsenceRow(result.rows[0]);
+}
+
+async function deleteAbsenceForUser(username, id, client = db) {
+  if (!client) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  await client.query(
+    `
+      DELETE FROM absences
+      WHERE username = $1
+        AND id = $2
+    `,
+    [username, id]
+  );
+}
+
+async function updateAbsenceStatus(
+  {
+    username,
+    id,
+    status,
+    decidedAt,
+    decidedBy,
+    cancelRequestedAt,
+    cancelRequestedBy,
+  },
+  client = db
+) {
+  if (!client) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const result = await client.query(
+    `
+      UPDATE absences
+      SET
+        status = $3,
+        decided_at = $4,
+        decided_by = $5,
+        cancel_requested_at = $6,
+        cancel_requested_by = $7
+      WHERE username = $1
+        AND id = $2
+      RETURNING *
+    `,
+    [
+      username,
+      id,
+      status,
+      decidedAt || null,
+      decidedBy || null,
+      cancelRequestedAt || null,
+      cancelRequestedBy || null,
+    ]
+  );
+
+  return mapAbsenceRow(result.rows[0] || null);
 }
 
 function findAcceptedAbsenceForDate(absences, dateKey) {
@@ -1005,10 +1238,11 @@ function findAcceptedAbsenceForDate(absences, dateKey) {
       const st = String(a.status || '').toLowerCase();
       if (!a || (st !== 'accepted' && st !== 'cancel_requested')) return false;
 
-
       const fromKey = String(a.from || '').slice(0, 10);
       const toKey = String(a.to || '').slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) return false;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) {
+        return false;
+      }
 
       const start = fromKey <= toKey ? fromKey : toKey;
       const end = fromKey <= toKey ? toKey : fromKey;
@@ -3221,13 +3455,18 @@ app.get('/api/transmissions', requireAuth, async (req, res) => {
 // ============================================================================
 // Absence routes (user + admin)
 // ============================================================================
-app.get('/api/absences', requireAuth, (req, res) => {
-  const username = req.user.username;
-  return res.json({ ok: true, absences: readUserAbsences(username) });
+app.get('/api/absences', requireAuth, async (req, res) => {
+  try {
+    const absences = await listUserAbsencesFromDb(req.user.username);
+    return res.json({ ok: true, absences });
+  } catch (err) {
+    console.error('Failed to load my absences', err);
+    return res.status(500).json({ ok: false, error: 'Could not load absences' });
+  }
 });
 
 // POST /api/absences -> create absence request
-app.post('/api/absences', requireAuth, (req, res) => {
+app.post('/api/absences', requireAuth, async (req, res) => {
   const username = req.user.username;
   const teamId = req.user.teamId || null;
 
@@ -3236,98 +3475,129 @@ app.post('/api/absences', requireAuth, (req, res) => {
   const to = String(req.body?.to || '').slice(0, 10);
   const comment = String(req.body?.comment || '').trim();
   const daysRaw = req.body?.days;
-  const days = (daysRaw === '' || daysRaw == null) ? null : Number(daysRaw);
+  const days = daysRaw === '' || daysRaw == null ? null : Number(daysRaw);
 
-  if (!type) return res.status(400).json({ ok: false, error: 'Missing type' });
+  if (!type) {
+    return res.status(400).json({ ok: false, error: 'Missing type' });
+  }
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
     return res.status(400).json({ ok: false, error: 'Invalid from/to (YYYY-MM-DD)' });
   }
+
   if (days != null && (!Number.isFinite(days) || days < 0)) {
     return res.status(400).json({ ok: false, error: 'Invalid days' });
   }
 
   const idFromClient = String(req.body?.id || '').trim();
   const id =
-    (idFromClient && idFromClient.length <= 80)
+    idFromClient && idFromClient.length <= 80
       ? idFromClient
       : `abs-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
 
-  const record = {
-    id,
-    username,
-    teamId,
-    type,
-    from,
-    to,
-    days,
-    comment,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    createdBy: username,
-    decidedAt: null,
-    decidedBy: null,
-  };
+  try {
+    const absence = await insertAbsenceForUser({
+      id,
+      userId: req.user.id,
+      username,
+      teamId,
+      type,
+      from,
+      to,
+      days,
+      comment,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      createdBy: username,
+      decidedAt: null,
+      decidedBy: null,
+      cancelRequestedAt: null,
+      cancelRequestedBy: null,
+    });
 
-  const list = readUserAbsences(username);
-  list.push(record);
-  writeUserAbsences(username, list);
-
-  return res.json({ ok: true, absence: record });
+    return res.json({ ok: true, absence });
+  } catch (err) {
+    console.error('Failed to create absence', err);
+    return res.status(500).json({ ok: false, error: 'Could not save absence' });
+  }
 });
 
 // DELETE /api/absences/:id -> user can cancel only if pending
-app.delete('/api/absences/:id', requireAuth, (req, res) => {
+app.delete('/api/absences/:id', requireAuth, async (req, res) => {
   const username = req.user.username;
   const id = String(req.params.id || '');
 
-  const list = readUserAbsences(username);
-  const idx = list.findIndex((a) => a && a.id === id);
-  if (idx === -1) return res.status(404).json({ ok: false, error: 'Not found' });
+  try {
+    const item = await findAbsenceByUserAndId(username, id);
 
-  const item = list[idx];
-  if (item.status !== 'pending') {
-    return res.status(409).json({ ok: false, error: 'Only pending absences can be cancelled' });
+    if (!item) {
+      return res.status(404).json({ ok: false, error: 'Not found' });
+    }
+
+    if (item.status !== 'pending') {
+      return res.status(409).json({
+        ok: false,
+        error: 'Only pending absences can be cancelled',
+      });
+    }
+
+    await deleteAbsenceForUser(username, id);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to delete absence', err);
+    return res.status(500).json({ ok: false, error: 'Could not delete absence' });
   }
-
-  list.splice(idx, 1);
-  writeUserAbsences(username, list);
-
-  return res.json({ ok: true });
 });
-
 
 // POST /api/absences/:id/cancel
 // - if pending -> cancelled (user self-service)
 // - if accepted -> cancel_requested (admin must approve)
 // - if rejected/cancelled -> no-op or conflict (your choice)
-app.post('/api/absences/:id/cancel', requireAuth, (req, res) => {
+app.post('/api/absences/:id/cancel', requireAuth, async (req, res) => {
   const username = req.user.username;
   const id = String(req.params.id || '');
 
-  const list = readUserAbsences(username);
-  const item = list.find((a) => a && a.id === id);
-  if (!item) return res.status(404).json({ ok: false, error: 'Not found' });
+  try {
+    const item = await findAbsenceByUserAndId(username, id);
 
-  if (item.status === 'pending') {
-    item.status = 'cancelled';
-    item.decidedAt = new Date().toISOString();
-    item.decidedBy = username; // self-cancel
-    writeUserAbsences(username, list);
-    return res.json({ ok: true, absence: item });
+    if (!item) {
+      return res.status(404).json({ ok: false, error: 'Not found' });
+    }
+
+    if (item.status === 'pending') {
+      const updated = await updateAbsenceStatus({
+        username,
+        id,
+        status: 'cancelled',
+        decidedAt: new Date().toISOString(),
+        decidedBy: username,
+        cancelRequestedAt: item.cancelRequestedAt || null,
+        cancelRequestedBy: item.cancelRequestedBy || null,
+      });
+
+      return res.json({ ok: true, absence: updated });
+    }
+
+    if (item.status === 'accepted') {
+      const updated = await updateAbsenceStatus({
+        username,
+        id,
+        status: 'cancel_requested',
+        decidedAt: item.decidedAt || null,
+        decidedBy: item.decidedBy || null,
+        cancelRequestedAt: new Date().toISOString(),
+        cancelRequestedBy: username,
+      });
+
+      return res.json({ ok: true, absence: updated });
+    }
+
+    return res.status(409).json({ ok: false, error: 'Cannot cancel in this state' });
+  } catch (err) {
+    console.error('Failed to cancel absence', err);
+    return res.status(500).json({ ok: false, error: 'Could not cancel absence' });
   }
-
-  if (item.status === 'accepted') {
-    item.status = 'cancel_requested';
-    item.cancelRequestedAt = new Date().toISOString();
-    item.cancelRequestedBy = username;
-    writeUserAbsences(username, list);
-    return res.json({ ok: true, absence: item });
-  }
-
-
-  return res.status(409).json({ ok: false, error: 'Cannot cancel in this state' });
 });
-
 
 // ---- Absenzen: admin APIs ----
 
@@ -3337,11 +3607,11 @@ app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
     const status = String(req.query.status || 'pending');
     const users = await listUsersFromDb();
 
-    const all = [];
-    users.forEach((u) => {
-      const list = readUserAbsences(u.username);
-      list.forEach((a) => all.push(a));
-    });
+    const nested = await Promise.all(
+      users.map((u) => listUserAbsencesFromDb(u.username))
+    );
+
+    const all = nested.flat();
 
     const filtered =
       status === 'all'
@@ -3358,7 +3628,6 @@ app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Could not load absences' });
   }
 });
-
 // POST /api/admin/absences/decision
 // body: { username, id, status: 'accepted'|'rejected' }
 app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, res) => {
@@ -3382,19 +3651,22 @@ app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, 
       return res.status(400).json({ ok: false, error: 'Invalid status' });
     }
 
-    const list = readUserAbsences(username);
-    const item = list.find((a) => a && a.id === id);
+    const item = await findAbsenceByUserAndId(username, id);
     if (!item) {
       return res.status(404).json({ ok: false, error: 'Not found' });
     }
 
     const previousStatus = item.status;
 
-    item.status = status;
-    item.decidedAt = new Date().toISOString();
-    item.decidedBy = req.user.username;
-
-    writeUserAbsences(username, list);
+    const updated = await updateAbsenceStatus({
+      username,
+      id,
+      status,
+      decidedAt: new Date().toISOString(),
+      decidedBy: req.user.username,
+      cancelRequestedAt: item.cancelRequestedAt || null,
+      cancelRequestedBy: item.cancelRequestedBy || null,
+    });
 
     let vacationRestored = 0;
 
@@ -3404,7 +3676,7 @@ app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, 
     ) {
       vacationRestored = await restoreVacationDaysForCancelledAbsence({
         username,
-        absence: item,
+        absence: updated,
         updatedBy: req.user.username,
       });
 
@@ -3415,13 +3687,12 @@ app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, 
       }
     }
 
-    return res.json({ ok: true, absence: item, vacationRestored });
+    return res.json({ ok: true, absence: updated, vacationRestored });
   } catch (err) {
     console.error('Failed to decide absence', err);
     return res.status(500).json({ ok: false, error: 'Decision failed' });
   }
 });
-
 // ---- Konten APIs ----
 
 // GET /api/konten/me
@@ -3548,8 +3819,10 @@ app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res)
         const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
         const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
 
+        const storedAbsences = await listUserAbsencesFromDb(user.username);
+
         const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
-          readUserAbsences(user.username),
+          storedAbsences,
           monthStartKey,
           monthEndKey
         );
@@ -3739,7 +4012,7 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => 
     const submission = monthRecord.submission;
     const dayData = submission.days && submission.days[dateKey] ? submission.days[dateKey] : null;
 
-    const storedAbsences = readUserAbsences(username);
+    const storedAbsences = await listUserAbsencesFromDb(username);
     const acceptedAbsence = findAcceptedAbsenceForDate(
       storedAbsences.length ? storedAbsences : submission.absences,
       dateKey
@@ -4476,6 +4749,7 @@ async function startServer() {
   await ensureUsersTable();
   await ensureMonthSubmissionsTable();
   await ensureKontenTables();
+  await ensureAbsencesTable();
   await seedInitialUsers();
 
   app.listen(PORT, () => {
