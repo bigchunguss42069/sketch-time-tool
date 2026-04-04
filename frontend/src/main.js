@@ -93,9 +93,7 @@ const dashTotalHoursEl = document.getElementById("dashTotalHours");
 const overtimeYearUeZ1El = document.getElementById("overtimeYearUeZ1");
 const overtimeYearUeZ2El = document.getElementById("overtimeYearUeZ2");
 const overtimeYearUeZ3El = document.getElementById("overtimeYearUeZ3");
-const overtimeYearVorarbeitEl = document.getElementById(
-  "overtimeYearVorarbeit",
-);
+const overtimeYearVorarbeitEl = document.getElementById("overtimeYearVorarbeit",);
 
 const overtimeYearSourceEl = document.getElementById("overtimeYearSource");
 

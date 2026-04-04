@@ -1,4 +1,4 @@
-
+require('dotenv').config();
 // ============================================================================
 // Runtime dependencies and app bootstrap
 // ============================================================================
@@ -35,7 +35,7 @@ if (db) {
 // Global middleware
 // ============================================================================
 app.use(cors({
-  origin: 'https://sketch-time-tool-frontend.onrender.com',
+  origin: process.env.CORS_ORIGIN,
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
