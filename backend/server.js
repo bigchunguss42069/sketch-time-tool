@@ -172,6 +172,7 @@ function mapDbUser(row) {
     role: row.role,
     teamId: row.team_id || null,
     active: row.active,
+    email: row.email || null,
   };
 }
 
@@ -190,6 +191,11 @@ async function ensureUsersTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await db.query(`
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT
+`);
+
 }
 
 async function ensureMonthSubmissionsTable() {
@@ -5317,7 +5323,151 @@ app.get('/api/admin/transmissions-summary', requireAuth, requireAdmin, async (re
   }
 });
 
+// ============================================================================
+// Admin user management routes
+// ============================================================================
 
+// GET /api/admin/users
+app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT id, username, role, team_id, active, email, created_at
+      FROM users
+      ORDER BY username ASC
+    `);
+    const users = result.rows.map(mapDbUser);
+    return res.json({ ok: true, users });
+  } catch (err) {
+    console.error('Failed to list users', err);
+    return res.status(500).json({ ok: false, error: 'Could not load users' });
+  }
+});
+
+// POST /api/admin/users
+app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+  const { username, password, role, teamId, email } = req.body || {};
+
+  if (!username || !password || !role) {
+    return res.status(400).json({ ok: false, error: 'Missing required fields' });
+  }
+
+  if (!['user', 'admin'].includes(role)) {
+    return res.status(400).json({ ok: false, error: 'Invalid role' });
+  }
+
+  try {
+    const existing = await db.query(
+      'SELECT id FROM users WHERE username = $1 LIMIT 1',
+      [username]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ ok: false, error: 'Username already exists' });
+    }
+
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const id = `u-${crypto.randomBytes(8).toString('hex')}`;
+
+    await db.query(`
+      INSERT INTO users (id, username, password_hash, role, team_id, email, active)
+      VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+    `, [id, username, passwordHash, role, teamId || null, email || null]);
+
+    const user = await findUserById(id);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error('Failed to create user', err);
+    return res.status(500).json({ ok: false, error: 'Could not create user' });
+  }
+});
+
+// PATCH /api/admin/users/:id
+app.patch('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { email, role, teamId } = req.body || {};
+
+  try {
+    const result = await db.query(`
+      UPDATE users
+      SET
+        email = COALESCE($2, email),
+        role = COALESCE($3, role),
+        team_id = COALESCE($4, team_id),
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, username, role, team_id, active, email
+    `, [id, email || null, role || null, teamId || null]);
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+
+    return res.json({ ok: true, user: mapDbUser(result.rows[0]) });
+  } catch (err) {
+    console.error('Failed to update user', err);
+    return res.status(500).json({ ok: false, error: 'Could not update user' });
+  }
+});
+
+// POST /api/admin/users/:id/reset-password
+app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { password } = req.body || {};
+
+  if (!password || password.length < 6) {
+    return res.status(400).json({ ok: false, error: 'Password must be at least 6 characters' });
+  }
+
+  try {
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+
+    const result = await db.query(`
+      UPDATE users
+      SET password_hash = $2, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id
+    `, [id, passwordHash]);
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to reset password', err);
+    return res.status(500).json({ ok: false, error: 'Could not reset password' });
+  }
+});
+
+// POST /api/admin/users/:id/deactivate
+app.post('/api/admin/users/:id/deactivate', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.user.id) {
+    return res.status(400).json({ ok: false, error: 'Cannot deactivate your own account' });
+  }
+
+  try {
+    await db.query(`UPDATE users SET active = FALSE, updated_at = NOW() WHERE id = $1`, [id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to deactivate user', err);
+    return res.status(500).json({ ok: false, error: 'Could not deactivate user' });
+  }
+});
+
+// POST /api/admin/users/:id/activate
+app.post('/api/admin/users/:id/activate', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await db.query(`UPDATE users SET active = TRUE, updated_at = NOW() WHERE id = $1`, [id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Failed to activate user', err);
+    return res.status(500).json({ ok: false, error: 'Could not activate user' });
+  }
+});
 
 
 // ============================================================================
