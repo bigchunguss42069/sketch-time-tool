@@ -1911,6 +1911,13 @@
               >
                 Lohnabrechnung
               </button>
+
+               <button
+                class="admin-tab-btn"
+                data-admin-tab="users"
+              >
+                Mitarbeiter
+              </button>
             </div>
 
             <!-- Tab: Überblick (Mitarbeiter) -->
@@ -2072,6 +2079,75 @@
               <p>Die Lohndaten werden geladen …</p>
             </div>
           </div>
+            </div>
+            <!-- Tab: User accs -->
+            <div
+              class="admin-tab-content"
+              data-admin-content="users"
+            >
+              <div class="admin-section-header">
+                <h3>Mitarbeiter</h3>
+                <p class="admin-section-subtitle">
+                  Accounts verwalten, erstellen und Passwörter zurücksetzen.
+                </p>
+              </div>
+
+              <div class="admin-users-toolbar">
+                <input
+                  id="adminUsersSearch"
+                  type="text"
+                  placeholder="Suchen…"
+                  class="admin-personnel-search"
+                />
+                <button id="adminUsersAddBtn" class="admin-users-add-btn" type="button">
+                  + Neuer Mitarbeiter
+                </button>
+              </div>
+
+              <div id="adminUsersGrid" class="admin-users-grid"></div>
+
+              <!-- Modal: Neuer / Bearbeiten -->
+              <div id="adminUserModal" class="admin-user-modal hidden">
+                <div class="admin-user-modal-box">
+                  <div class="admin-user-modal-header">
+                    <span id="adminUserModalTitle">Neuer Mitarbeiter</span>
+                    <button id="adminUserModalClose" class="admin-user-modal-close">✕</button>
+                  </div>
+                  <div class="admin-user-modal-body">
+                    <label class="admin-user-modal-label">
+                      <span>Benutzername</span>
+                      <input id="modalUsername" type="text" class="admin-user-modal-input" />
+                    </label>
+                    <label class="admin-user-modal-label">
+                      <span>E-Mail</span>
+                      <input id="modalEmail" type="email" class="admin-user-modal-input" />
+                    </label>
+                    <label class="admin-user-modal-label">
+                      <span>Passwort</span>
+                      <input id="modalPassword" type="password" class="admin-user-modal-input" placeholder="Leer lassen um nicht zu ändern" />
+                    </label>
+                    <label class="admin-user-modal-label">
+                      <span>Rolle</span>
+                      <select id="modalRole" class="admin-user-modal-input">
+                        <option value="user">Mitarbeiter</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </label>
+                    <label class="admin-user-modal-label">
+                      <span>Team</span>
+                      <select id="modalTeam" class="admin-user-modal-input">
+                        <option value="montage">Team Montage</option>
+                      </select>
+                    </label>
+                    <div id="adminUserModalError" class="admin-user-modal-error hidden"></div>
+                  </div>
+                  <div class="admin-user-modal-footer">
+                    <button id="adminUserModalCancel" class="admin-user-modal-btn-cancel">Abbrechen</button>
+                    <button id="adminUserModalSave" class="admin-user-modal-btn-save">Speichern</button>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>

@@ -48,6 +48,8 @@ let adminActiveInnerTab = "overview";
 let anlagenStatusFilter = "active";
 let anlagenSearchTerm = "";
 let selectedKomNr = null;
+let allUsers = [];
+let editingUserId = null;
 
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
 const anlagenDetailCache = new Map(); // key: komNr -> detail
@@ -86,6 +88,24 @@ const dashTotalDayhoursEl = document.getElementById("dashTotalDayhours");
 const dashTotalPikettEl = document.getElementById("dashTotalPikett");
 const dashTotalOvertime3El = document.getElementById("dashTotalOvertime3");
 const dashTotalHoursEl = document.getElementById("dashTotalHours");
+
+/**
+ * Admin / User management DOM handles
+ */
+const adminUsersSearch = document.getElementById('adminUsersSearch');
+const adminUsersAddBtn = document.getElementById('adminUsersAddBtn');
+const adminUsersGrid = document.getElementById('adminUsersGrid');
+const adminUserModal = document.getElementById('adminUserModal');
+const adminUserModalTitle = document.getElementById('adminUserModalTitle');
+const adminUserModalClose = document.getElementById('adminUserModalClose');
+const adminUserModalCancel = document.getElementById('adminUserModalCancel');
+const adminUserModalSave = document.getElementById('adminUserModalSave');
+const adminUserModalError = document.getElementById('adminUserModalError');
+const modalUsername = document.getElementById('modalUsername');
+const modalEmail = document.getElementById('modalEmail');
+const modalPassword = document.getElementById('modalPassword');
+const modalRole = document.getElementById('modalRole');
+const modalTeam = document.getElementById('modalTeam');
 
 /**
  * Dashboard / yearly overtime and Vorarbeit cards
@@ -6224,6 +6244,205 @@ if (weekNextBtn) {
   });
 }
 
+// ============================================================================
+// Admin — Account Management
+// ============================================================================
+
+async function loadAdminUsers() {
+  if (!adminUsersGrid) return;
+  adminUsersGrid.innerHTML = '<p style="color:var(--muted);font-size:13px;">Wird geladen…</p>';
+  try {
+    const res = await authFetch('/api/admin/users');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    allUsers = data.users || [];
+    renderAdminUsers(allUsers);
+  } catch (err) {
+    adminUsersGrid.innerHTML = `<p style="color:#ef4444;font-size:13px;">Fehler: ${err.message}</p>`;
+  }
+}
+
+function renderAdminUsers(users) {
+  if (!adminUsersGrid) return;
+  const search = adminUsersSearch ? adminUsersSearch.value.toLowerCase() : '';
+  const filtered = users.filter(u =>
+    u.username.toLowerCase().includes(search) ||
+    (u.email || '').toLowerCase().includes(search)
+  );
+
+  if (!filtered.length) {
+    adminUsersGrid.innerHTML = '<p style="color:var(--muted);font-size:13px;">Keine Mitarbeiter gefunden.</p>';
+    return;
+  }
+
+  adminUsersGrid.innerHTML = filtered.map(u => `
+    <div class="admin-user-item">
+      <div class="admin-user-item-header">
+        <span class="admin-user-item-name">${u.username}</span>
+        <span class="admin-user-item-badge ${u.active === false ? 'inactive' : u.role}">
+          ${u.active === false ? 'Inaktiv' : u.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
+        </span>
+      </div>
+      <div class="admin-user-item-meta">
+        <span>${u.email || '–'}</span>
+        <span>${u.teamId || '–'}</span>
+      </div>
+      <div class="admin-user-item-actions">
+        <button class="admin-user-btn" data-action="edit" data-id="${u.id}">Bearbeiten</button>
+        <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
+        ${u.active !== false
+          ? `<button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}">Deaktivieren</button>`
+          : `<button class="admin-user-btn" data-action="activate" data-id="${u.id}">Aktivieren</button>`
+        }
+      </div>
+    </div>
+  `).join('');
+
+  adminUsersGrid.querySelectorAll('.admin-user-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      const username = btn.dataset.username;
+      if (action === 'edit') openEditUserModal(id);
+      else if (action === 'password') await resetUserPassword(id, username);
+      else if (action === 'deactivate') await toggleUserActive(id, false);
+      else if (action === 'activate') await toggleUserActive(id, true);
+    });
+  });
+}
+
+function openNewUserModal() {
+  editingUserId = null;
+  adminUserModalTitle.textContent = 'Neuer Mitarbeiter';
+  modalUsername.value = '';
+  modalEmail.value = '';
+  modalPassword.value = '';
+  modalRole.value = 'user';
+  modalTeam.value = 'montage';
+  modalUsername.disabled = false;
+  modalPassword.placeholder = 'Passwort';
+  adminUserModalError.classList.add('hidden');
+  adminUserModal.classList.remove('hidden');
+}
+
+function openEditUserModal(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+  editingUserId = userId;
+  adminUserModalTitle.textContent = 'Mitarbeiter bearbeiten';
+  modalUsername.value = user.username;
+  modalEmail.value = user.email || '';
+  modalPassword.value = '';
+  modalRole.value = user.role || 'user';
+  modalTeam.value = user.teamId || 'montage';
+  modalUsername.disabled = true;
+  modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
+  adminUserModalError.classList.add('hidden');
+  adminUserModal.classList.remove('hidden');
+}
+
+function closeUserModal() {
+  adminUserModal.classList.add('hidden');
+  editingUserId = null;
+}
+
+async function saveUserModal() {
+  adminUserModalError.classList.add('hidden');
+  const username = modalUsername.value.trim();
+  const email = modalEmail.value.trim();
+  const password = modalPassword.value;
+  const role = modalRole.value;
+  const teamId = modalTeam.value;
+
+  if (!editingUserId && (!username || !password)) {
+    adminUserModalError.textContent = 'Benutzername und Passwort sind erforderlich.';
+    adminUserModalError.classList.remove('hidden');
+    return;
+  }
+
+  try {
+    adminUserModalSave.disabled = true;
+
+    if (!editingUserId) {
+      const res = await authFetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password, role, teamId })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+    } else {
+      const body = { email, role, teamId };
+      if (password) body.password = password;
+
+      const patchRes = await authFetch(`/api/admin/users/${editingUserId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const patchData = await patchRes.json();
+      if (!patchData.ok) throw new Error(patchData.error);
+
+      if (password) {
+        const pwRes = await authFetch(`/api/admin/users/${editingUserId}/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const pwData = await pwRes.json();
+        if (!pwData.ok) throw new Error(pwData.error);
+      }
+    }
+
+    closeUserModal();
+    await loadAdminUsers();
+  } catch (err) {
+    adminUserModalError.textContent = err.message;
+    adminUserModalError.classList.remove('hidden');
+  } finally {
+    adminUserModalSave.disabled = false;
+  }
+}
+
+async function resetUserPassword(userId, username) {
+  const newPassword = prompt(`Neues Passwort für ${username}:`);
+  if (!newPassword || newPassword.length < 6) return;
+
+  try {
+    const res = await authFetch(`/api/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPassword })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    alert(`Passwort für ${username} wurde geändert.`);
+  } catch (err) {
+    alert(`Fehler: ${err.message}`);
+  }
+}
+
+async function toggleUserActive(userId, active) {
+  const action = active ? 'activate' : 'deactivate';
+  try {
+    const res = await authFetch(`/api/admin/users/${userId}/${action}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    await loadAdminUsers();
+  } catch (err) {
+    alert(`Fehler: ${err.message}`);
+  }
+}
+
+if (adminUsersAddBtn) adminUsersAddBtn.addEventListener('click', openNewUserModal);
+if (adminUserModalClose) adminUserModalClose.addEventListener('click', closeUserModal);
+if (adminUserModalCancel) adminUserModalCancel.addEventListener('click', closeUserModal);
+if (adminUserModalSave) adminUserModalSave.addEventListener('click', saveUserModal);
+if (adminUsersSearch) adminUsersSearch.addEventListener('input', () => renderAdminUsers(allUsers));
+
 /**
  * View helpers / active weekday switching
  */
@@ -6270,6 +6489,8 @@ adminInnerTabButtons.forEach((btn) => {
       loadAdminPersonnel();
     } else if (target === "payroll") {
       loadAdminPayroll();
+    } else if (target === "users") {
+      loadAdminUsers();
     }
   });
 });
