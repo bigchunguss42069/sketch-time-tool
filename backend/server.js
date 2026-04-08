@@ -77,7 +77,92 @@ function getOperationLabel(opKey) {
   return OPTION_LABELS[opKey] || opKey;
 }
 
-const sessions = new Map();
+async function ensureSessionsTable() {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id
+    ON auth_sessions (user_id)
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked
+    ON auth_sessions (revoked_at)
+  `);
+}
+
+async function createSessionRecord({ token, userId }) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  await db.query(
+    `
+      INSERT INTO auth_sessions (
+        token,
+        user_id,
+        created_at,
+        last_seen_at,
+        revoked_at
+      )
+      VALUES ($1, $2, NOW(), NOW(), NULL)
+    `,
+    [token, userId]
+  );
+}
+
+async function getSessionUserId(token) {
+  if (!db) return null;
+
+  const result = await db.query(
+    `
+      SELECT user_id
+      FROM auth_sessions
+      WHERE token = $1
+        AND revoked_at IS NULL
+      LIMIT 1
+    `,
+    [token]
+  );
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  await db.query(
+    `
+      UPDATE auth_sessions
+      SET last_seen_at = NOW()
+      WHERE token = $1
+    `,
+    [token]
+  );
+
+  return row.user_id || null;
+}
+
+async function revokeSessionRecord(token) {
+  if (!db) return;
+
+  await db.query(
+    `
+      UPDATE auth_sessions
+      SET revoked_at = NOW()
+      WHERE token = $1
+        AND revoked_at IS NULL
+    `,
+    [token]
+  );
+}
 
 function mapDbUser(row) {
   if (!row) return null;
@@ -436,7 +521,7 @@ async function requireAuth(req, res, next) {
         .json({ ok: false, error: 'Missing or invalid Authorization header' });
     }
 
-    const userId = sessions.get(token);
+    const userId = await getSessionUserId(token);
     if (!userId) {
       return res
         .status(401)
@@ -916,7 +1001,10 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     }
 
     const token = createToken();
-    sessions.set(token, user.id);
+    await createSessionRecord({
+      token,
+      userId: user.id,
+    });
 
     return res.json({
       ok: true,
@@ -947,6 +1035,19 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
       teamId: user.teamId,
     },
   });
+});
+
+app.post('/api/auth/logout', requireAuth, async (req, res) => {
+  try {
+    if (req.token) {
+      await revokeSessionRecord(req.token);
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Logout failed', err);
+    return res.status(500).json({ ok: false, error: 'Logout failed' });
+  }
 });
 
 // ---- Health check ----
@@ -2513,6 +2614,14 @@ async function ensureAnlagenTables() {
     )
   `);
 
+    await db.query(`
+    CREATE TABLE IF NOT EXISTS anlagen_index_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      payload JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_anlagen_archive_team
     ON anlagen_archive (team_id, kom_nr)
@@ -3027,29 +3136,10 @@ function recomputeLastActivitiesForTeam(index, ledger, teamId, komNrs) {
 // ---- Anlagen (Kom.-Nr.) global index + archive state ----
 
 
-const ANLAGEN_INDEX_PATH = path.join(BASE_DATA_DIR, 'anlagenIndex.json');
-
-// atomic write to avoid partially-written JSON on crash
-function writeJsonAtomic(filePath, data) {
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmp, filePath);
-}
-
 function deepCloneJson(value) {
   if (value == null) return value;
   return JSON.parse(JSON.stringify(value));
 }
-
-function rollbackTransmissionIndex(indexPath, fileName) {
-  const current = safeReadJson(indexPath, []);
-  const next = Array.isArray(current)
-    ? current.filter((item) => item && item.id !== fileName)
-    : [];
-
-  writeJsonAtomic(indexPath, next);
-}
-
 
 function cleanupZeroish(obj, eps = 1e-9) {
   if (!obj || typeof obj !== 'object') return;
@@ -3065,19 +3155,75 @@ function round1(n) {
   return Math.round(x * 10) / 10;
 }
 
-function readAnlagenIndex() {
+function normalizeAnlagenIndexPayload(data) {
   const fallback = { version: 1, updatedAt: null, teams: {} };
-  const data = safeReadJson(ANLAGEN_INDEX_PATH, fallback);
+
   if (!data || typeof data !== 'object') return fallback;
-  if (!data.teams || typeof data.teams !== 'object') data.teams = {};
-  if (!data.version) data.version = 1;
-  if (!('updatedAt' in data)) data.updatedAt = null;
-  return data;
+
+  const out = {
+    version: Number(data.version) || 1,
+    updatedAt: data.updatedAt || null,
+    teams:
+      data.teams && typeof data.teams === 'object' && !Array.isArray(data.teams)
+        ? data.teams
+        : {},
+  };
+
+  return out;
 }
 
-function writeAnlagenIndex(data) {
-  data.updatedAt = new Date().toISOString();
-  writeJsonAtomic(ANLAGEN_INDEX_PATH, data);
+async function readAnlagenIndex() {
+  if (!db) {
+    return { version: 1, updatedAt: null, teams: {} };
+  }
+
+  const result = await db.query(
+    `
+      SELECT payload, updated_at
+      FROM anlagen_index_state
+      WHERE id = 1
+      LIMIT 1
+    `
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return { version: 1, updatedAt: null, teams: {} };
+  }
+
+  const normalized = normalizeAnlagenIndexPayload(row.payload || {});
+  normalized.updatedAt =
+    row.updated_at instanceof Date
+      ? row.updated_at.toISOString()
+      : row.updated_at || normalized.updatedAt || null;
+
+  return normalized;
+}
+
+async function writeAnlagenIndex(data) {
+  if (!db) {
+    throw new Error('DATABASE_URL is not configured');
+  }
+
+  const payload = normalizeAnlagenIndexPayload(data);
+  const updatedAt = new Date().toISOString();
+  payload.updatedAt = updatedAt;
+
+  await db.query(
+    `
+      INSERT INTO anlagen_index_state (
+        id,
+        payload,
+        updated_at
+      )
+      VALUES (1, $1::jsonb, $2)
+      ON CONFLICT (id)
+      DO UPDATE SET
+        payload = EXCLUDED.payload,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [JSON.stringify(payload), updatedAt]
+  );
 }
 
 
@@ -3162,8 +3308,8 @@ function extractAnlagenFromSubmission(submission, username) {
 
 // Apply delta (new - old) for one user/month submission to the global index.
 // Apply a before/after delta when a month transmission changes anlagen data.
-function applyAnlagenDelta(teamId, username, newMap, oldMap) {
-  const index = readAnlagenIndex();
+async function applyAnlagenDelta(teamId, username, newMap, oldMap) {
+  const index = await readAnlagenIndex();
   if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') index.teams[teamId] = {};
   const teamObj = index.teams[teamId];
 
@@ -3263,7 +3409,7 @@ async function rebuildAnlagenIndex() {
     }
   }
 
-  writeAnlagenIndex(index);
+  await writeAnlagenIndex(index);
   return index;
 }
 
@@ -3281,7 +3427,7 @@ app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBo
 
  
 
-  const index = readAnlagenIndex();
+  const index = await readAnlagenIndex();
   const ledger = await readAnlagenLedger();
   const meta = await readAnlagenArchive(); 
 
@@ -3474,7 +3620,7 @@ app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, async (req, res
   if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
 
   const search = String(req.query.search || '').trim();
-  const index = readAnlagenIndex();
+  const index = await readAnlagenIndex();
   const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
     ? index.teams[teamId]
     : {};
@@ -3750,7 +3896,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
   const strictMonthIndex = payload.monthIndex;
 
 
-  const anlagenIndexBackup = deepCloneJson(readAnlagenIndex());
+  const anlagenIndexBackup = deepCloneJson(await readAnlagenIndex());
   const anlagenLedgerBackup = deepCloneJson(await readAnlagenLedger());
   const anlagenMonthSnapshotBackup = deepCloneJson(
     await readAnlagenSnapshot(strictUsername, strictYear, strictMonthIndex)
@@ -3769,7 +3915,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
         strictUsername
       );
 
-      const index = readAnlagenIndex();
+      const index = await readAnlagenIndex();
       const ledger = await readAnlagenLedger();
 
       const touched = new Set([
@@ -3804,7 +3950,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
         Array.from(touched)
       );
 
-      writeAnlagenIndex(index);
+      await writeAnlagenIndex(index);
       await writeAnlagenLedger(ledger);
       await writeAnlagenSnapshot(
         strictUsername,
@@ -3827,9 +3973,8 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('Strict transmission side-effect failed:', e);
 
-
     try {
-      writeJsonAtomic(ANLAGEN_INDEX_PATH, anlagenIndexBackup);
+      await writeAnlagenIndex(anlagenIndexBackup);
     } catch (rollbackErr) {
       console.error('Failed to restore anlagenIndex backup:', rollbackErr);
     }
@@ -5180,6 +5325,7 @@ app.get('/api/admin/transmissions-summary', requireAuth, requireAdmin, async (re
 // ============================================================================
 async function startServer() {
   await ensureUsersTable();
+  await ensureSessionsTable();
   await ensureMonthSubmissionsTable();
   await ensureKontenTables();
   await ensureAbsencesTable();
