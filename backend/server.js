@@ -4549,6 +4549,16 @@ app.post('/api/admin/week-lock', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
+// GET /api/week-locks/me...... für user panel 
+app.get('/api/week-locks/me', requireAuth, async (req, res) => {
+  try {
+    const locks = await readUserWeekLocksFromDb(req.user.username);
+    return res.json({ ok: true, locks });
+  } catch (err) {
+    console.error('Failed to load week locks', err);
+    return res.status(500).json({ ok: false, error: 'Could not load week locks' });
+  }
+});
 
 // ---- Admin: day details (fetch on demand) ----
 // GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01

@@ -50,6 +50,7 @@ let anlagenSearchTerm = "";
 let selectedKomNr = null;
 let allUsers = [];
 let editingUserId = null;
+let myWeekLocks = {}; // weekKey -> { locked, lockedAt, lockedBy }
 
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
 const anlagenDetailCache = new Map(); // key: komNr -> detail
@@ -568,6 +569,8 @@ topNavTabs.forEach((tab) => {
       updateDashboardForCurrentMonth();
       syncMyAbsencesFromServer();
       loadSyncStatus();
+    } else if (view === "wochenplan") {
+      loadMyWeekLocks();
     } else if (view === "admin") {
       loadAdminSummary();
     }
@@ -3667,6 +3670,62 @@ function getOrCreateFirstEntry(dayData) {
   return getOrCreateEntry(dayData, 0);
 }
 
+
+/**
+ * Weeklock loading for userpanel
+ */
+async function loadMyWeekLocks() {
+  try {
+    const res = await authFetch('/api/week-locks/me');
+    const data = await res.json();
+    if (data.ok) {
+      myWeekLocks = data.locks || {};
+      applyWeekLockUI();
+    }
+  } catch (err) {
+    console.error('Failed to load week locks', err);
+  }
+}
+
+function getISOWeekKey(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNo}`;
+}
+
+function isCurrentWeekLocked() {
+  const monday = getMondayForCurrentWeek();
+  const wk = getISOWeekKey(monday);
+  return !!(myWeekLocks[wk] && myWeekLocks[wk].locked);
+}
+
+function applyWeekLockUI() {
+  const locked = isCurrentWeekLocked();
+
+  // Sidebar-Body (Tagesliste) und alle Day-Sections ausgrenzen
+  const sidebarBody = document.querySelector('.sidebar-body');
+  if (sidebarBody) sidebarBody.classList.toggle('week-locked-overlay', locked);
+
+  const daySections = document.querySelectorAll('.day-content');
+  daySections.forEach(s => s.classList.toggle('week-locked-overlay', locked));
+
+  // Day buttons ausgegraut
+  document.querySelectorAll('.day-button').forEach(btn => {
+    btn.classList.toggle('week-locked', locked);
+  });
+
+  // Lock Indicator im Header
+  const indicator = document.getElementById('weekLockIndicator');
+  if (indicator) indicator.classList.toggle('visible', locked);
+
+  // Banner entfernen falls noch vorhanden vom alten Code
+  const oldBanner = document.getElementById('weekLockBanner');
+  if (oldBanner) oldBanner.remove();
+}
+
 /**
  * Wochenplan header rendering / week label and day dates
  */
@@ -4031,6 +4090,7 @@ if (loginForm) {
       updateUIForRole();
       reloadAllDataForCurrentUser();
       syncMyAbsencesFromServer();
+      loadMyWeekLocks(); // NEU
 
       if (userDisplayEl) {
         userDisplayEl.textContent = user.username || username;
@@ -4091,6 +4151,7 @@ function initAuthView() {
   // Load all local data for this user + render UI
   reloadAllDataForCurrentUser();
   syncMyAbsencesFromServer();
+  loadMyWeekLocks(); // NEU
   showApp();
 
   // Enforce default view based on stored role
@@ -6219,13 +6280,14 @@ if (weekPrevBtn) {
     event.stopPropagation();
     weekOffset -= 1;
     renderWeekInfo();
-    updateDayTitleWithDate(); // NEU
+    updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
     applyDayHoursForCurrentDay();
     applyMealAllowanceForCurrentDay();
     applyKomForCurrentDay();
     applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
+    applyWeekLockUI();
   });
 }
 
@@ -6235,12 +6297,13 @@ if (weekNextBtn) {
     event.stopPropagation();
     weekOffset += 1;
     renderWeekInfo();
-    updateDayTitleWithDate(); // NEU
+    updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
     applyMealAllowanceForCurrentDay();
     applyKomForCurrentDay();
     applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
+    applyWeekLockUI();
   });
 }
 

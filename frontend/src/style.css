@@ -3379,3 +3379,40 @@ display: none;
   cursor: pointer;
   font-size: 13px;
 }
+
+/* ============================================================
+   Week Lock
+   ============================================================ */
+
+.week-locked-overlay {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+.week-lock-indicator {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #ef4444;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.week-lock-indicator.visible {
+  display: flex;
+}
+
+.day-button.week-locked {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.day-button.week-locked:hover {
+  background: transparent;
+}
