@@ -571,6 +571,8 @@ topNavTabs.forEach((tab) => {
       loadSyncStatus();
     } else if (view === "wochenplan") {
       loadMyWeekLocks();
+    } else if (view === "pikett") {
+      loadMyWeekLocks();
     } else if (view === "admin") {
       loadAdminSummary();
     }
@@ -886,6 +888,7 @@ function createEmptyPikettEntry() {
     hours: 0,
     note: "",
     isOvertime3: false,
+    saved: false,
   };
 }
 
@@ -1115,8 +1118,10 @@ function renderPikettList() {
       monthTotal += entry.hours;
     }
 
+    const locked = isDateLocked(entry.date);
+
     const card = document.createElement("div");
-    card.className = "pikett-card";
+    card.className = "pikett-card" + (locked ? " pikett-card-locked" : "");
     card.dataset.index = String(index);
 
     // Header: Date + Kom.Nummer + remove
@@ -1136,7 +1141,9 @@ function renderPikettList() {
     const dateInput = document.createElement("input");
     dateInput.type = "date";
     dateInput.className = "pikett-date";
+    dateInput.lang = "de-CH";
     dateInput.value = entry.date || "";
+    dateInput.disabled = locked;
 
     dateLabel.appendChild(dateSpan);
     dateLabel.appendChild(dateInput);
@@ -1153,6 +1160,7 @@ function renderPikettList() {
     komInput.className = "pikett-kom";
     komInput.placeholder = "z.B. 123456";
     komInput.value = entry.komNr || "";
+    komInput.disabled = locked;
 
     komLabel.appendChild(komSpan);
     komLabel.appendChild(komInput);
@@ -1165,9 +1173,11 @@ function renderPikettList() {
     removeBtn.type = "button";
     removeBtn.className = "pikett-remove-btn";
     removeBtn.textContent = "✕";
+    removeBtn.disabled = locked;
 
     header.appendChild(fieldGroup);
     header.appendChild(removeBtn);
+
 
     // Body: hours + note
     const body = document.createElement("div");
@@ -1185,6 +1195,7 @@ function renderPikettList() {
     hoursInput.step = "0.25";
     hoursInput.placeholder = "0,0";
     hoursInput.className = "pikett-hours";
+    hoursInput.disabled = locked;
 
     if (
       typeof entry.hours === "number" &&
@@ -1208,6 +1219,7 @@ function renderPikettList() {
     noteInput.className = "pikett-note";
     noteInput.placeholder = "z.B. kurze Beschreibung";
     noteInput.value = entry.note || "";
+    noteInput.disabled = locked;
 
     noteLabel.appendChild(noteSpan);
     noteLabel.appendChild(noteInput);
@@ -1252,6 +1264,7 @@ function renderPikettList() {
     overtimeCheckbox.type = "checkbox";
     overtimeCheckbox.className = "pikett-overtime3-checkbox";
     overtimeCheckbox.checked = !!entry.isOvertime3;
+    overtimeCheckbox.disabled = locked;
 
     const overtimeText = document.createElement("span");
     overtimeText.textContent =
@@ -1267,9 +1280,37 @@ function renderPikettList() {
     body.appendChild(overtimeSection);
 
     card.appendChild(header);
+    if (locked) {
+    const lockBadge = document.createElement("div");
+    lockBadge.className = "pikett-lock-badge";
+    lockBadge.textContent = "🔒 Gesperrt";
+    card.appendChild(lockBadge);
+    }
+    
     card.appendChild(body);
 
+    if (!locked) {
+      const cardFooter = document.createElement("div");
+      cardFooter.className = "pikett-card-footer";
+
+      const statusBadge = document.createElement("span");
+      statusBadge.className = "pikett-save-status " + (entry.saved ? "saved" : "unsaved");
+      statusBadge.textContent = entry.saved ? "✓ Gespeichert" : "Nicht gespeichert";
+
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "pikett-save-btn";
+      saveBtn.textContent = "Speichern";
+      saveBtn.disabled = !!entry.saved;
+      saveBtn.dataset.index = String(index);
+
+      cardFooter.appendChild(statusBadge);
+      cardFooter.appendChild(saveBtn);
+      card.appendChild(cardFooter);
+    }
+
     listEl.appendChild(card);
+
   });
 
   // Monatstotal anzeigen
@@ -1391,8 +1432,20 @@ document.addEventListener("input", (event) => {
     return;
   }
 
+  entry.saved = false;
   savePikettStore();
-  updatePikettMonthTotal(); // nur Summe aktualisieren
+  updatePikettMonthTotal();
+
+  const footer = card.querySelector(".pikett-card-footer");
+  if (footer) {
+    const badge = footer.querySelector(".pikett-save-status");
+    const btn = footer.querySelector(".pikett-save-btn");
+    if (badge) {
+      badge.className = "pikett-save-status unsaved";
+      badge.textContent = "Nicht gespeichert";
+    }
+    if (btn) btn.disabled = false;
+  }
 });
 
 // --- NEW: handle Überzeit 3 checkbox on Pikett cards --- //
@@ -1414,8 +1467,76 @@ document.addEventListener("change", (event) => {
   if (Number.isNaN(index) || !pikettStore[index]) return;
 
   pikettStore[index].isOvertime3 = target.checked;
+  pikettStore[index].saved = false;
   savePikettStore();
-  // no need to re-render; checkbox already shows current state
+
+  const footer = card.querySelector(".pikett-card-footer");
+  if (footer) {
+    const badge = footer.querySelector(".pikett-save-status");
+    const btn = footer.querySelector(".pikett-save-btn");
+    if (badge) {
+      badge.className = "pikett-save-status unsaved";
+      badge.textContent = "Nicht gespeichert";
+    }
+    if (btn) btn.disabled = false;
+  }
+});
+
+document.addEventListener("click", (event) => {
+  const target = event.target;
+  if (!target || !target.classList.contains("pikett-save-btn")) return;
+
+  const index = Number(target.dataset.index);
+  if (Number.isNaN(index) || !pikettStore[index]) return;
+
+  const entry = pikettStore[index];
+
+  if (!entry.date) {
+    alert("Bitte zuerst ein Datum eingeben.");
+    return;
+  }
+
+  authFetch("/api/week-locks/me")
+    .then(res => res.json())
+    .then(data => {
+      if (data.ok) myWeekLocks = data.locks || {};
+
+      if (isDateLocked(entry.date)) {
+  myWeekLocks = data.locks || {};
+  renderPikettList();
+
+  const cards = document.querySelectorAll(".pikett-card");
+  cards.forEach(c => {
+    if (Number(c.dataset.index) === index) {
+      c.style.position = "relative";
+
+      let overlay = c.querySelector(".pikett-lock-error");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "pikett-lock-error";
+
+        const msg = document.createElement("div");
+        msg.className = "pikett-lock-error-text";
+        msg.textContent = "Diese Woche ist gesperrt — Eintrag kann nicht gespeichert werden.";
+
+        overlay.appendChild(msg);
+        c.appendChild(overlay);
+
+        
+      }
+    }
+  });
+  return;
+}
+
+      entry.saved = true;
+      savePikettStore();
+      renderPikettList();
+    })
+    .catch(err => {
+      console.error("Lock check failed", err);
+      alert("Fehler beim Speichern — bitte nochmal versuchen.");
+    });
 });
 
 // Remove a Pikett-Einsatz card (mit Bestätigung)
@@ -2197,6 +2318,7 @@ function buildPayloadForCurrentDashboardMonth() {
   // 2) Pikett-Einsätze dieses Monats
   const monthPikett = pikettStore.filter((entry) => {
     if (!entry.date) return false;
+    if (!entry.saved) return false;
     const d = new Date(entry.date);
     if (Number.isNaN(d.getTime())) return false;
     return d.getFullYear() === year && d.getMonth() === monthIndex;
@@ -3702,26 +3824,58 @@ function isCurrentWeekLocked() {
   return !!(myWeekLocks[wk] && myWeekLocks[wk].locked);
 }
 
+function isDateLocked(dateKey) {
+  if (!dateKey) return false;
+  const d = new Date(dateKey + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return false;
+  const wk = getISOWeekKey(d);
+  return !!(myWeekLocks[wk] && myWeekLocks[wk].locked);
+}
+
 function applyWeekLockUI() {
   const locked = isCurrentWeekLocked();
 
-  // Sidebar-Body (Tagesliste) und alle Day-Sections ausgrenzen
+  // Sidebar-Body ausgrenzen
   const sidebarBody = document.querySelector('.sidebar-body');
   if (sidebarBody) sidebarBody.classList.toggle('week-locked-overlay', locked);
-
-  const daySections = document.querySelectorAll('.day-content');
-  daySections.forEach(s => s.classList.toggle('week-locked-overlay', locked));
 
   // Day buttons ausgegraut
   document.querySelectorAll('.day-button').forEach(btn => {
     btn.classList.toggle('week-locked', locked);
   });
 
-  // Lock Indicator im Header
-  const indicator = document.getElementById('weekLockIndicator');
-  if (indicator) indicator.classList.toggle('visible', locked);
+  // Inputs deaktivieren
+  document.querySelectorAll('.day-content input, .day-content select, .day-content textarea, .day-content button:not(.week-arrow):not(.top-nav-tab):not(.day-button)').forEach(el => {
+    el.disabled = locked;
+  });
 
-  // Banner entfernen falls noch vorhanden vom alten Code
+  // Einzelnes Overlay auf dem app Container
+  const appContainer = document.querySelector('#view-wochenplan .app');
+  if (!appContainer) return;
+
+  let overlay = document.getElementById('weekLockOverlay');
+
+  if (locked) {
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'weekLockOverlay';
+      overlay.className = 'week-lock-overlay-msg';
+
+      const msg = document.createElement('div');
+      msg.className = 'week-lock-overlay-text';
+      msg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
+
+      overlay.appendChild(msg);
+      appContainer.style.position = 'relative';
+      appContainer.appendChild(overlay);
+    }
+  } else {
+    if (overlay) overlay.remove();
+  }
+
+  // Alten Indicator entfernen
+  const indicator = document.getElementById('weekLockIndicator');
+  if (indicator) indicator.classList.remove('visible');
   const oldBanner = document.getElementById('weekLockBanner');
   if (oldBanner) oldBanner.remove();
 }
@@ -6299,6 +6453,7 @@ if (weekNextBtn) {
     renderWeekInfo();
     updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
+    applyDayHoursForCurrentDay();
     applyMealAllowanceForCurrentDay();
     applyKomForCurrentDay();
     applySpecialEntriesForCurrentDay();
