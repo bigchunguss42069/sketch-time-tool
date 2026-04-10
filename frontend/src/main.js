@@ -84,8 +84,7 @@ const dashboardMonthLabelEl = document.getElementById("dashboardMonthLabel");
 const dashboardMonthPrevBtn = document.getElementById("dashboardMonthPrev");
 const dashboardMonthNextBtn = document.getElementById("dashboardMonthNext");
 
-const dashTotalKomEl = document.getElementById("dashTotalKom");
-const dashTotalDayhoursEl = document.getElementById("dashTotalDayhours");
+const dashTotalStampHoursEl = document.getElementById("dashTotalStampHours");
 const dashTotalPikettEl = document.getElementById("dashTotalPikett");
 const dashTotalOvertime3El = document.getElementById("dashTotalOvertime3");
 const dashTotalHoursEl = document.getElementById("dashTotalHours");
@@ -149,6 +148,26 @@ const userDisplayEl = document.getElementById("userDisplay");
 const logoutBtn = document.getElementById("logoutBtn");
 let _floorInterval = null;
 
+// Stamp Card DOM handles
+const stampBtn = document.getElementById('stampBtn');
+const stampBtnLabel = document.getElementById('stampBtnLabel');
+const stampBtnIcon = document.getElementById('stampBtnIcon');
+const stampCardDate = document.getElementById('stampCardDate');
+const stampCardNet = document.getElementById('stampCardNet');
+const stampLog = document.getElementById('stampLog');
+const stampEditDate = document.getElementById('stampEditDate');
+const stampEditLog = document.getElementById('stampEditLog');
+const stampEditAddBtn = document.getElementById('stampEditAddBtn');
+const stampEditSchmutzzulage = document.getElementById('stampEditSchmutzzulage');
+const stampEditNebenauslagen = document.getElementById('stampEditNebenauslagen');
+const stampModal = document.getElementById('stampModal');
+const stampModalTitle = document.getElementById('stampModalTitle');
+const stampModalClose = document.getElementById('stampModalClose');
+const stampModalCancel = document.getElementById('stampModalCancel');
+const stampModalSave = document.getElementById('stampModalSave');
+const stampModalTime = document.getElementById('stampModalTime');
+const stampModalTypeIn = document.getElementById('stampModalTypeIn');
+const stampModalTypeOut = document.getElementById('stampModalTypeOut');
 /**
  *  Login Loader
  */
@@ -571,6 +590,7 @@ topNavTabs.forEach((tab) => {
       loadSyncStatus();
     } else if (view === "wochenplan") {
       loadMyWeekLocks();
+      renderStampCard();
     } else if (view === "pikett") {
       loadMyWeekLocks();
     } else if (view === "admin") {
@@ -2929,74 +2949,35 @@ function syncVacationFlagsFromAbsences() {
 function updateDashboardForCurrentMonth() {
   const info = getCurrentDashboardMonthInfo();
 
-  // Monatstitel aktualisieren
   if (dashboardMonthLabelEl) {
     const text = info.label.charAt(0).toUpperCase() + info.label.slice(1);
     dashboardMonthLabelEl.textContent = text;
   }
 
-  let totalKom = 0;
-  let totalDayHours = 0;
+  let totalStampHours = 0;
   let totalPikett = 0;
   let totalOvertime3 = 0;
 
-  // 1) Wochenplan-Daten (dayStore) aggregieren
+  // 1) Präsenzstunden aus Stempelungen
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
     const d = new Date(dateKey);
     if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== info.year || d.getMonth() !== info.monthIndex) return;
 
-    const y = d.getFullYear();
-    const m = d.getMonth();
-    if (y !== info.year || m !== info.monthIndex) return;
-
-    // Kommissionsstunden: Summe aller option1..6
-    if (Array.isArray(dayData.entries)) {
-      dayData.entries.forEach((entry) => {
-        if (!entry || !entry.hours) return;
-        Object.values(entry.hours).forEach((val) => {
-          if (typeof val === "number" && !Number.isNaN(val)) {
-            totalKom += val;
-          }
-        });
-      });
-    }
-
-    // Tagesbezogene Stunden (Schulung / Sitzung / Arzt)
-    if (dayData.dayHours) {
-      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
-      [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === "number" && !Number.isNaN(val)) {
-          totalDayHours += val;
-        }
-      });
-    }
-
-    // Spezialbuchungen (Regie / Fehler) zählen als ÜZ1 / Kommissionsstunden
-    if (Array.isArray(dayData.specialEntries)) {
-      dayData.specialEntries.forEach((special) => {
-        if (!special) return;
-        const val = special.hours;
-        if (typeof val === "number" && !Number.isNaN(val)) {
-          totalKom += val;
-        }
-      });
+    if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
+      totalStampHours += computeNetWorkingHoursFromStamps(dayData.stamps);
     }
   });
 
-  // 2) Pikett-Daten (pikettStore) aggregieren
+  // 2) Pikett und Wochenendarbeit
   pikettStore.forEach((entry) => {
     if (!entry.date) return;
     const d = new Date(entry.date);
     if (Number.isNaN(d.getTime())) return;
+    if (d.getFullYear() !== info.year || d.getMonth() !== info.monthIndex) return;
 
-    const y = d.getFullYear();
-    const m = d.getMonth();
-    if (y !== info.year || m !== info.monthIndex) return;
-
-    const hours =
-      typeof entry.hours === "number" && !Number.isNaN(entry.hours)
-        ? entry.hours
-        : 0;
+    const hours = typeof entry.hours === "number" && !Number.isNaN(entry.hours)
+      ? entry.hours : 0;
 
     if (entry.isOvertime3) {
       totalOvertime3 += hours;
@@ -3005,29 +2986,21 @@ function updateDashboardForCurrentMonth() {
     }
   });
 
-  const totalAll = totalKom + totalDayHours + totalPikett + totalOvertime3;
+  const totalAll = totalStampHours + totalPikett + totalOvertime3;
 
-  // 3) Werte in das Dashboard schreiben
-  if (dashTotalKomEl) {
-    dashTotalKomEl.textContent = totalKom.toFixed(1).replace(".", ",") + " h";
-  }
-  if (dashTotalDayhoursEl) {
-    dashTotalDayhoursEl.textContent =
-      totalDayHours.toFixed(1).replace(".", ",") + " h";
+  if (dashTotalStampHoursEl) {
+    dashTotalStampHoursEl.textContent = totalStampHours.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalPikettEl) {
-    dashTotalPikettEl.textContent =
-      totalPikett.toFixed(1).replace(".", ",") + " h";
+    dashTotalPikettEl.textContent = totalPikett.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalOvertime3El) {
-    dashTotalOvertime3El.textContent =
-      totalOvertime3.toFixed(1).replace(".", ",") + " h";
+    dashTotalOvertime3El.textContent = totalOvertime3.toFixed(1).replace(".", ",") + " h";
   }
   if (dashTotalHoursEl) {
     dashTotalHoursEl.textContent = totalAll.toFixed(1).replace(".", ",") + " h";
   }
 
-  // 4) Wochenstatus für diesen Monat aktualisieren
   updateDashboardWeekListForCurrentMonth();
 }
 
@@ -3252,6 +3225,25 @@ async function updateOvertimeYearCard() {
  *  - ob alle Mo–Fr im Monat erfasst sind
  *  - Total Stunden (Kom + Tagesstunden + Pikett) in diesem Monat
  */
+function computeNetWorkingHoursFromStamps(stamps) {
+  if (!Array.isArray(stamps) || stamps.length === 0) return 0;
+  let totalMinutes = 0;
+  let lastIn = null;
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  for (const s of sorted) {
+    if (!/^\d{2}:\d{2}$/.test(s.time || '')) continue;
+    const [hh, mm] = s.time.split(':').map(Number);
+    const minutes = hh * 60 + mm;
+    if (s.type === 'in') lastIn = minutes;
+    else if (s.type === 'out' && lastIn !== null) {
+      const diff = minutes - lastIn;
+      if (diff > 0) totalMinutes += diff;
+      lastIn = null;
+    }
+  }
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
 function updateDashboardWeekListForCurrentMonth() {
   const weekListEl = document.getElementById("dashboardWeekList");
   if (!weekListEl) return;
@@ -3300,6 +3292,7 @@ function updateDashboardWeekListForCurrentMonth() {
   }
 
   // 2) Wochenplan (dayStore) drüberlegen
+  // 2) Stempelungen aus dayStore
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
     const d = new Date(dateKey);
     if (Number.isNaN(d.getTime())) return;
@@ -3310,56 +3303,22 @@ function updateDashboardWeekListForCurrentMonth() {
     const w = weekMap[weekKey];
     if (!w) return;
 
-    let nonPikettHours = 0;
-
-    // Kommissionsstunden
-    if (Array.isArray(dayData.entries)) {
-      dayData.entries.forEach((entry) => {
-        if (!entry || !entry.hours) return;
-        Object.values(entry.hours).forEach((val) => {
-          if (typeof val === "number" && !Number.isNaN(val)) {
-            nonPikettHours += val;
-          }
-        });
-      });
-    }
-
-    // Tagesbezogene Stunden
-    if (dayData.dayHours) {
-      const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
-      [schulung, sitzungKurs, arztKrank].forEach((val) => {
-        if (typeof val === "number" && !Number.isNaN(val)) {
-          nonPikettHours += val;
-        }
-      });
-    }
-
-    // Spezialbuchungen ebenfalls im Tages-Total berücksichtigen
-    if (Array.isArray(dayData.specialEntries)) {
-      dayData.specialEntries.forEach((special) => {
-        if (!special) return;
-        const val = special.hours;
-        if (typeof val === "number" && !Number.isNaN(val)) {
-          nonPikettHours += val;
-        }
-      });
-    }
-
     const flags = dayData.flags || {};
     const isFerien = !!flags.ferien;
 
-    // "Erfasst" = Stunden (inkl. Spezial) oder Ferien
-    const hasDayData = nonPikettHours > 0 || isFerien;
+    const stampHours = Array.isArray(dayData.stamps) && dayData.stamps.length > 0
+      ? computeNetWorkingHoursFromStamps(dayData.stamps)
+      : 0;
+
+    const hasData = stampHours > 0 || isFerien;
 
     const dayInfo = w.days[dateKey];
     if (!dayInfo) return;
 
-    dayInfo.hours += nonPikettHours;
-    if (hasDayData) {
-      dayInfo.hasData = true;
-    }
+    dayInfo.hours += stampHours;
+    if (hasData) dayInfo.hasData = true;
 
-    w.totalHours += nonPikettHours;
+    w.totalHours += stampHours;
   });
 
   // 3) Pikett (pikettStore) drüberlegen
@@ -3463,22 +3422,34 @@ function updateDashboardWeekListForCurrentMonth() {
 
   weeks.forEach((w) => {
     const row = document.createElement("div");
-    row.className = "dashboard-week-row";
+    row.className = "week-row";
+
+    // Header
+    const header = document.createElement("div");
+    header.className = "week-row-header";
+
+    const left = document.createElement("div");
+    left.className = "week-row-left";
 
     const labelSpan = document.createElement("span");
-    labelSpan.className = "dashboard-week-label";
+    labelSpan.className = "week-label";
+    labelSpan.textContent = `KW ${w.week}`;
 
     const fromStr = w.minDate ? formatShortDate(w.minDate) : "";
     const toStr = w.maxDate ? formatShortDate(w.maxDate) : "";
-
     const workDaysInMonth = Object.values(w.days).filter(
-      (di) => di.weekday >= 1 && di.weekday <= 5,
+      (di) => di.weekday >= 1 && di.weekday <= 5
     ).length;
 
-    labelSpan.textContent = `KW ${w.week} · ${fromStr} – ${toStr} (${workDaysInMonth} Tage)`;
+    const datesSpan = document.createElement("span");
+    datesSpan.className = "week-dates";
+    datesSpan.textContent = `${fromStr} – ${toStr} · ${workDaysInMonth} Tage`;
 
-    const statusSpan = document.createElement("span");
-    statusSpan.className = "dashboard-week-status";
+    left.appendChild(labelSpan);
+    left.appendChild(datesSpan);
+
+    const right = document.createElement("div");
+    right.className = "week-right";
 
     const expectedDates = Object.entries(w.days)
       .filter(([, di]) => di.weekday >= 1 && di.weekday <= 5)
@@ -3487,29 +3458,81 @@ function updateDashboardWeekListForCurrentMonth() {
     let missingCount = 0;
     expectedDates.forEach((dateKey) => {
       const di = w.days[dateKey];
-      if (!di || !di.hasData) {
-        missingCount += 1;
-      }
+      if (!di || !di.hasData) missingCount += 1;
     });
 
+    const statusSpan = document.createElement("span");
     if (expectedDates.length === 0) {
-      statusSpan.textContent = "Nur Wochenende im Monat";
+      statusSpan.textContent = "Nur Wochenende";
+      statusSpan.className = "dashboard-week-status";
     } else if (missingCount === 0) {
-      statusSpan.textContent = "Alle Tage erfasst";
-      statusSpan.classList.add("status-ok");
+      statusSpan.textContent = "Alle erfasst";
+      statusSpan.className = "status-ok";
     } else {
-      statusSpan.textContent = `Fehlende Einträge: ${missingCount} Tag(e)`;
-      statusSpan.classList.add("status-missing");
+      statusSpan.textContent = `${missingCount} fehlend`;
+      statusSpan.className = "status-missing";
     }
 
     const totalSpan = document.createElement("span");
-    totalSpan.className = "dashboard-week-total";
+    totalSpan.className = "week-total";
     totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
 
-    row.appendChild(labelSpan);
-    row.appendChild(statusSpan);
-    row.appendChild(totalSpan);
+    const chevron = document.createElement("span");
+    chevron.className = "week-chevron";
+    chevron.textContent = "▼";
 
+    right.appendChild(statusSpan);
+    right.appendChild(totalSpan);
+    right.appendChild(chevron);
+
+    header.appendChild(left);
+    header.appendChild(right);
+
+    // Tagesdetails
+    const daysEl = document.createElement("div");
+    daysEl.className = "week-days";
+
+    const DAY_NAMES = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+    Object.entries(w.days)
+      .filter(([, di]) => di.weekday >= 1 && di.weekday <= 5)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([dateKey, di]) => {
+        const dayRow = document.createElement("div");
+        dayRow.className = "day-row";
+
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "day-name";
+        nameSpan.textContent = DAY_NAMES[di.weekday];
+
+        const dateSpan = document.createElement("span");
+        dateSpan.className = "day-date";
+        const d = new Date(dateKey + "T00:00:00");
+        dateSpan.textContent = `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.`;
+
+        const hoursSpan = document.createElement("span");
+        if (!di.hasData) {
+          hoursSpan.className = "day-hours missing";
+          hoursSpan.textContent = "–";
+        } else {
+          hoursSpan.className = "day-hours";
+          hoursSpan.textContent = di.hours.toFixed(1).replace(".", ",") + " h";
+        }
+
+        dayRow.appendChild(nameSpan);
+        dayRow.appendChild(dateSpan);
+        dayRow.appendChild(hoursSpan);
+        daysEl.appendChild(dayRow);
+      });
+
+    // Toggle
+    header.addEventListener("click", () => {
+      daysEl.classList.toggle("open");
+      chevron.classList.toggle("open");
+    });
+
+    row.appendChild(header);
+    row.appendChild(daysEl);
     weekListEl.appendChild(row);
   });
 }
@@ -3654,7 +3677,6 @@ function formatFullDateSlash(date) {
 function updateDayTitleWithDate() {
   if (!titleEl) return;
 
-  // aktueller Button für den Tag
   const activeBtn = document.querySelector(
     `.day-button[data-day="${currentDayId}"]`,
   );
@@ -3662,16 +3684,45 @@ function updateDayTitleWithDate() {
     ? activeBtn.dataset.title || activeBtn.textContent || ""
     : titleEl.textContent || "";
 
-  // Datum für currentDayId in der aktuellen Woche berechnen
   const monday = getMondayForCurrentWeek();
   const offset = DAY_OFFSETS[currentDayId] ?? 0;
   const d = new Date(monday);
   d.setDate(monday.getDate() + offset);
 
   const dateStr = formatFullDateSlash(d);
+  const isOpen = document.querySelector('.day-card-body.open') !== null;
+
+  let totalStr = '';
+  if (isOpen) {
+    const dateKey = formatDateKey(d);
+    const dayData = dayStore[dateKey] || {};
+
+    const stampHours = (Array.isArray(dayData.stamps) && dayData.stamps.length > 0)
+      ? computeNetWorkingHoursFromStamps(dayData.stamps)
+      : null;
+
+    let komHours = 0;
+    if (Array.isArray(dayData.entries)) {
+      dayData.entries.forEach(entry => {
+        if (!entry?.hours) return;
+        Object.values(entry.hours).forEach(v => {
+          if (typeof v === 'number') komHours += v;
+        });
+      });
+    }
+    if (dayData.dayHours) {
+      komHours += (dayData.dayHours.schulung || 0) + (dayData.dayHours.sitzungKurs || 0) + (dayData.dayHours.arztKrank || 0);
+    }
+
+    const stampStr = stampHours !== null ? stampHours.toFixed(1).replace('.', ',') + 'h' : '–';
+    const komStr = komHours.toFixed(1).replace('.', ',') + 'h';
+
+    totalStr = `<span class="day-header-totals">${komStr} / ${stampStr}</span>`;
+  }
+
   titleEl.innerHTML = `
     <span class="day-title-text">${baseTitle}</span>
-    <span class="day-title-date">${dateStr}</span>
+    <span class="day-title-date">${dateStr}${totalStr ? ' · ' + totalStr : ''}</span>
   `;
 }
 
@@ -3749,6 +3800,11 @@ function getOrCreateDayData(dateKey) {
   // Spezialbuchungen (Regie / Fehler)
   if (!Array.isArray(data.specialEntries)) {
     data.specialEntries = [];
+  }
+
+  // Stempel-Einträge
+  if (!Array.isArray(data.stamps)) {
+    data.stamps = [];
   }
 
   return data;
@@ -3835,51 +3891,72 @@ function isDateLocked(dateKey) {
 function applyWeekLockUI() {
   const locked = isCurrentWeekLocked();
 
-  // Sidebar-Body ausgrenzen
-  const sidebarBody = document.querySelector('.sidebar-body');
-  if (sidebarBody) sidebarBody.classList.toggle('week-locked-overlay', locked);
-
-  // Day buttons ausgegraut
-  document.querySelectorAll('.day-button').forEach(btn => {
-    btn.classList.toggle('week-locked', locked);
-  });
-
-  // Inputs deaktivieren
+  
+  // Inputs in day-content deaktivieren
   document.querySelectorAll('.day-content input, .day-content select, .day-content textarea, .day-content button:not(.week-arrow):not(.top-nav-tab):not(.day-button)').forEach(el => {
     el.disabled = locked;
   });
 
-  // Einzelnes Overlay auf dem app Container
-  const appContainer = document.querySelector('#view-wochenplan .app');
-  if (!appContainer) return;
+  // Overlay nur auf jeder day-content Section
+  document.querySelectorAll('.day-content').forEach(section => {
+    section.classList.toggle('week-locked-overlay', locked);
 
-  let overlay = document.getElementById('weekLockOverlay');
-
-  if (locked) {
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.id = 'weekLockOverlay';
-      overlay.className = 'week-lock-overlay-msg';
-
-      const msg = document.createElement('div');
-      msg.className = 'week-lock-overlay-text';
-      msg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
-
-      overlay.appendChild(msg);
-      appContainer.style.position = 'relative';
-      appContainer.appendChild(overlay);
+    let overlay = section.querySelector('.week-lock-overlay-msg');
+    if (locked) {
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'week-lock-overlay-msg';
+        const msg = document.createElement('div');
+        msg.className = 'week-lock-overlay-text';
+        msg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
+        overlay.appendChild(msg);
+        section.appendChild(overlay);
+      }
+    } else {
+      if (overlay) overlay.remove();
     }
-  } else {
-    if (overlay) overlay.remove();
-  }
+  });
 
-  // Alten Indicator entfernen
+  document.querySelectorAll('.day-content').forEach(section => {
+    section.classList.toggle('week-locked-overlay', locked);
+
+    let overlay = section.querySelector('.week-lock-overlay-msg');
+    const body = section.querySelector('.day-card-body');
+    const isOpen = body && body.classList.contains('open');
+
+    if (locked && isOpen) {
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'week-lock-overlay-msg';
+        const msg = document.createElement('div');
+        msg.className = 'week-lock-overlay-text';
+        msg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
+        overlay.appendChild(msg);
+        section.appendChild(overlay);
+      }
+    } else {
+      if (overlay) overlay.remove();
+    }
+  });
+
+  // Sidebar-Body visuell ausgegraut aber klickbar
+  const sidebarBody = document.querySelector('.sidebar-body');
+  if (sidebarBody) sidebarBody.style.opacity = locked ? '10' : '';
+
+  // Alten Overlay/Banner entfernen
+  const oldOverlay = document.getElementById('weekLockOverlay');
+  if (oldOverlay) oldOverlay.remove();
   const indicator = document.getElementById('weekLockIndicator');
   if (indicator) indicator.classList.remove('visible');
   const oldBanner = document.getElementById('weekLockBanner');
   if (oldBanner) oldBanner.remove();
+  // Dynamisch gerenderte Kom-Inputs auch sperren
+  if (locked) {
+    document.querySelectorAll('.day-content.active .kom-input, .day-content.active .hours-input, .day-content.active .kom-remove-btn').forEach(el => {
+      el.disabled = true;
+    });
+  }
 }
-
 /**
  * Wochenplan header rendering / week label and day dates
  */
@@ -4245,6 +4322,7 @@ if (loginForm) {
       reloadAllDataForCurrentUser();
       syncMyAbsencesFromServer();
       loadMyWeekLocks(); // NEU
+      renderStampCard();
 
       if (userDisplayEl) {
         userDisplayEl.textContent = user.username || username;
@@ -4306,6 +4384,7 @@ function initAuthView() {
   reloadAllDataForCurrentUser();
   syncMyAbsencesFromServer();
   loadMyWeekLocks(); // NEU
+  renderStampCard();
   showApp();
 
   // Enforce default view based on stored role
@@ -6433,6 +6512,7 @@ if (weekPrevBtn) {
     event.preventDefault();
     event.stopPropagation();
     weekOffset -= 1;
+    setDayCardOpen(false); 
     renderWeekInfo();
     updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
@@ -6450,6 +6530,7 @@ if (weekNextBtn) {
     event.preventDefault();
     event.stopPropagation();
     weekOffset += 1;
+    setDayCardOpen(false); 
     renderWeekInfo();
     updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
@@ -6673,6 +6754,410 @@ function showDay(dayId) {
 
   // Titel "Montag 22/02/2020" aktualisieren
   updateDayTitleWithDate();
+  applyWeekLockUI();
+}
+
+// ============================================================================
+// Stamp Card
+// ============================================================================
+
+function getTodayKey() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatTimeHHMM(date) {
+  return `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+}
+
+function formatDateDE(dateKey) {
+  const d = new Date(dateKey + 'T00:00:00');
+  return d.toLocaleDateString('de-CH', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function getStampNet(stamps) {
+  if (!Array.isArray(stamps) || stamps.length === 0) return null;
+  let total = 0;
+  let lastIn = null;
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  for (const s of sorted) {
+    const [hh, mm] = s.time.split(':').map(Number);
+    const minutes = hh * 60 + mm;
+    if (s.type === 'in') lastIn = minutes;
+    else if (s.type === 'out' && lastIn !== null) {
+      total += minutes - lastIn;
+      lastIn = null;
+    }
+  }
+  if (total === 0) return null;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function isStampedIn(stamps) {
+  if (!Array.isArray(stamps) || stamps.length === 0) return false;
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  return sorted[sorted.length - 1].type === 'in';
+}
+
+function renderStampLog(dateKey, logEl, editMode) {
+  if (!logEl) return;
+  const dayData = getOrCreateDayData(dateKey);
+  const stamps = dayData.stamps || [];
+  logEl.innerHTML = '';
+
+  if (stamps.length === 0) return;
+
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  sorted.forEach((stamp, idx) => {
+    const entry = document.createElement('div');
+    entry.className = 'stamp-log-entry';
+
+    const left = document.createElement('div');
+    left.className = 'stamp-log-entry-left';
+
+    const badge = document.createElement('span');
+    badge.className = `stamp-log-type ${stamp.type}`;
+    badge.textContent = stamp.type === 'in' ? 'Ein' : 'Aus';
+
+    const time = document.createElement('span');
+    time.className = 'stamp-log-time';
+    time.textContent = stamp.time;
+
+    left.appendChild(badge);
+    left.appendChild(time);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'stamp-log-edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+
+      const existing = entry.querySelector('.stamp-log-actions');
+      if (existing) { existing.remove(); return; }
+
+      const actions = document.createElement('div');
+      actions.className = 'stamp-log-actions';
+
+      const editAction = document.createElement('button');
+      editAction.className = 'stamp-log-action-btn';
+      editAction.textContent = 'Zeit ändern';
+      editAction.addEventListener('click', () => {
+        openStampModal({
+          title: 'Zeit ändern',
+          time: stamp.time,
+          type: stamp.type,
+          onSave: (type, newTime) => {
+            const sortedOriginal = [...dayData.stamps].sort((a, b) => a.time.localeCompare(b.time));
+            const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
+            if (realIdx !== -1) {
+              dayData.stamps[realIdx].time = newTime;
+              dayData.stamps[realIdx].type = type;
+            }
+            saveToStorage();
+            if (editMode) renderStampEditSection(dateKey);
+            else renderStampCard();
+          }
+        });
+      });
+
+      const deleteAction = document.createElement('button');
+      deleteAction.className = 'stamp-log-action-btn danger';
+      deleteAction.textContent = 'Löschen';
+      deleteAction.addEventListener('click', () => {
+        const sortedOriginal = [...dayData.stamps].sort((a, b) => a.time.localeCompare(b.time));
+        const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
+        if (realIdx !== -1) dayData.stamps.splice(realIdx, 1);
+        saveToStorage();
+        if (editMode) renderStampEditSection(dateKey);
+        else renderStampCard();
+      });
+
+      actions.appendChild(editAction);
+      actions.appendChild(deleteAction);
+      entry.appendChild(actions);
+
+      setTimeout(() => {
+        document.addEventListener('click', () => actions.remove(), { once: true });
+      }, 0);
+    });
+
+    
+    entry.appendChild(left);
+    entry.appendChild(editBtn);
+    logEl.appendChild(entry);
+  });
+}
+
+function renderStampCard() {
+  const todayKey = getTodayKey();
+  const dayData = getOrCreateDayData(todayKey);
+  const stamps = dayData.stamps || [];
+
+  if (stampCardDate) stampCardDate.textContent = formatDateDE(todayKey);
+
+  const net = getStampNet(stamps);
+  if (stampCardNet) stampCardNet.textContent = net ? net : '';
+
+  const stamped = isStampedIn(stamps);
+  if (stampBtn) {
+    stampBtn.classList.toggle('stamped-in', stamped);
+    if (stampBtnLabel) stampBtnLabel.textContent = stamped ? 'Ausstempeln' : 'Einstempeln';
+    if (stampBtnIcon) stampBtnIcon.textContent = stamped ? '■' : '▶';
+  }
+
+  renderStampLog(todayKey, stampLog, false);
+
+  // Zulagen Pills
+  const flags = dayData.flags || {};
+  document.querySelectorAll('.stamp-pill[data-stamp-flag]').forEach(pill => {
+    const flag = pill.dataset.stampFlag;
+    pill.classList.toggle('zulage-active', !!flags[flag]);
+  });
+
+  // Meal Pills
+  const meal = dayData.mealAllowance || {};
+  document.querySelectorAll('.stamp-meal-pill').forEach(pill => {
+    const key = pill.dataset.stampMeal;
+    pill.classList.toggle('meal-active', !!meal[key]);
+  });
+}
+
+function renderStampEditSection(dateKey) {
+  if (!dateKey) return;
+  const dayData = getOrCreateDayData(dateKey);
+
+  renderStampLog(dateKey, stampEditLog, true);
+
+  if (stampEditSchmutzzulage) {
+    stampEditSchmutzzulage.classList.toggle('zulage-active', !!dayData.flags?.schmutzzulage);
+  }
+  if (stampEditNebenauslagen) {
+    stampEditNebenauslagen.classList.toggle('zulage-active', !!dayData.flags?.nebenauslagen);
+  }
+
+  document.querySelectorAll('.stamp-edit-meal-pill').forEach(pill => {
+    const key = pill.dataset.stampMeal;
+    pill.classList.toggle('meal-active', !!(dayData.mealAllowance?.[key]));
+  });
+}
+
+// Stamp Button
+if (stampBtn) {
+  stampBtn.addEventListener('click', () => {
+    const todayKey = getTodayKey();
+    const dayData = getOrCreateDayData(todayKey);
+    const stamped = isStampedIn(dayData.stamps);
+    const now = formatTimeHHMM(new Date());
+
+    dayData.stamps.push({ type: stamped ? 'out' : 'in', time: now });
+    saveToStorage();
+    renderStampCard();
+  });
+}
+
+// Zulagen Pills (heute)
+document.querySelectorAll('.stamp-pill[data-stamp-flag]').forEach(pill => {
+  pill.addEventListener('click', () => {
+    const todayKey = getTodayKey();
+    const dayData = getOrCreateDayData(todayKey);
+    const flag = pill.dataset.stampFlag;
+    dayData.flags[flag] = !dayData.flags[flag];
+    saveToStorage();
+    pill.classList.toggle('zulage-active', dayData.flags[flag]);
+  });
+});
+
+// Meal Pills (heute)
+document.querySelectorAll('.stamp-meal-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    const todayKey = getTodayKey();
+    const dayData = getOrCreateDayData(todayKey);
+    const key = pill.dataset.stampMeal;
+    dayData.mealAllowance[key] = !dayData.mealAllowance[key];
+    saveToStorage();
+    pill.classList.toggle('meal-active', dayData.mealAllowance[key]);
+  });
+});
+
+// Edit Section — Datepicker
+if (stampEditDate) {
+  stampEditDate.addEventListener('change', () => {
+    const dateKey = stampEditDate.value;
+    renderStampEditSection(dateKey);
+
+    const locked = isDateLocked(dateKey);
+    const body = document.querySelector('.stamp-edit-body');
+    if (!body) return;
+
+    let lockMsg = body.querySelector('.stamp-edit-lock-msg');
+
+    if (locked) {
+      // Alle Inputs/Buttons ausser Datepicker deaktivieren
+      body.querySelectorAll('button, input:not(#stampEditDate)').forEach(el => {
+        el.disabled = true;
+      });
+
+      if (!lockMsg) {
+        lockMsg = document.createElement('div');
+        lockMsg.className = 'stamp-edit-lock-msg';
+        lockMsg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
+        stampEditDate.after(lockMsg);
+      }
+    } else {
+      body.querySelectorAll('button, input').forEach(el => {
+        el.disabled = false;
+      });
+      if (lockMsg) lockMsg.remove();
+    }
+  });
+}
+
+// Edit Section — Stempel hinzufügen
+if (stampEditAddBtn) {
+  stampEditAddBtn.addEventListener('click', () => {
+    const dateKey = stampEditDate?.value;
+    if (!dateKey) { alert('Bitte zuerst ein Datum auswählen.'); return; }
+    if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
+
+    openStampModal({
+      title: 'Stempel hinzufügen',
+      time: '',
+      type: 'in',
+      onSave: (type, time) => {
+        const dayData = getOrCreateDayData(dateKey);
+        dayData.stamps.push({ type, time });
+        saveToStorage();
+        renderStampEditSection(dateKey);
+      }
+    });
+  });
+}
+
+// Edit Section — Zulagen
+if (stampEditSchmutzzulage) {
+  stampEditSchmutzzulage.addEventListener('click', () => {
+    const dateKey = stampEditDate?.value;
+    if (!dateKey) return;
+    if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
+    const dayData = getOrCreateDayData(dateKey);
+    dayData.flags.schmutzzulage = !dayData.flags.schmutzzulage;
+    saveToStorage();
+    stampEditSchmutzzulage.classList.toggle('zulage-active', dayData.flags.schmutzzulage);
+  });
+}
+
+if (stampEditNebenauslagen) {
+  stampEditNebenauslagen.addEventListener('click', () => {
+    const dateKey = stampEditDate?.value;
+    if (!dateKey) return;
+    if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
+    const dayData = getOrCreateDayData(dateKey);
+    dayData.flags.nebenauslagen = !dayData.flags.nebenauslagen;
+    saveToStorage();
+    stampEditNebenauslagen.classList.toggle('zulage-active', dayData.flags.nebenauslagen);
+  });
+}
+
+// Edit Section — Meal Pills
+document.querySelectorAll('.stamp-edit-meal-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    const dateKey = stampEditDate?.value;
+    if (!dateKey) return;
+    if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
+    const dayData = getOrCreateDayData(dateKey);
+    const key = pill.dataset.stampMeal;
+    dayData.mealAllowance[key] = !dayData.mealAllowance[key];
+    saveToStorage();
+    pill.classList.toggle('meal-active', dayData.mealAllowance[key]);
+  });
+});
+
+let stampModalCallback = null;
+let stampModalSelectedType = 'in';
+
+function openStampModal({ title, time = '', type = 'in', onSave }) {
+  if (!stampModal) return;
+  stampModalTitle.textContent = title;
+  stampModalTime.value = time;
+  stampModalSelectedType = type;
+  stampModalTypeIn.classList.toggle('active', type === 'in');
+  stampModalTypeOut.classList.toggle('active', type === 'out');
+  stampModalCallback = onSave;
+  stampModal.classList.remove('hidden');
+}
+
+function closeStampModal() {
+  if (stampModal) stampModal.classList.add('hidden');
+  stampModalCallback = null;
+}
+
+if (stampModalTypeIn) {
+  stampModalTypeIn.addEventListener('click', () => {
+    stampModalSelectedType = 'in';
+    stampModalTypeIn.classList.add('active');
+    stampModalTypeOut.classList.remove('active');
+  });
+}
+
+if (stampModalTypeOut) {
+  stampModalTypeOut.addEventListener('click', () => {
+    stampModalSelectedType = 'out';
+    stampModalTypeOut.classList.add('active');
+    stampModalTypeIn.classList.remove('active');
+  });
+}
+
+if (stampModalClose) stampModalClose.addEventListener('click', closeStampModal);
+if (stampModalCancel) stampModalCancel.addEventListener('click', closeStampModal);
+
+if (stampModalSave) {
+  stampModalSave.addEventListener('click', () => {
+    const time = stampModalTime.value;
+    if (!time) return;
+    if (stampModalCallback) stampModalCallback(stampModalSelectedType, time);
+    closeStampModal();
+  });
+}
+
+// Day Card Toggle
+const dayCardToggle = document.getElementById('dayCardToggle');
+const dayCardChevron = document.getElementById('dayCardChevron');
+
+function setDayCardOpen(open) {
+  const activeSection = document.querySelector('.day-content.active');
+  if (!activeSection) return;
+  const body = activeSection.querySelector('.day-card-body');
+  if (!body) return;
+
+  body.classList.toggle('open', open);
+  if (dayCardChevron) dayCardChevron.classList.toggle('open', open);
+
+  if (!open) {
+    const overlay = activeSection.querySelector('.week-lock-overlay-msg');
+    if (overlay) overlay.remove();
+    const footer = body.querySelector('.day-card-footer');
+    if (footer) footer.remove();
+  } else {
+    applyWeekLockUI();
+  }
+
+  updateDayTitleWithDate();
+}
+
+if (dayCardToggle) {
+  dayCardToggle.addEventListener('click', () => {
+    const activeSection = document.querySelector('.day-content.active');
+    if (!activeSection) return;
+    const body = activeSection.querySelector('.day-card-body');
+    if (!body) return;
+    const isOpen = body.classList.contains('open');
+    setDayCardOpen(!isOpen);
+  });
 }
 
 adminInnerTabButtons.forEach((btn) => {
@@ -6730,6 +7215,7 @@ dayButtons.forEach((btn) => {
     applyKomForCurrentDay();
     applySpecialEntriesForCurrentDay();
     updateDayTotalFromInputs();
+    applyWeekLockUI();
   });
 });
 
@@ -6746,6 +7232,18 @@ function reloadAllDataForCurrentUser() {
   pikettStore = loadPikettStore(); // uses PIKETT_STORAGE_KEY
   absenceRequests = loadAbsenceRequests(); // uses ABSENCE_STORAGE_KEY
 
+  // Heutigen Tag auswählen
+  const todayOffset = new Date().getDay(); // 0=So, 1=Mo...
+  const dayMap = { 1: 'montag', 2: 'dienstag', 3: 'mittwoch', 4: 'donnerstag', 5: 'freitag' };
+  const todayId = dayMap[todayOffset];
+  if (todayId) {
+    showDay(todayId);
+    dayButtons.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.day === todayId);
+    });
+  }
+  setDayCardOpen(false);
+
   // UI neu aufbauen
   renderWeekInfo();
   updateDayTitleWithDate();
@@ -6759,6 +7257,7 @@ function reloadAllDataForCurrentUser() {
   updatePikettMonthTotal();
   updateDashboardForCurrentMonth();
   updateOvertimeYearCard();
+  applyWeekLockUI();
 }
 
 /**

@@ -613,12 +613,57 @@ function clampToNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+
+// Berechnet Netto-Arbeitszeit aus Stempel-Paaren (in Stunden)
+function computeNetWorkingHoursFromStamps(stamps) {
+  if (!Array.isArray(stamps) || stamps.length === 0) return 0;
+
+  let totalMinutes = 0;
+  let lastIn = null;
+
+  const sorted = [...stamps].sort((a, b) => {
+    const ta = String(a.time || '').replace(':', '');
+    const tb = String(b.time || '').replace(':', '');
+    return ta.localeCompare(tb);
+  });
+
+  for (const stamp of sorted) {
+    const type = String(stamp.type || '');
+    const time = String(stamp.time || '');
+    if (!/^\d{2}:\d{2}$/.test(time)) continue;
+
+    const [hh, mm] = time.split(':').map(Number);
+    const minutes = hh * 60 + mm;
+
+    if (type === 'in') {
+      lastIn = minutes;
+    } else if (type === 'out' && lastIn !== null) {
+      const diff = minutes - lastIn;
+      if (diff > 0) totalMinutes += diff;
+      lastIn = null;
+    }
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+// Gibt Arbeitszeit zurück: Stamps wenn vorhanden, sonst eingeteilte Stunden
+// Verwendet für ÜZ1-Berechnung
+function computeDailyWorkingHours(dayData) {
+  if (!dayData || typeof dayData !== 'object') return 0;
+  if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
+    return computeNetWorkingHoursFromStamps(dayData.stamps);
+  }
+  return computeNonPikettHours(dayData);
+}
+
+
+
 function computeNonPikettHours(dayData) {
   if (!dayData || typeof dayData !== 'object') return 0;
 
   let total = 0;
 
-  // Kommissionsstunden
   if (Array.isArray(dayData.entries)) {
     dayData.entries.forEach((entry) => {
       if (!entry || !entry.hours) return;
@@ -628,14 +673,12 @@ function computeNonPikettHours(dayData) {
     });
   }
 
-  // Tagesbezogene Stunden
   if (dayData.dayHours && typeof dayData.dayHours === 'object') {
     total += clampToNumber(dayData.dayHours.schulung);
     total += clampToNumber(dayData.dayHours.sitzungKurs);
     total += clampToNumber(dayData.dayHours.arztKrank);
   }
 
-  // Spezialbuchungen
   if (Array.isArray(dayData.specialEntries)) {
     dayData.specialEntries.forEach((s) => {
       if (!s) return;
@@ -714,12 +757,12 @@ function computeUeZ1NetForMonth(payload, year, monthIndex) {
     const flags = (dayData && dayData.flags) ? dayData.flags : {};
     const isFerien = !!flags.ferien;
 
-    const dayTotal = computeNonPikettHours(dayData);
+    const dayTotal = computeDailyWorkingHours(dayData);
     const hasAnyHours = dayTotal > 0;
     const hasAnyFlag = Object.values(flags).some(Boolean);
+    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
 
-    // Empty day (no hours, no flags) -> ignore (no -8)
-    if (!hasAnyHours && !hasAnyFlag) continue;
+    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
 
     let diff = 0;
 
@@ -757,11 +800,12 @@ function computeUeZ1PositiveForMonth(payload, year, monthIndex) {
     const flags = (dayData && dayData.flags) ? dayData.flags : {};
     const isFerien = !!flags.ferien;
 
-    const dayTotal = computeNonPikettHours(dayData);
+    const dayTotal = computeDailyWorkingHours(dayData);
     const hasAnyHours = dayTotal > 0;
     const hasAnyFlag = Object.values(flags).some(Boolean);
+    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
 
-    if (!hasAnyHours && !hasAnyFlag) continue;
+    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
 
     let diff = 0;
 
@@ -811,11 +855,12 @@ function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey) 
     const flags = (dayData && dayData.flags) ? dayData.flags : {};
     const isFerien = !!flags.ferien;
 
-    const dayTotal = computeNonPikettHours(dayData);
+    const dayTotal = computeDailyWorkingHours(dayData);
     const hasAnyHours = dayTotal > 0;
     const hasAnyFlag = Object.values(flags).some(Boolean);
+    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
 
-    if (!hasAnyHours && !hasAnyFlag) continue;
+    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
 
     let diff = 0;
 
@@ -897,9 +942,12 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     const hasAcceptedAbsence = acceptedAbsenceDays.has(dateKey);
 
     let status = 'missing';
+    
+
+    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
     if (ferien) status = 'ferien';
     else if (hasAcceptedAbsence) status = 'absence';
-    else if (totalHours > 0) status = 'ok';
+    else if (totalHours > 0 || hasStamps) status = 'ok';
     else status = 'missing';
 
     const { week, year: weekYear } = getISOWeekInfo(cursor);
@@ -2540,12 +2588,24 @@ function computeTransmissionTotals(payload) {
   // normalize to 1 decimal like your UI
   const r1 = (n) => Math.round(n * 10) / 10;
 
+  
+  // Nettoarbeitszeit aus Stempelungen pro Tag
+  let stampHours = 0;
+  if (payload && payload.days && typeof payload.days === 'object') {
+    for (const dayData of Object.values(payload.days)) {
+      if (Array.isArray(dayData?.stamps) && dayData.stamps.length > 0) {
+        stampHours += computeNetWorkingHoursFromStamps(dayData.stamps);
+      }
+    }
+  }
+
   return {
     kom: r1(kom),
     dayHours: r1(dayHours),
     pikett: r1(pikett),
     overtime3: r1(overtime3),
     total: r1(total),
+    stampHours: r1(stampHours),
   };
 }
 
