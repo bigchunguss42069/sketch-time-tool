@@ -4677,6 +4677,8 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => 
       : [];
 
     const pikettHours = pikettEntries.reduce((sum, p) => sum + toNumber(p.hours), 0);
+    const stamps = Array.isArray(dayData?.stamps) ? dayData.stamps : [];
+    const stampHours = computeNetWorkingHoursFromStamps(stamps);
 
     const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
     const specialEntries = Array.isArray(dayData?.specialEntries) ? dayData.specialEntries : [];
@@ -4714,7 +4716,7 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => 
 
     const dayHoursTotal = schulung + sitzungKurs + arztKrank;
     const nonPikettTotal = komHours + specialHours + dayHoursTotal;
-    const totalHours = nonPikettTotal + pikettHours;
+    const totalHours = (stamps.length > 0 ? stampHours : nonPikettTotal) + pikettHours;
 
     const ferien = !!flags.ferien;
     let status = 'missing';
@@ -4757,6 +4759,8 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => 
       entries: komEntries,
       specialEntries,
       pikettEntries,
+      stamps,
+      stampHours: Math.round(stampHours * 10) / 10,
     });
   } catch (err) {
     console.error('Failed to build admin day detail', err);

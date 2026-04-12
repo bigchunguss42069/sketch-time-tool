@@ -96,7 +96,10 @@
           <div class="stamp-card" id="stampCard">
             <div class="stamp-card-header">
               <span class="stamp-card-date" id="stampCardDate"></span>
-              <span class="stamp-card-net" id="stampCardNet"></span>
+              <div class="stamp-card-net-wrap" id="stampCardNetWrap" style="display:none">
+                <span class="stamp-card-net-label">Total</span>
+                <span class="stamp-card-net" id="stampCardNet"></span>
+              </div>
             </div>
 
             <button type="button" class="stamp-btn" id="stampBtn">
@@ -124,7 +127,13 @@
                 
               </summary>
               <div class="stamp-edit-body">
-                <input type="date" id="stampEditDate" class="stamp-edit-datepicker" />
+                  <div class="stamp-edit-date-row">
+                    <input type="date" id="stampEditDate" class="stamp-edit-datepicker" />
+                    <div class="stamp-edit-total-badge" id="stampEditTotalBadge" style="display:none;">
+                      <span class="stamp-edit-total-label">Total</span>
+                      <span class="stamp-edit-total-value" id="stampEditTotalValue">–</span>
+                    </div>
+                  </div>
                 <div class="stamp-edit-log" id="stampEditLog"></div>
                 <button type="button" class="stamp-edit-add-btn" id="stampEditAddBtn">+ Stempel hinzufügen</button>
                 <div class="stamp-divider"></div>
@@ -161,111 +170,54 @@
             </div>
           </div>
               <!-- Sidebar / Wochenplan -->
-              <aside class="sidebar">
-                <details class="sidebar-group">
-                  <summary class="sidebar-header">
-                    <div class="sidebar-header-text">
-                      <span class="sidebar-title">Wochenplan</span>
-                      <span class="sidebar-pill">Montag – Freitag</span>
+             <aside class="sidebar">
+                <div class="week-card">
+                  <div class="week-card-header">
+                    <div class="week-card-title-group">
+                      <div class="week-card-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      </div>
+                      <div>
+                        <span class="week-card-title">Wochenplan</span>
+                        <span class="week-card-sub">Mo – Fr</span>
+                      </div>
                     </div>
                     <div class="week-control">
-                      <button
-                        id="weekPrev"
-                        class="week-arrow"
-                        type="button"
-                      >
-                        ‹
+                      <button id="weekPrev" class="week-arrow" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                       </button>
                       <span id="weekLabel" class="week-label">KW --</span>
-                      
-                      <button
-                        id="weekNext"
-                        class="week-arrow"
-                        type="button"
-                      >
-                        ›
+                      <button id="weekNext" class="week-arrow" type="button">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
                       </button>
                     </div>
-                    <span class="chevron">▾</span>
-                  </summary>
+                  </div>
 
                   <div class="sidebar-body">
-                    <button
-                      class="day-button active"
-                      data-day="montag"
-                      data-title="Montag"
-                    >
-                      <span class="day-name-row">
-                        <span class="day-name">Montag</span>
-                        <span
-                          class="day-date"
-                          data-day="montag"
-                        ></span>
-                      </span>
-                      <span class="day-desc"></span>
-                    </button>
-
-                    <button
-                      class="day-button"
-                      data-day="dienstag"
-                      data-title="Dienstag"
-                    >
-                      <span class="day-name-row">
-                        <span class="day-name">Dienstag</span>
-                        <span
-                          class="day-date"
-                          data-day="dienstag"
-                        ></span>
-                      </span>
-                      <span class="day-desc"></span>
-                    </button>
-
-                    <button
-                      class="day-button"
-                      data-day="mittwoch"
-                      data-title="Mittwoch"
-                    >
-                      <span class="day-name-row">
-                        <span class="day-name">Mittwoch</span>
-                        <span
-                          class="day-date"
-                          data-day="mittwoch"
-                        ></span>
-                      </span>
-                      <span class="day-desc"></span>
-                    </button>
-
-                    <button
-                      class="day-button"
-                      data-day="donnerstag"
-                      data-title="Donnerstag"
-                    >
-                      <span class="day-name-row">
-                        <span class="day-name">Donnerstag</span>
-                        <span
-                          class="day-date"
-                          data-day="donnerstag"
-                        ></span>
-                      </span>
-                      <span class="day-desc"></span>
-                    </button>
-
-                    <button
-                      class="day-button"
-                      data-day="freitag"
-                      data-title="Freitag"
-                    >
-                      <span class="day-name-row">
-                        <span class="day-name">Freitag</span>
-                        <span
-                          class="day-date"
-                          data-day="freitag"
-                        ></span>
-                      </span>
-                      <span class="day-desc"></span>
-                    </button>
+                    <div class="day-grid">
+                      <button class="day-button active" data-day="montag" data-title="Montag">
+                        <span class="day-abbr">Mo</span>
+                        <span class="day-num" data-day="montag"></span>
+                      </button>
+                      <button class="day-button" data-day="dienstag" data-title="Dienstag">
+                        <span class="day-abbr">Di</span>
+                        <span class="day-num" data-day="dienstag"></span>
+                      </button>
+                      <button class="day-button" data-day="mittwoch" data-title="Mittwoch">
+                        <span class="day-abbr">Mi</span>
+                        <span class="day-num" data-day="mittwoch"></span>
+                      </button>
+                      <button class="day-button" data-day="donnerstag" data-title="Donnerstag">
+                        <span class="day-abbr">Do</span>
+                        <span class="day-num" data-day="donnerstag"></span>
+                      </button>
+                      <button class="day-button" data-day="freitag" data-title="Freitag">
+                        <span class="day-abbr">Fr</span>
+                        <span class="day-num" data-day="freitag"></span>
+                      </button>
+                    </div>
                   </div>
-                </details>
+                </div>
               </aside>
 
               <!-- Main content -->
@@ -273,7 +225,7 @@
                 <div class="main-header">
                   <div class="main-header-top" id="dayCardToggle">
                     <h1 id="dayTitle">Montag</h1>
-                    <span class="day-card-chevron" id="dayCardChevron">▾</span>
+                    
                   </div>
                 </div>
 
@@ -281,11 +233,14 @@
                 <section class="day-content active" id="montag">
                    <div class="day-card-body">
 
-                  <!-- Tagesbezogene Stunden -->
+                  <!-- Tagesbezogen -->
                   <div class="day-hours-section">
-                    <h2 class="day-section-title">
-                      Tagesbezogene Stunden
-                    </h2>
+                    <div class="day-section-header">
+                      <div class="day-section-icon green">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <span class="day-section-title">Tagesbezogen</span>
+                    </div>
                     <div class="day-hours-grid">
                       <label class="day-hours-item">
                         <span>Werk</span>
@@ -329,9 +284,12 @@
 
                   <!-- Kommissions-Liste -->
                   <div class="kom-section">
-                    <h2 class="day-section-title">
-                      Kommissions Nummer &amp; Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon indigo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  </div>
+  <span class="day-section-title">Kommissionen</span>
+</div>
 
                     <div class="kom-card">
                       <div class="kom-card-header">
@@ -445,9 +403,9 @@
 
                   <!-- Spezialbuchungen -->
                   <div class="special-section">
-                    <h2 class="day-section-title">
-                      Spezialbuchungen (Regie / Fehler)
-                    </h2>
+                    <div class="day-section-header">
+  <span class="day-section-title">Spezialbuchungen</span>
+</div>
 
                     <div class="special-list">
                       <div class="special-empty-text">
@@ -472,9 +430,12 @@
               
                   
                   <div class="day-hours-section">
-                    <h2 class="day-section-title">
-                      Tagesbezogene Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon green">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+  </div>
+  <span class="day-section-title">Tagesbezogen</span>
+</div>
                     <div class="day-hours-grid">
                       <label class="day-hours-item">
                         <span>Werk</span>
@@ -517,9 +478,12 @@
                   
 
                   <div class="kom-section">
-                    <h2 class="day-section-title">
-                      Kommissions Nummer &amp; Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon indigo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  </div>
+  <span class="day-section-title">Kommissionen</span>
+</div>
 
                     <div class="kom-card">
                       <div class="kom-card-header">
@@ -632,9 +596,9 @@
                   </div>
 
                   <div class="special-section">
-                    <h2 class="day-section-title">
-                      Spezialbuchungen (Regie / Fehler)
-                    </h2>
+                    <div class="day-section-header">
+  <span class="day-section-title">Spezialbuchungen</span>
+</div>
 
                     <div class="special-list">
                       <div class="special-empty-text">
@@ -657,9 +621,12 @@
                   <div class="day-card-body">
 
                   <div class="day-hours-section">
-                    <h2 class="day-section-title">
-                      Tagesbezogene Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon green">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+  </div>
+  <span class="day-section-title">Tagesbezogen</span>
+</div>
                     <div class="day-hours-grid">
                       <label class="day-hours-item">
                         <span>Werk</span>
@@ -702,9 +669,12 @@
                   
 
                   <div class="kom-section">
-                    <h2 class="day-section-title">
-                      Kommissions Nummer &amp; Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon indigo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  </div>
+  <span class="day-section-title">Kommissionen</span>
+</div>
 
                     <div class="kom-card">
                       <div class="kom-card-header">
@@ -817,9 +787,9 @@
                   </div>
 
                   <div class="special-section">
-                    <h2 class="day-section-title">
-                      Spezialbuchungen (Regie / Fehler)
-                    </h2>
+                    <div class="day-section-header">
+  <span class="day-section-title">Spezialbuchungen</span>
+</div>
 
                     <div class="special-list">
                       <div class="special-empty-text">
@@ -842,11 +812,14 @@
 
                   <div class="day-card-body">
 
-                  <!-- Tagesbezogene Stunden -->
+                  <!-- Tagesbezogen -->
                   <div class="day-hours-section">
-                    <h2 class="day-section-title">
-                      Tagesbezogene Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon green">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+  </div>
+  <span class="day-section-title">Tagesbezogen</span>
+</div>
                     <div class="day-hours-grid">
                       <label class="day-hours-item">
                         <span>Werk</span>
@@ -865,9 +838,12 @@
 
                   <!-- Kommissions-Liste -->
                   <div class="kom-section">
-                    <h2 class="day-section-title">
-                      Kommissions Nummer &amp; Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon indigo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  </div>
+  <span class="day-section-title">Kommissionen</span>
+</div>
                     <div class="kom-card">
                       <div class="kom-card-header">
                         <label class="kom-label">
@@ -892,9 +868,9 @@
 
                   <!-- Spezialbuchungen -->
                   <div class="special-section">
-                    <h2 class="day-section-title">
-                      Spezialbuchungen (Regie / Fehler)
-                    </h2>
+                    <div class="day-section-header">
+  <span class="day-section-title">Spezialbuchungen</span>
+</div>
                     <div class="special-list">
                       <div class="special-empty-text">Keine Spezialbuchungen erfasst.</div>
                     </div>
@@ -908,9 +884,12 @@
                   <div class="day-card-body">
 
                   <div class="day-hours-section">
-                    <h2 class="day-section-title">
-                      Tagesbezogene Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon green">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+  </div>
+  <span class="day-section-title">Tagesbezogen</span>
+</div>
                     <div class="day-hours-grid">
                       <label class="day-hours-item">
                         <span>Werk</span>
@@ -953,9 +932,12 @@
                   
 
                   <div class="kom-section">
-                    <h2 class="day-section-title">
-                      Kommissions Nummer &amp; Stunden
-                    </h2>
+                    <div class="day-section-header">
+  <div class="day-section-icon indigo">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  </div>
+  <span class="day-section-title">Kommissionen</span>
+</div>
 
                     <div class="kom-card">
                       <div class="kom-card-header">
@@ -1068,9 +1050,9 @@
                   </div>
 
                   <div class="special-section">
-                    <h2 class="day-section-title">
-                      Spezialbuchungen (Regie / Fehler)
-                    </h2>
+                    <div class="day-section-header">
+  <span class="day-section-title">Spezialbuchungen</span>
+</div>
 
                     <div class="special-list">
                       <div class="special-empty-text">
@@ -1094,62 +1076,35 @@
           <!-- View 2: Pikett -->
           <div id="view-pikett" class="app-view">
             <div class="pikett-wrapper">
-              <div class="pikett-header-card">
-                <div class="pikett-header-top">
-                  <h1 class="pikett-title">Pikett-Einsätze</h1>
-
-                  <div class="pikett-month-control">
-                    <button
-                      id="pikettMonthPrev"
-                      class="pikett-month-arrow"
-                      type="button"
-                    >
-                      ‹
-                    </button>
-                    <span
-                      id="pikettMonthLabel"
-                      class="pikett-month-label"
-                    ></span>
-                    <button
-                      id="pikettMonthNext"
-                      class="pikett-month-arrow"
-                      type="button"
-                    >
-                      ›
-                    </button>
+                <div class="pikett-header-card">
+                  <div class="pikett-header-top">
+                    <h1 class="pikett-title">Pikett-Einsätze</h1>
+                    <div class="pikett-month-control">
+                      <button id="pikettMonthPrev" class="pikett-month-arrow" type="button">‹</button>
+                      <span id="pikettMonthLabel" class="pikett-month-label"></span>
+                      <button id="pikettMonthNext" class="pikett-month-arrow" type="button">›</button>
+                    </div>
+                  </div>
+                  <p class="pikett-subtitle">Erfasse hier Pikett Einsätze, und auch Wochenend Einsätze.</p>
+                  <div class="pikett-summary-row">
+                    <span class="pikett-summary-label">Pikettstunden in diesem Monat</span>
+                    <span id="pikettMonthTotal" class="pikett-summary-value">0,0 h</span>
                   </div>
                 </div>
-
-                <p class="pikett-subtitle">
-                  Erfasse hier Pikett Einsätze, und auch Wochenend
-                  Einsätze.
-                </p>
-
-                <div class="pikett-summary-row">
-                  <span class="pikett-summary-label">
-                    Pikettstunden in diesem Monat
-                  </span>
-                  <span
-                    id="pikettMonthTotal"
-                    class="pikett-summary-value"
-                  >
-                    0,0 h
-                  </span>
-                </div>
+                <div class="pikett-actions">
+                  <button id="pikettAddBtn" class="pikett-add-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Pikett-Einsatz hinzufügen
+                  </button>
+                
               </div>
 
-              <div class="pikett-actions">
-                <button
-                  id="pikettAddBtn"
-                  class="pikett-add-btn"
-                >
-                  + Pikett-Einsatz hinzufügen
-                </button>
-              </div>
+              
 
               <div id="pikettList" class="pikett-list">
                 <!-- Pikett-Karten werden per JS eingefügt -->
               </div>
+            </div>
             </div>
           </div>
 
@@ -1158,39 +1113,16 @@
             <div class="dashboard-wrapper">
               <div class="dashboard-header-card">
                 <div class="dashboard-header-top">
-                  <h1 class="dashboard-title">
-                    Monatsüberblick
-                  </h1>
-
+                  <div>
+                    <h1 class="dashboard-title">Monatsüberblick</h1>
+                    <p class="dashboard-subtitle"></p>
+                  </div>
                   <div class="dashboard-month-control">
-                    <button
-                      id="dashboardMonthPrev"
-                      class="dashboard-month-arrow"
-                      type="button"
-                    >
-                      ‹
-                    </button>
-                    <span
-                      id="dashboardMonthLabel"
-                      class="dashboard-month-label"
-                    >
-                      Aktueller Monat
-                    </span>
-                    <button
-                      id="dashboardMonthNext"
-                      class="dashboard-month-arrow"
-                      type="button"
-                    >
-                      ›
-                    </button>
+                    <button id="dashboardMonthPrev" class="dashboard-month-arrow" type="button">‹</button>
+                    <span id="dashboardMonthLabel" class="dashboard-month-label">Aktueller Monat</span>
+                    <button id="dashboardMonthNext" class="dashboard-month-arrow" type="button">›</button>
                   </div>
                 </div>
-
-                <p class="dashboard-subtitle">
-                  Hier siehst du eine Zusammenfassung deiner Zeiten
-                  und Pauschalen.
-                </p>
-              </div>
 
               <div class="dashboard-transmit-row">
                 <button

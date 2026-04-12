@@ -10,7 +10,7 @@ const dayButtons = document.querySelectorAll(".day-button");
 const daySections = document.querySelectorAll(".day-content");
 const titleEl = document.getElementById("dayTitle");
 const weekLabelEl = document.getElementById("weekLabel");
-const dayDateSpans = document.querySelectorAll(".day-date");
+const dayDateSpans = document.querySelectorAll(".day-num");
 const weekPrevBtn = document.getElementById("weekPrev");
 const weekNextBtn = document.getElementById("weekNext");
 const dayTotalEl = document.getElementById("dayTotal");
@@ -1121,8 +1121,8 @@ function renderPikettList() {
 
     const emptyCard = document.createElement("div");
     emptyCard.className = "pikett-card";
-    emptyCard.textContent =
-      "Noch keine Pikett-Einsätze in diesem Monat erfasst.";
+    emptyCard.style.cssText = "color:#94a3b8;font-size:14px;font-weight:600;text-align:center;padding:32px 24px;";
+    emptyCard.textContent = "Noch keine Pikett-Einsätze in diesem Monat erfasst.";
     listEl.appendChild(emptyCard);
 
     return;
@@ -1144,64 +1144,62 @@ function renderPikettList() {
     card.className = "pikett-card" + (locked ? " pikett-card-locked" : "");
     card.dataset.index = String(index);
 
-    // Header: Date + Kom.Nummer + remove
-    const header = document.createElement("div");
-    header.className = "pikett-card-header";
+    
+   // Header: Date + Kom.Nummer + remove
+      const header = document.createElement("div");
+      header.className = "pikett-card-header";
 
-    const fieldGroup = document.createElement("div");
-    fieldGroup.className = "pikett-field-group";
+      const fieldGroup = document.createElement("div");
+      fieldGroup.className = "pikett-field-group";
 
-    // Date
-    const dateLabel = document.createElement("label");
-    dateLabel.className = "pikett-label";
+      // Date
+      const dateLabel = document.createElement("label");
+      dateLabel.className = "pikett-label";
+      const dateSpan = document.createElement("span");
+      dateSpan.textContent = "Datum";
+      const dateInput = document.createElement("input");
+      dateInput.type = "date";
+      dateInput.className = "pikett-date";
+      dateInput.lang = "de-CH";
+      dateInput.value = entry.date || "";
+      dateInput.disabled = locked;
+      dateLabel.appendChild(dateSpan);
+      dateLabel.appendChild(dateInput);
 
-    const dateSpan = document.createElement("span");
-    dateSpan.textContent = "Datum";
+      // Kom.Nummer
+      const komLabel = document.createElement("label");
+      komLabel.className = "pikett-label";
+      const komSpan = document.createElement("span");
+      komSpan.textContent = "Kom.Nummer (Anlage)";
+      const komInput = document.createElement("input");
+      komInput.type = "text";
+      komInput.className = "pikett-kom";
+      komInput.placeholder = "z.B. 123456";
+      komInput.value = entry.komNr || "";
+      komInput.disabled = locked;
 
-    const dateInput = document.createElement("input");
-    dateInput.type = "date";
-    dateInput.className = "pikett-date";
-    dateInput.lang = "de-CH";
-    dateInput.value = entry.date || "";
-    dateInput.disabled = locked;
+      // Remove Button im Kom-Wrapper
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.disabled = locked;
+      const komWrap = document.createElement("div");
+      komWrap.className = "pikett-kom-wrap";
+      komWrap.appendChild(komInput);
+      removeBtn.className = "pikett-remove-btn";
+      removeBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+      komWrap.appendChild(removeBtn);
+      komLabel.appendChild(komSpan);
+      komLabel.appendChild(komWrap);
 
-    dateLabel.appendChild(dateSpan);
-    dateLabel.appendChild(dateInput);
-
-    // Kom.Nummer
-    const komLabel = document.createElement("label");
-    komLabel.className = "pikett-label";
-
-    const komSpan = document.createElement("span");
-    komSpan.textContent = "Kom.Nummer (Anlage)";
-
-    const komInput = document.createElement("input");
-    komInput.type = "text";
-    komInput.className = "pikett-kom";
-    komInput.placeholder = "z.B. 123456";
-    komInput.value = entry.komNr || "";
-    komInput.disabled = locked;
-
-    komLabel.appendChild(komSpan);
-    komLabel.appendChild(komInput);
-
-    fieldGroup.appendChild(dateLabel);
-    fieldGroup.appendChild(komLabel);
-
-    // Remove button
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "pikett-remove-btn";
-    removeBtn.textContent = "✕";
-    removeBtn.disabled = locked;
-
-    header.appendChild(fieldGroup);
-    header.appendChild(removeBtn);
+      fieldGroup.appendChild(dateLabel);
+      fieldGroup.appendChild(komLabel);
+      header.appendChild(fieldGroup);
 
 
     // Body: hours + note
     const body = document.createElement("div");
     body.className = "pikett-card-body";
+    
 
     const hoursLabel = document.createElement("label");
     hoursLabel.className = "pikett-label";
@@ -1228,8 +1226,9 @@ function renderPikettList() {
     hoursLabel.appendChild(hoursSpan);
     hoursLabel.appendChild(hoursInput);
 
+   
     const noteLabel = document.createElement("label");
-    noteLabel.className = "pikett-label";
+    noteLabel.className = "pikett-label pikett-note-row";
 
     const noteSpan = document.createElement("span");
     noteSpan.textContent = "Notiz (optional)";
@@ -1502,6 +1501,40 @@ document.addEventListener("change", (event) => {
   }
 });
 
+// Pikett Date Lock-Check
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!target || !target.classList.contains("pikett-date")) return;
+
+  const card = target.closest(".pikett-card");
+  if (!card) return;
+
+  const dateKey = target.value;
+  const locked = isDateLocked(dateKey);
+
+  // Bestehende Lock-Message entfernen
+  let lockMsg = card.querySelector(".pikett-lock-msg");
+  if (lockMsg) lockMsg.remove();
+
+  if (locked) {
+    // Alle Inputs/Buttons ausser Date-Input deaktivieren
+    card.querySelectorAll('button, input:not(.pikett-date)').forEach(el => {
+      el.disabled = true;
+    });
+
+    // Lock-Message nach dem Date-Input einfügen
+    lockMsg = document.createElement("div");
+    lockMsg.className = "pikett-lock-msg";
+    lockMsg.textContent = "Diese Woche ist gesperrt — keine Änderungen möglich.";
+    target.closest(".pikett-label").after(lockMsg);
+  } else {
+    // Alles wieder aktivieren
+    card.querySelectorAll('button, input').forEach(el => {
+      el.disabled = false;
+    });
+  }
+});
+
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (!target || !target.classList.contains("pikett-save-btn")) return;
@@ -1521,34 +1554,8 @@ document.addEventListener("click", (event) => {
     .then(data => {
       if (data.ok) myWeekLocks = data.locks || {};
 
-      if (isDateLocked(entry.date)) {
-  myWeekLocks = data.locks || {};
-  renderPikettList();
-
-  const cards = document.querySelectorAll(".pikett-card");
-  cards.forEach(c => {
-    if (Number(c.dataset.index) === index) {
-      c.style.position = "relative";
-
-      let overlay = c.querySelector(".pikett-lock-error");
-      if (!overlay) {
-        overlay = document.createElement("div");
-        overlay.className = "pikett-lock-error";
-
-        const msg = document.createElement("div");
-        msg.className = "pikett-lock-error-text";
-        msg.textContent = "Diese Woche ist gesperrt — Eintrag kann nicht gespeichert werden.";
-
-        overlay.appendChild(msg);
-        c.appendChild(overlay);
-
-        
-      }
-    }
-  });
-  return;
-}
-
+      if (isDateLocked(entry.date)) return;
+      
       entry.saved = true;
       savePikettStore();
       renderPikettList();
@@ -2198,6 +2205,32 @@ function buildAdminDayDrawer(data) {
     pikettBody = list;
   }
 
+  // Präsenz / Stempelungen
+  const stampsData = data?.stamps || [];
+  const stampHoursVal = data?.stampHours ?? null;
+
+  const presenzBody = el('div', 'admin-day-presenz');
+
+  if (stampsData.length === 0) {
+    presenzBody.appendChild(emptyMuted('Keine Stempelungen'));
+  } else {
+    const sorted = [...stampsData].sort((a, b) => a.time.localeCompare(b.time));
+    const pillRow = el('div', 'admin-day-stamp-pills');
+    sorted.forEach(s => {
+      const pill = el('span', `admin-stamp-pill ${s.type === 'in' ? 'stamp-in' : 'stamp-out'}`);
+      pill.textContent = `${s.type === 'in' ? 'Ein' : 'Aus'} ${s.time}`;
+      pillRow.appendChild(pill);
+    });
+    presenzBody.appendChild(pillRow);
+    if (stampHoursVal !== null) {
+      const net = el('div', 'admin-day-stamp-net',
+        `Netto: ${stampHoursVal.toFixed(1).replace('.', ',')}h`);
+      presenzBody.appendChild(net);
+    }
+  }
+
+  wrap.appendChild(addSection('Präsenz', presenzBody));
+  
   // -------- assemble --------
   wrap.appendChild(header);
   wrap.appendChild(chipsRow);
@@ -3461,29 +3494,42 @@ function updateDashboardWeekListForCurrentMonth() {
       if (!di || !di.hasData) missingCount += 1;
     });
 
-    const statusSpan = document.createElement("span");
-    if (expectedDates.length === 0) {
-      statusSpan.textContent = "Nur Wochenende";
-      statusSpan.className = "dashboard-week-status";
-    } else if (missingCount === 0) {
-      statusSpan.textContent = "Alle erfasst";
-      statusSpan.className = "status-ok";
-    } else {
-      statusSpan.textContent = `${missingCount} fehlend`;
-      statusSpan.className = "status-missing";
-    }
+    const statusBadge = document.createElement("div");
 
-    const totalSpan = document.createElement("span");
-    totalSpan.className = "week-total";
-    totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
+if (expectedDates.length === 0) {
+  statusBadge.className = "week-status-badge status-weekend";
+  statusBadge.innerHTML = `
+    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+    </svg>
+    Nur Wochenende`;
+} else if (missingCount === 0) {
+  statusBadge.className = "week-status-badge status-ok";
+  statusBadge.innerHTML = `
+    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+    </svg>
+    Alle erfasst`;
+} else {
+  statusBadge.className = "week-status-badge status-missing";
+  statusBadge.innerHTML = `
+    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    ${missingCount} fehlend`;
+}
 
-    const chevron = document.createElement("span");
-    chevron.className = "week-chevron";
-    chevron.textContent = "▼";
+const totalSpan = document.createElement("span");
+totalSpan.className = "week-total";
+totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
 
-    right.appendChild(statusSpan);
-    right.appendChild(totalSpan);
-    right.appendChild(chevron);
+const chevron = document.createElement("span");
+chevron.className = "week-chevron";
+chevron.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+right.appendChild(statusBadge);
+right.appendChild(totalSpan);
+right.appendChild(chevron);
 
     header.appendChild(left);
     header.appendChild(right);
@@ -3677,12 +3723,10 @@ function formatFullDateSlash(date) {
 function updateDayTitleWithDate() {
   if (!titleEl) return;
 
-  const activeBtn = document.querySelector(
-    `.day-button[data-day="${currentDayId}"]`,
-  );
+  const activeBtn = document.querySelector(`.day-button[data-day="${currentDayId}"]`);
   const baseTitle = activeBtn
-    ? activeBtn.dataset.title || activeBtn.textContent || ""
-    : titleEl.textContent || "";
+    ? activeBtn.dataset.title || ''
+    : currentDayId.charAt(0).toUpperCase() + currentDayId.slice(1);
 
   const monday = getMondayForCurrentWeek();
   const offset = DAY_OFFSETS[currentDayId] ?? 0;
@@ -3690,39 +3734,31 @@ function updateDayTitleWithDate() {
   d.setDate(monday.getDate() + offset);
 
   const dateStr = formatFullDateSlash(d);
-  const isOpen = document.querySelector('.day-card-body.open') !== null;
+  const dateKey = formatDateKey(d);
+  const dayData = dayStore[dateKey] || {};
 
-  let totalStr = '';
-  if (isOpen) {
-    const dateKey = formatDateKey(d);
-    const dayData = dayStore[dateKey] || {};
+  const stampHours = (Array.isArray(dayData.stamps) && dayData.stamps.length > 0)
+    ? computeNetWorkingHoursFromStamps(dayData.stamps)
+    : null;
 
-    const stampHours = (Array.isArray(dayData.stamps) && dayData.stamps.length > 0)
-      ? computeNetWorkingHoursFromStamps(dayData.stamps)
-      : null;
-
-    let komHours = 0;
-    if (Array.isArray(dayData.entries)) {
-      dayData.entries.forEach(entry => {
-        if (!entry?.hours) return;
-        Object.values(entry.hours).forEach(v => {
-          if (typeof v === 'number') komHours += v;
-        });
+  let komHours = 0;
+  const activeSection = document.querySelector('.day-content.active');
+  if (activeSection) {
+    activeSection.querySelectorAll('.hours-input, .day-hours-input, .special-hours-input')
+      .forEach(input => {
+        const v = parseFloat(input.value.replace(',', '.'));
+        if (!isNaN(v)) komHours += v;
       });
-    }
-    if (dayData.dayHours) {
-      komHours += (dayData.dayHours.schulung || 0) + (dayData.dayHours.sitzungKurs || 0) + (dayData.dayHours.arztKrank || 0);
-    }
-
-    const stampStr = stampHours !== null ? stampHours.toFixed(1).replace('.', ',') + 'h' : '–';
-    const komStr = komHours.toFixed(1).replace('.', ',') + 'h';
-
-    totalStr = `<span class="day-header-totals">${komStr} / ${stampStr}</span>`;
   }
+
+  const stampStr = stampHours !== null
+    ? stampHours.toFixed(1).replace('.', ',') + 'h'
+    : '–';
+  const komStr = komHours.toFixed(1).replace('.', ',') + 'h';
 
   titleEl.innerHTML = `
     <span class="day-title-text">${baseTitle}</span>
-    <span class="day-title-date">${dateStr}${totalStr ? ' · ' + totalStr : ''}</span>
+    <span class="day-title-date">${dateStr} · <span class="day-header-totals">${komStr} / ${stampStr}</span></span>
   `;
 }
 
@@ -3917,28 +3953,7 @@ function applyWeekLockUI() {
     }
   });
 
-  document.querySelectorAll('.day-content').forEach(section => {
-    section.classList.toggle('week-locked-overlay', locked);
-
-    let overlay = section.querySelector('.week-lock-overlay-msg');
-    const body = section.querySelector('.day-card-body');
-    const isOpen = body && body.classList.contains('open');
-
-    if (locked && isOpen) {
-      if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.className = 'week-lock-overlay-msg';
-        const msg = document.createElement('div');
-        msg.className = 'week-lock-overlay-text';
-        msg.textContent = 'Diese Woche ist gesperrt — keine Änderungen möglich.';
-        overlay.appendChild(msg);
-        section.appendChild(overlay);
-      }
-    } else {
-      if (overlay) overlay.remove();
-    }
-  });
-
+  
   // Sidebar-Body visuell ausgegraut aber klickbar
   const sidebarBody = document.querySelector('.sidebar-body');
   if (sidebarBody) sidebarBody.style.opacity = locked ? '10' : '';
@@ -3977,7 +3992,7 @@ function renderWeekInfo() {
     const offset = DAY_OFFSETS[key] ?? 0;
     const d = new Date(monday);
     d.setDate(monday.getDate() + offset);
-    span.textContent = formatShortDate(d);
+    span.textContent = String(d.getDate()).padStart(2, "0");
   });
 }
 
@@ -4218,54 +4233,30 @@ if (adminAbsenceSearchEl) {
  */
 
 function updateDayTotalFromInputs() {
-  if (!dayTotalEl) return;
-
   const activeSection = document.querySelector(".day-content.active");
   if (!activeSection) {
-    dayTotalEl.textContent = "0,0 h";
+    if (dayTotalEl) dayTotalEl.textContent = "0,0 h";
     return;
   }
 
   let total = 0;
 
-  // 1) Kommissions-Stunden
-  const inputs = activeSection.querySelectorAll(".hours-input");
-  inputs.forEach((input) => {
-    const raw = input.value.trim();
-    if (!raw) return;
-
-    const asNumber = parseFloat(raw.replace(",", "."));
-    if (!Number.isNaN(asNumber)) {
-      total += asNumber;
-    }
+  activeSection.querySelectorAll(".hours-input").forEach((input) => {
+    const asNumber = parseFloat(input.value.trim().replace(",", "."));
+    if (!Number.isNaN(asNumber)) total += asNumber;
   });
-
-  // 2) Tagesbezogene Stunden (Schulung / Sitzung / Arzt)
-  const dayHourInputs = activeSection.querySelectorAll(".day-hours-input");
-  dayHourInputs.forEach((input) => {
-    const raw = input.value.trim();
-    if (!raw) return;
-
-    const asNumber = parseFloat(raw.replace(",", "."));
-    if (!Number.isNaN(asNumber)) {
-      total += asNumber;
-    }
+  activeSection.querySelectorAll(".day-hours-input").forEach((input) => {
+    const asNumber = parseFloat(input.value.trim().replace(",", "."));
+    if (!Number.isNaN(asNumber)) total += asNumber;
   });
-
-  // 3) Spezialbuchungen-Stunden
-  const specialInputs = activeSection.querySelectorAll(".special-hours-input");
-  specialInputs.forEach((input) => {
-    const raw = input.value.trim();
-    if (!raw) return;
-
-    const asNumber = parseFloat(raw.replace(",", "."));
-    if (!Number.isNaN(asNumber)) {
-      total += asNumber;
-    }
+  activeSection.querySelectorAll(".special-hours-input").forEach((input) => {
+    const asNumber = parseFloat(input.value.trim().replace(",", "."));
+    if (!Number.isNaN(asNumber)) total += asNumber;
   });
 
   const formatted = total.toFixed(1).replace(".", ",") + " h";
-  dayTotalEl.textContent = formatted;
+  if (dayTotalEl) dayTotalEl.textContent = formatted;  // schreibt nur wenn Element da
+  updateDayTitleWithDate();  // läuft immer
 }
 
 if (loginForm) {
@@ -6012,10 +6003,19 @@ function applySpecialEntriesForCurrentDay() {
     typeSelect.appendChild(optFehler);
     typeSelect.value = entry.type === "fehler" ? "fehler" : "regie";
 
-    typeField.appendChild(typeLabel);
-    typeField.appendChild(typeSelect);
+    const selectWrap = document.createElement("div");
+    selectWrap.className = "special-select-wrap";
 
-    // Stunden
+    const chevron = document.createElement("span");
+    chevron.className = "special-select-chevron";
+    chevron.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+
+    selectWrap.appendChild(typeSelect);
+    selectWrap.appendChild(chevron);
+    typeField.appendChild(typeLabel);
+    typeField.appendChild(selectWrap);
+
+        // Stunden
     const hoursField = document.createElement("label");
     hoursField.className = "special-field small";
     const hoursLabel = document.createElement("span");
@@ -6512,7 +6512,7 @@ if (weekPrevBtn) {
     event.preventDefault();
     event.stopPropagation();
     weekOffset -= 1;
-    setDayCardOpen(false); 
+    
     renderWeekInfo();
     updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
@@ -6530,7 +6530,7 @@ if (weekNextBtn) {
     event.preventDefault();
     event.stopPropagation();
     weekOffset += 1;
-    setDayCardOpen(false); 
+    
     renderWeekInfo();
     updateDayTitleWithDate(); 
     applyFlagsForCurrentDay();
@@ -6901,7 +6901,9 @@ function renderStampCard() {
   if (stampCardDate) stampCardDate.textContent = formatDateDE(todayKey);
 
   const net = getStampNet(stamps);
-  if (stampCardNet) stampCardNet.textContent = net ? net : '';
+  const netWrap = document.getElementById('stampCardNetWrap');
+  if (stampCardNet) stampCardNet.textContent = net || '0h';
+  if (netWrap) netWrap.style.display = 'flex';
 
   const stamped = isStampedIn(stamps);
   if (stampBtn) {
@@ -6925,6 +6927,8 @@ function renderStampCard() {
     const key = pill.dataset.stampMeal;
     pill.classList.toggle('meal-active', !!meal[key]);
   });
+
+  updateDayTitleWithDate();
 }
 
 function renderStampEditSection(dateKey) {
@@ -6932,6 +6936,18 @@ function renderStampEditSection(dateKey) {
   const dayData = getOrCreateDayData(dateKey);
 
   renderStampLog(dateKey, stampEditLog, true);
+  // Total-Badge aktualisieren
+  const badge = document.getElementById('stampEditTotalBadge');
+  const valueEl = document.getElementById('stampEditTotalValue');
+  if (badge && valueEl) {
+    const net = getStampNet(dayData.stamps || []);
+    if (net) {
+      valueEl.textContent = net;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
 
   if (stampEditSchmutzzulage) {
     stampEditSchmutzzulage.classList.toggle('zulage-active', !!dayData.flags?.schmutzzulage);
@@ -6944,6 +6960,8 @@ function renderStampEditSection(dateKey) {
     const key = pill.dataset.stampMeal;
     pill.classList.toggle('meal-active', !!(dayData.mealAllowance?.[key]));
   });
+
+  updateDayTitleWithDate();
 }
 
 // Stamp Button
@@ -7124,41 +7142,9 @@ if (stampModalSave) {
   });
 }
 
-// Day Card Toggle
-const dayCardToggle = document.getElementById('dayCardToggle');
-const dayCardChevron = document.getElementById('dayCardChevron');
 
-function setDayCardOpen(open) {
-  const activeSection = document.querySelector('.day-content.active');
-  if (!activeSection) return;
-  const body = activeSection.querySelector('.day-card-body');
-  if (!body) return;
 
-  body.classList.toggle('open', open);
-  if (dayCardChevron) dayCardChevron.classList.toggle('open', open);
 
-  if (!open) {
-    const overlay = activeSection.querySelector('.week-lock-overlay-msg');
-    if (overlay) overlay.remove();
-    const footer = body.querySelector('.day-card-footer');
-    if (footer) footer.remove();
-  } else {
-    applyWeekLockUI();
-  }
-
-  updateDayTitleWithDate();
-}
-
-if (dayCardToggle) {
-  dayCardToggle.addEventListener('click', () => {
-    const activeSection = document.querySelector('.day-content.active');
-    if (!activeSection) return;
-    const body = activeSection.querySelector('.day-card-body');
-    if (!body) return;
-    const isOpen = body.classList.contains('open');
-    setDayCardOpen(!isOpen);
-  });
-}
 
 adminInnerTabButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -7242,7 +7228,7 @@ function reloadAllDataForCurrentUser() {
       btn.classList.toggle('active', btn.dataset.day === todayId);
     });
   }
-  setDayCardOpen(false);
+  
 
   // UI neu aufbauen
   renderWeekInfo();
