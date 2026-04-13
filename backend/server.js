@@ -2098,6 +2098,56 @@ async function ensureWeekLocksTable() {
   `);
 }
 
+async function ensureDraftsTable() {
+  if (!db) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_drafts (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function ensureLiveStampsTable() {
+  if (!db) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS live_stamps (
+      user_id   TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      username  TEXT NOT NULL,
+      today_key TEXT NOT NULL,
+      stamps    JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+
+async function ensureStampEditsTable() {
+  if (!db) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS stamp_edits (
+      id          SERIAL PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username    TEXT NOT NULL,
+      date_key    TEXT NOT NULL,
+      action      TEXT NOT NULL CHECK (action IN ('added','edited','deleted')),
+      old_time    TEXT,
+      new_time    TEXT,
+      old_type    TEXT,
+      new_type    TEXT,
+      transmitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      year        INTEGER NOT NULL,
+      month_index INTEGER NOT NULL
+    )
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_stamp_edits_username_month
+    ON stamp_edits (username, year, month_index, transmitted_at DESC)
+  `);
+}
+
+
 function mapWeekLockRow(row) {
   return {
     locked: true,
@@ -2639,6 +2689,97 @@ app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, a
   } catch (err) {
     console.error('Failed to load user transmissions', err);
     return res.status(500).json({ ok: false, error: 'Could not load transmissions' });
+  }
+});
+
+
+// POST /api/stamps/live — Stamp-Status updaten (User)
+app.post('/api/stamps/live', requireAuth, async (req, res) => {
+  try {
+    const { todayKey, stamps } = req.body;
+    if (!todayKey || !Array.isArray(stamps)) {
+      return res.status(400).json({ ok: false, error: 'Ungültige Daten' });
+    }
+    await db.query(`
+      INSERT INTO live_stamps (user_id, username, today_key, stamps, updated_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (user_id) DO UPDATE
+        SET today_key = $3, stamps = $4, updated_at = NOW()
+    `, [req.user.id, req.user.username, todayKey, JSON.stringify(stamps)]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Live stamp error', err);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+// GET /api/admin/live-status — Live Stamp-Status aller User (Admin)
+app.get('/api/admin/live-status', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT username, today_key, stamps, updated_at
+      FROM live_stamps
+      ORDER BY username ASC
+    `);
+    return res.json({
+      ok: true,
+      users: result.rows.map(r => ({
+        username: r.username,
+        todayKey: r.today_key,
+        stamps: r.stamps || [],
+        updatedAt: r.updated_at instanceof Date
+          ? r.updated_at.toISOString()
+          : String(r.updated_at)
+      }))
+    });
+  } catch (err) {
+    console.error('Live status error', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+  }
+});
+
+// GET /api/admin/stamp-edits?year=2026&monthIndex=3 — Edit-Log (Admin)
+app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const monthIndex = Number(req.query.monthIndex ?? new Date().getMonth());
+
+    const result = await db.query(`
+      SELECT username, date_key, action, old_time, new_time,
+             old_type, new_type, transmitted_at
+      FROM stamp_edits
+      WHERE year = $1 AND month_index = $2
+      ORDER BY username ASC, transmitted_at DESC
+    `, [year, monthIndex]);
+
+    // Gruppieren nach User + Edit-Count
+    const byUser = {};
+    result.rows.forEach(r => {
+      if (!byUser[r.username]) byUser[r.username] = [];
+      byUser[r.username].push({
+        dateKey: r.date_key,
+        action: r.action,
+        oldTime: r.old_time,
+        newTime: r.new_time,
+        oldType: r.old_type,
+        newType: r.new_type,
+        transmittedAt: r.transmitted_at instanceof Date
+          ? r.transmitted_at.toISOString()
+          : String(r.transmitted_at)
+      });
+    });
+
+    const users = Object.entries(byUser).map(([username, edits]) => ({
+      username,
+      editCount: edits.length,
+      flagged: edits.length >= 10,
+      edits
+    }));
+
+    return res.json({ ok: true, users });
+  } catch (err) {
+    console.error('Stamp edits error', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
   }
 });
 
@@ -3964,6 +4105,31 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       .json({ ok: false, error: 'Could not save data on server' });
   }
 
+
+  // Stamp Edit-Log aus Payload extrahieren und persistieren
+try {
+  const editLog = Array.isArray(payload.stampEditLog) ? payload.stampEditLog : [];
+  if (editLog.length > 0) {
+    for (const edit of editLog) {
+      await db.query(`
+        INSERT INTO stamp_edits
+          (user_id, username, date_key, action, old_time, new_time,
+           old_type, new_type, year, month_index)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `, [
+        req.user.id, req.user.username,
+        edit.dateKey, edit.action,
+        edit.oldTime || null, edit.newTime || null,
+        edit.oldType || null, edit.newType || null,
+        payload.year, payload.monthIndex
+      ]);
+    }
+  }
+} catch (err) {
+  console.error('Failed to save stamp edit log:', err);
+  // nicht fatal — Transmission trotzdem erfolgreich
+}
+
   const strictTeamId = String(req.user.teamId || '');
   const strictUsername = req.user.username;
   const strictYear = payload.year;
@@ -4627,6 +4793,56 @@ app.get('/api/week-locks/me', requireAuth, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Could not load week locks' });
   }
 });
+
+
+// POST /api/draft/sync — Client speichert Draft
+app.post('/api/draft/sync', requireAuth, async (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Kein data-Objekt' });
+    }
+
+    await db.query(`
+      INSERT INTO user_drafts (user_id, username, data, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (user_id) DO UPDATE
+        SET data = $3, updated_at = NOW()
+    `, [req.user.id, req.user.username, JSON.stringify(data)]);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Draft sync error', err);
+    return res.status(500).json({ ok: false, error: 'Draft konnte nicht gespeichert werden' });
+  }
+});
+
+// GET /api/draft/load — Client lädt Draft beim Login
+app.get('/api/draft/load', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT data, updated_at FROM user_drafts WHERE user_id = $1',
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ ok: true, draft: null });
+    }
+
+    const row = result.rows[0];
+    return res.json({
+      ok: true,
+      draft: row.data,
+      updatedAt: row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : String(row.updated_at)
+    });
+  } catch (err) {
+    console.error('Draft load error', err);
+    return res.status(500).json({ ok: false, error: 'Draft konnte nicht geladen werden' });
+  }
+});
+
 
 // ---- Admin: day details (fetch on demand) ----
 // GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01
@@ -5562,8 +5778,12 @@ async function startServer() {
   await ensureKontenTables();
   await ensureAbsencesTable();
   await ensureWeekLocksTable();
+  await ensureDraftsTable(); 
+  await ensureLiveStampsTable();
+  await ensureStampEditsTable();
   await ensureAnlagenTables();
   await seedInitialUsers();
+  
 
   app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);

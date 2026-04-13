@@ -572,6 +572,7 @@ async function loadAdminPayroll() {
 
 topNavTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
+    syncDraftToServer();
     const view = tab.dataset.view; // "wochenplan", "pikett", "dashboard", "dokumente"
 
     // Switch active tab
@@ -596,8 +597,16 @@ topNavTabs.forEach((tab) => {
     } else if (view === "admin") {
       loadAdminSummary();
     }
+    
   });
 });
+
+
+    window.addEventListener('beforeunload', () => {
+          syncDraftToServer();
+        });
+
+
 
 /**
  * Wochenplan runtime state
@@ -646,10 +655,54 @@ function saveToStorage() {
   try {
     const json = JSON.stringify(dayStore);
     localStorage.setItem(STORAGE_KEY, json);
+    // Nur setzen wenn User aktiv bearbeitet, nicht wenn vom Server geladen
+    scheduleDraftSync();
   } catch (err) {
     console.error("Failed to save to storage", err);
   }
 }
+
+// Draft Sync — debounced, sendet aktuellen Monat an Server
+let _draftSyncTimer = null;
+
+function scheduleDraftSync() {
+  if (_draftSyncTimer) clearTimeout(_draftSyncTimer);
+  _draftSyncTimer = setTimeout(() => syncDraftToServer(), 3000);
+}
+
+async function syncDraftToServer() {
+  const user = getCurrentUser();
+  if (!user) return;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const savedAt = now.toISOString();
+
+  const monthData = {};
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      monthData[dateKey] = dayData;
+    }
+  });
+
+  const data = { dayStore: monthData, pikettStore, year, month, savedAt };
+
+  try {
+    await authFetch('/api/draft/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data })
+    });
+    // Timestamp erst NACH erfolgreichem Sync setzen
+    localStorage.setItem(STORAGE_KEY + '_savedAt', savedAt);
+  } catch (err) {
+    console.error('Draft sync failed', err);
+  }
+}
+
+
 
 /**
  * Auth and API helpers
@@ -2394,13 +2447,22 @@ function buildPayloadForCurrentDashboardMonth() {
     return !(toDate < monthStart || fromDate > monthEnd);
   });
 
+  // Stamp Edit-Log aus dayStore sammeln
+  const stampEditLog = [];
+  Object.values(monthDays).forEach(dayData => {
+    if (Array.isArray(dayData.stampEditLog)) {
+      stampEditLog.push(...dayData.stampEditLog);
+    }
+  });
+
   return {
     year,
-    monthIndex, // 0–11
-    monthLabel: label, // z.B. "März 2025"
+    monthIndex,
+    monthLabel: label,
     days: monthDays,
     pikett: monthPikett,
     absences: monthAbsences,
+    stampEditLog, // ← NEU
   };
 }
 
@@ -5761,6 +5823,222 @@ function loadAdminSummary() {
     });
 }
 
+
+
+let praesenzPollInterval = null;
+let stampEditMonthOffset = 0;
+
+function loadAdminPraesenz() {
+  loadLiveStatus();
+  loadStampEditLog();
+
+  // Polling alle 30 Sekunden
+  if (praesenzPollInterval) clearInterval(praesenzPollInterval);
+  praesenzPollInterval = setInterval(loadLiveStatus, 30000);
+}
+
+function stopPraesenzPolling() {
+  if (praesenzPollInterval) {
+    clearInterval(praesenzPollInterval);
+    praesenzPollInterval = null;
+  }
+}
+
+async function loadLiveStatus() {
+  const container = document.getElementById('praesenzLiveGrid');
+  if (!container) return;
+
+  try {
+    const res = await authFetch('/api/admin/live-status');
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const todayKey = getTodayKey();
+    container.innerHTML = '';
+
+    if (data.users.length === 0) {
+      container.innerHTML = '<div class="stamp-edit-empty">Noch keine Stempel-Daten vorhanden.</div>';
+      return;
+    }
+
+    data.users.forEach(u => {
+      const stamps = Array.isArray(u.stamps) ? u.stamps : [];
+      const isToday = u.todayKey === todayKey;
+      const stamped = isToday && isStampedIn(stamps);
+
+      // Letzter Stempel
+      const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+      const last = sorted[sorted.length - 1];
+      const timeLabel = last ? `${last.type === 'in' ? 'Ein' : 'Aus'} ${last.time}` : '–';
+
+      const chip = document.createElement('div');
+      chip.className = 'praesenz-user-chip';
+
+      const dot = document.createElement('div');
+      dot.className = `praesenz-dot ${stamped ? 'is-in' : 'is-out'}`;
+
+      const name = document.createElement('div');
+      name.className = 'praesenz-name';
+      name.textContent = u.username;
+
+      const time = document.createElement('div');
+      time.className = 'praesenz-time';
+      time.textContent = isToday ? timeLabel : 'kein Eintrag heute';
+
+      chip.appendChild(dot);
+      chip.appendChild(name);
+      chip.appendChild(time);
+      container.appendChild(chip);
+    });
+  } catch (err) {
+    console.error('Live status load failed', err);
+  }
+}
+
+function getStampEditMonthInfo() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + stampEditMonthOffset, 1);
+  return {
+    year: d.getFullYear(),
+    monthIndex: d.getMonth(),
+    label: d.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })
+  };
+}
+
+async function loadStampEditLog() {
+  const container = document.getElementById('stampEditLogContainer');
+  if (!container) return;
+
+  const info = getStampEditMonthInfo();
+
+  // Header mit Monat-Navigation rendern
+  container.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'stamp-edit-log-header';
+
+  const title = document.createElement('div');
+  title.className = 'stamp-edit-log-title';
+  title.textContent = 'Stempel-Bearbeitungen';
+
+  const monthControl = document.createElement('div');
+  monthControl.className = 'stamp-edit-month-control';
+
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'stamp-edit-month-arrow';
+  prevBtn.textContent = '‹';
+  prevBtn.addEventListener('click', () => {
+    stampEditMonthOffset -= 1;
+    loadStampEditLog();
+  });
+
+  const monthLabel = document.createElement('span');
+  monthLabel.className = 'stamp-edit-month-label';
+  monthLabel.textContent = info.label.charAt(0).toUpperCase() + info.label.slice(1);
+
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'stamp-edit-month-arrow';
+  nextBtn.textContent = '›';
+  nextBtn.addEventListener('click', () => {
+    stampEditMonthOffset += 1;
+    loadStampEditLog();
+  });
+
+  monthControl.appendChild(prevBtn);
+  monthControl.appendChild(monthLabel);
+  monthControl.appendChild(nextBtn);
+  header.appendChild(title);
+  header.appendChild(monthControl);
+  container.appendChild(header);
+
+  try {
+    const res = await authFetch(
+      `/api/admin/stamp-edits?year=${info.year}&monthIndex=${info.monthIndex}`
+    );
+    const data = await res.json();
+    if (!data.ok) return;
+
+    if (data.users.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'stamp-edit-empty';
+      empty.textContent = 'Keine Stempel-Bearbeitungen in diesem Monat.';
+      container.appendChild(empty);
+      return;
+    }
+
+    data.users.forEach(u => {
+      const block = document.createElement('div');
+      block.className = `stamp-edit-user-block${u.flagged ? ' is-flagged' : ''}`;
+
+      const blockHeader = document.createElement('div');
+      blockHeader.className = 'stamp-edit-user-header';
+
+      const name = document.createElement('div');
+      name.className = 'stamp-edit-user-name';
+      name.textContent = u.username;
+
+      const right = document.createElement('div');
+      right.className = 'stamp-edit-user-right';
+
+      const countBadge = document.createElement('span');
+      countBadge.className = `stamp-edit-count ${u.flagged ? 'flagged' : 'normal'}`;
+      countBadge.textContent = `${u.editCount} Edit${u.editCount !== 1 ? 's' : ''}`;
+
+      const chevron = document.createElement('span');
+      chevron.className = 'stamp-edit-chevron';
+      chevron.textContent = '▾';
+
+      right.appendChild(countBadge);
+      right.appendChild(chevron);
+      blockHeader.appendChild(name);
+      blockHeader.appendChild(right);
+
+      const entries = document.createElement('div');
+      entries.className = 'stamp-edit-entries';
+
+      u.edits.forEach(edit => {
+        const row = document.createElement('div');
+        row.className = 'stamp-edit-entry';
+
+        const action = document.createElement('span');
+        action.className = `stamp-edit-action ${edit.action}`;
+        action.textContent = edit.action === 'added' ? 'hinzugefügt'
+          : edit.action === 'deleted' ? 'gelöscht' : 'bearbeitet';
+
+        const detail = document.createElement('div');
+        detail.className = 'stamp-edit-detail';
+        if (edit.action === 'edited') {
+          detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime} → ${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
+        } else if (edit.action === 'added') {
+          detail.textContent = `${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
+        } else {
+          detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime}`;
+        }
+
+        const dateLabel = document.createElement('div');
+        dateLabel.className = 'stamp-edit-date-label';
+        dateLabel.textContent = edit.dateKey;
+
+        row.appendChild(action);
+        row.appendChild(detail);
+        row.appendChild(dateLabel);
+        entries.appendChild(row);
+      });
+
+      // Toggle
+      blockHeader.addEventListener('click', () => {
+        entries.classList.toggle('open');
+        chevron.classList.toggle('open');
+      });
+
+      block.appendChild(blockHeader);
+      block.appendChild(entries);
+      container.appendChild(block);
+    });
+  } catch (err) {
+    console.error('Stamp edit log load failed', err);
+  }
+}
+
 // --- Flags: apply + save per day --- //
 
 /**
@@ -6861,6 +7139,10 @@ function renderStampLog(dateKey, logEl, editMode) {
               dayData.stamps[realIdx].time = newTime;
               dayData.stamps[realIdx].type = type;
             }
+            logStampEdit(dateKey, 'edited',
+              { time: stamp.time, type: stamp.type },
+              { time: newTime, type }
+            ); 
             saveToStorage();
             if (editMode) renderStampEditSection(dateKey);
             else renderStampCard();
@@ -6874,7 +7156,10 @@ function renderStampLog(dateKey, logEl, editMode) {
       deleteAction.addEventListener('click', () => {
         const sortedOriginal = [...dayData.stamps].sort((a, b) => a.time.localeCompare(b.time));
         const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
-        if (realIdx !== -1) dayData.stamps.splice(realIdx, 1);
+        if (realIdx !== -1) {
+          logStampEdit(dateKey, 'deleted', sortedOriginal[idx], null); // ← NEU
+          dayData.stamps.splice(realIdx, 1);
+        }
         saveToStorage();
         if (editMode) renderStampEditSection(dateKey);
         else renderStampCard();
@@ -6976,8 +7261,37 @@ if (stampBtn) {
     const now = formatTimeHHMM(new Date());
 
     dayData.stamps.push({ type: stamped ? 'out' : 'in', time: now });
+    logStampEdit(todayKey, 'added', null, { type: stamped ? 'out' : 'in', time: now }); // ← NEU
     saveToStorage();
     renderStampCard();
+    sendLiveStamp(todayKey, dayData.stamps); // ← NEU
+  });
+}
+
+async function sendLiveStamp(todayKey, stamps) {
+  try {
+    await authFetch('/api/stamps/live', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ todayKey, stamps })
+    });
+  } catch (err) {
+    console.error('Live stamp send failed', err);
+  }
+}
+
+// Edit-Log in dayStore mitschreiben
+function logStampEdit(dateKey, action, oldStamp, newStamp) {
+  const dayData = getOrCreateDayData(dateKey);
+  if (!Array.isArray(dayData.stampEditLog)) dayData.stampEditLog = [];
+  dayData.stampEditLog.push({
+    dateKey,
+    action,
+    oldTime: oldStamp?.time || null,
+    newTime: newStamp?.time || null,
+    oldType: oldStamp?.type || null,
+    newType: newStamp?.type || null,
+    editedAt: new Date().toISOString()
   });
 }
 
@@ -7052,6 +7366,8 @@ if (stampEditAddBtn) {
       onSave: (type, time) => {
         const dayData = getOrCreateDayData(dateKey);
         dayData.stamps.push({ type, time });
+        logStampEdit(dateKey, 'added', null, { type, time }); // ← NEU
+        
         saveToStorage();
         renderStampEditSection(dateKey);
       }
@@ -7154,6 +7470,8 @@ adminInnerTabButtons.forEach((btn) => {
     const target = btn.dataset.adminTab;
     if (!target) return;
 
+    stopPraesenzPolling();
+
     adminActiveInnerTab = target;
 
     adminInnerTabButtons.forEach((b) => b.classList.remove("active"));
@@ -7177,13 +7495,14 @@ adminInnerTabButtons.forEach((btn) => {
         selectedKomNr = previouslySelectedKomNr;
         loadAdminAnlagenDetail(previouslySelectedKomNr, { force: true });
       }
-    } else if (target === "personnel") {
-      loadAdminPersonnel();
-    } else if (target === "payroll") {
+   } else if (target === "payroll") {
       loadAdminPayroll();
     } else if (target === "users") {
       loadAdminUsers();
+    } else if (target === "praesenz") {
+      loadAdminPraesenz();
     }
+        
   });
 });
 
@@ -7208,6 +7527,54 @@ dayButtons.forEach((btn) => {
   });
 });
 
+
+async function loadDraftFromServer() {
+  try {
+    const res = await authFetch('/api/draft/load');
+    const data = await res.json();
+
+    if (!data.ok || !data.draft) return; // kein Draft vorhanden
+
+    const draft = data.draft;
+    const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
+
+    // Lokalen Timestamp prüfen
+    const localRaw = localStorage.getItem(STORAGE_KEY + '_savedAt');
+    const localTime = localRaw ? new Date(localRaw).getTime() : 0;
+
+    if (serverTime > localTime) {
+  if (draft.dayStore && typeof draft.dayStore === 'object') {
+    const { year, month } = draft;
+    Object.keys(dayStore).forEach((dateKey) => {
+      const d = new Date(dateKey + 'T00:00:00');
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        delete dayStore[dateKey];
+      }
+    });
+    Object.assign(dayStore, draft.dayStore);
+    
+    // WICHTIG: saveToStorage() NICHT aufrufen — würde _savedAt überschreiben
+    // Direkt in localStorage schreiben ohne Timestamp-Update:
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dayStore));
+      // _savedAt auf Server-Zeit setzen damit nächster Vergleich korrekt ist
+      localStorage.setItem(STORAGE_KEY + '_savedAt', data.updatedAt);
+    } catch (err) {
+      console.error('Failed to write draft to localStorage', err);
+    }
+  }
+  if (Array.isArray(draft.pikettStore)) {
+    pikettStore = draft.pikettStore;
+    savePikettStore();
+  }
+
+    }
+  } catch (err) {
+    console.error('Draft load failed', err);
+  }
+}
+
+
 /**
  * Reload all per-user draft stores after login/logout/session restoration and refresh the visible UI.
  */
@@ -7215,38 +7582,28 @@ function reloadAllDataForCurrentUser() {
   const user = getCurrentUser();
   updateStorageKeysForUser(user);
 
-  // Laden
   Object.keys(dayStore).forEach((k) => delete dayStore[k]);
-  loadFromStorage(); // uses STORAGE_KEY now for this user
-  pikettStore = loadPikettStore(); // uses PIKETT_STORAGE_KEY
-  absenceRequests = loadAbsenceRequests(); // uses ABSENCE_STORAGE_KEY
+  loadFromStorage();
+  pikettStore = loadPikettStore();
+  absenceRequests = loadAbsenceRequests();
 
-  // Heutigen Tag auswählen
-  const todayOffset = new Date().getDay(); // 0=So, 1=Mo...
-  const dayMap = { 1: 'montag', 2: 'dienstag', 3: 'mittwoch', 4: 'donnerstag', 5: 'freitag' };
-  const todayId = dayMap[todayOffset];
-  if (todayId) {
-    showDay(todayId);
-    dayButtons.forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.day === todayId);
-    });
-  }
-  
+  // Draft vom Server laden (async, überschreibt wenn Server neuer)
+  loadDraftFromServer().then(() => { // ← NEU
+    renderWeekInfo();
+    updateDayTitleWithDate();
+    applyFlagsForCurrentDay();
+    applyDayHoursForCurrentDay();
+    applyMealAllowanceForCurrentDay();
+    applyKomForCurrentDay();
+    applySpecialEntriesForCurrentDay();
+    updateDayTotalFromInputs();
+    renderPikettList();
+    updatePikettMonthTotal();
+    updateDashboardForCurrentMonth();
+    updateOvertimeYearCard();
+    applyWeekLockUI();
+  });
 
-  // UI neu aufbauen
-  renderWeekInfo();
-  updateDayTitleWithDate();
-  applyFlagsForCurrentDay();
-  applyDayHoursForCurrentDay();
-  applyMealAllowanceForCurrentDay();
-  applyKomForCurrentDay();
-  applySpecialEntriesForCurrentDay();
-  updateDayTotalFromInputs();
-  renderPikettList();
-  updatePikettMonthTotal();
-  updateDashboardForCurrentMonth();
-  updateOvertimeYearCard();
-  applyWeekLockUI();
 }
 
 /**

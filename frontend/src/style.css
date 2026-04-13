@@ -3592,3 +3592,215 @@ body.in-admin-view #view-admin { max-width: 1600px; width: 100%; }
 .anlagen-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; font-size: 14px; color: var(--text); }
 .anlagen-bar-track { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
 .anlagen-bar-fill { height: 100%; width: 0%; background: var(--accent); }
+
+/* ============================================================
+   Präsenz Tab
+   ============================================================ */
+.praesenz-live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.praesenz-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+.praesenz-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.praesenz-dot.is-in  { background: #22c55e; }
+.praesenz-dot.is-out { background: #94a3b8; }
+
+.praesenz-name {
+  font-size: 13px;
+  font-weight: 900;
+  color: #334155;
+  flex: 1;
+}
+
+.praesenz-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+/* Edit Log */
+.stamp-edit-log-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stamp-edit-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.stamp-edit-log-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #1e293b;
+}
+
+.stamp-edit-month-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.stamp-edit-month-label {
+  font-size: 14px;
+  font-weight: 900;
+  color: #334155;
+  min-width: 90px;
+  text-align: center;
+}
+
+.stamp-edit-month-arrow {
+  border: none;
+  padding: 6px 8px;
+  font-size: 16px;
+  cursor: pointer;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 10px;
+  transition: all 0.15s;
+}
+
+.stamp-edit-month-arrow:hover {
+  color: #334155;
+  background: rgba(148,163,184,0.15);
+}
+
+.stamp-edit-user-block {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.stamp-edit-user-block.is-flagged {
+  border-color: #fca5a5;
+}
+
+.stamp-edit-user-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  cursor: pointer;
+  gap: 12px;
+}
+
+.stamp-edit-user-name {
+  font-size: 14px;
+  font-weight: 900;
+  color: #334155;
+}
+
+.stamp-edit-user-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stamp-edit-count {
+  font-size: 11px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stamp-edit-count.normal {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.stamp-edit-count.flagged {
+  background: #fff1f2;
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+
+.stamp-edit-chevron {
+  color: #cbd5e1;
+  transition: transform 0.2s;
+  font-size: 12px;
+}
+
+.stamp-edit-chevron.open { transform: rotate(180deg); }
+
+.stamp-edit-entries {
+  display: none;
+  flex-direction: column;
+  border-top: 1px solid #f1f5f9;
+}
+
+.stamp-edit-entries.open { display: flex; }
+
+.stamp-edit-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #f8fafc;
+  font-size: 13px;
+}
+
+.stamp-edit-entry:last-child { border-bottom: none; }
+
+.stamp-edit-action {
+  font-size: 10px;
+  font-weight: 900;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.stamp-edit-action.added   { background: #f0fdf4; color: #16a34a; }
+.stamp-edit-action.deleted { background: #fff1f2; color: #ef4444; }
+.stamp-edit-action.edited  { background: #eff6ff; color: #2563eb; }
+
+.stamp-edit-detail {
+  color: #475569;
+  font-weight: 700;
+  flex: 1;
+}
+
+.stamp-edit-date-label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.stamp-edit-empty {
+  font-size: 13px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-align: center;
+  padding: 32px;
+}
