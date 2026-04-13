@@ -936,6 +936,9 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     const nonPikett = computeNonPikettHours(dayData);
     const pikett = pikettByDate.get(dateKey) || 0;
     const totalHours = nonPikett + pikett;
+    const stampHours = (Array.isArray(dayData?.stamps) && dayData.stamps.length > 0)
+      ? computeNetWorkingHoursFromStamps(dayData.stamps)
+      : null;
 
     monthTotalHours += totalHours;
 
@@ -962,6 +965,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
         workDaysInMonth: 0,
         missingCount: 0,
         weekTotalHours: 0,
+        weekStampHours: 0, 
         days: [], // weekdays only for UI list
       });
     }
@@ -975,6 +979,8 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     // week total includes ALL days (also weekends)
     w.weekTotalHours += totalHours;
 
+    if (stampHours !== null) w.weekStampHours = (w.weekStampHours || 0) + stampHours;
+
     // UI wants weekdays list only
     if (weekday >= 1 && weekday <= 5) {
       w.workDaysInMonth += 1;
@@ -984,6 +990,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
         dateKey,
         weekday,       // for "Mo/Di/..." mapping in frontend
         totalHours,
+        stampHours,
         status,        // "missing" | "ok" | "ferien" | "absence"
       });
     }
@@ -1006,6 +1013,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     workDaysInMonth: w.workDaysInMonth,
     missingCount: w.missingCount,
     weekTotalHours: w.weekTotalHours,
+    weekStampHours: w.weekStampHours || null, 
     days: w.days,
   }));
 
@@ -4747,11 +4755,11 @@ app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => 
           }
         : null,
       totals: {
-        komHours: Math.round(komHours * 10) / 10,
+       komHours: Math.round(komHours * 10) / 10,
         specialHours: Math.round(specialHours * 10) / 10,
         dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
         pikettHours: Math.round(pikettHours * 10) / 10,
-        totalHours: Math.round(totalHours * 10) / 10,
+        totalHours: Math.round((nonPikettTotal + pikettHours) * 10) / 10, 
       },
       breakdown: {
         dayHours: { schulung, sitzungKurs, arztKrank },

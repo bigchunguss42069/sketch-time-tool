@@ -55,6 +55,8 @@ body {
   gap: 12px;
 }
 
+
+
 /* ============================================================
    App Header Bar
    ============================================================ */
@@ -142,6 +144,7 @@ body {
 
 .app-view.active {
   display: block;
+  flex: 1; 
 }
 
 /* ============================================================
@@ -1041,6 +1044,7 @@ body {
   flex-direction: column;
   gap: 16px;
   padding-bottom: 80px;
+  margin-top: 24px;
 }
 
 .pikett-header-card {
@@ -1491,6 +1495,7 @@ body {
   flex-direction: column;
   gap: 16px;
   padding-bottom: 80px;
+  margin: 12px auto 24px;
 }
 
 .dashboard-header-card {
@@ -3463,6 +3468,55 @@ body.in-admin-view #view-admin { max-width: 1600px; width: 100%; }
 .admin-konto-metric-row    { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .admin-konto-metric-label  { font-size: 0.9rem; font-weight: 500; color: var(--muted); }
 .admin-konto-metric-value  { font-weight: 600; color: var(--text); }
+
+
+/* Admin Day Drawer — Präsenz / Stamps */
+.admin-day-presenz {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-day-stamp-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-stamp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-stamp-pill.stamp-in {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid rgba(34,197,94,0.25);
+}
+
+.admin-stamp-pill.stamp-out {
+  background: #fff1f2;
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+
+.admin-day-stamp-net {
+  font-size: 13px;
+  font-weight: 900;
+  color: #4f46e5;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 10px;
+  padding: 7px 12px;
+  align-self: flex-start;
+}
 
 /* ============================================================
    Anlagen (Facility Management)

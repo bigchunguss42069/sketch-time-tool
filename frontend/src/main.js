@@ -5586,7 +5586,9 @@ function loadAdminSummary() {
               // --- Total line (goes below KW/date range) ---
               const totalLine = document.createElement("div");
               totalLine.className = "admin-week-total";
-              totalLine.textContent = `Total: ${formatHours(Number(w.weekTotalHours || 0))}`;
+              const weekDisplayHours = w.weekStampHours != null ? w.weekStampHours : w.weekTotalHours;
+              totalLine.textContent = `Total: ${formatHours(Number(weekDisplayHours || 0))}`;
+
 
               // --- Left stack: (KW/date range) + (Total + status) ---
               const leftStack = document.createElement("div");
@@ -5702,7 +5704,8 @@ function loadAdminSummary() {
                 dayCenter.className = "admin-day-hours";
 
                 const hoursText = document.createElement("span");
-                hoursText.textContent = formatHours(Number(d.totalHours || 0));
+                const displayHours = d.stampHours != null ? d.stampHours : d.totalHours;
+                hoursText.textContent = formatHours(Number(displayHours || 0));
 
                 const bar = document.createElement("div");
                 bar.className = "admin-hours-bar";
@@ -5710,7 +5713,7 @@ function loadAdminSummary() {
                 const fill = document.createElement("div");
                 fill.className = "admin-hours-bar-fill";
 
-                const h = Number(d.totalHours || 0);
+                const h = Number(displayHours || 0);
                 const pct = Math.max(0, Math.min(1, h / 8)) * 100;
                 fill.style.width = `${pct}%`;
 
