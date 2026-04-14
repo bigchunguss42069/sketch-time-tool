@@ -53,7 +53,9 @@ app.use(express.json({ limit: '25mb' }));
 // Teams
 const TEAMS = [
   { id: 'montage', name: 'Team Montage' },
-  // später: { id: 'service', name: 'Team Service' }, ...
+  { id: 'werkstatt', name: 'Team Werkstatt'},
+  { id: 'service', name: 'Team Service'},
+  { id: 'büro', name: 'Team Büro'},
 ];
 
 const INITIAL_USERS = [
@@ -2717,14 +2719,16 @@ app.post('/api/stamps/live', requireAuth, async (req, res) => {
 app.get('/api/admin/live-status', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT username, today_key, stamps, updated_at
-      FROM live_stamps
-      ORDER BY username ASC
+      SELECT l.username, l.today_key, l.stamps, l.updated_at, u.team_id
+      FROM live_stamps l
+      LEFT JOIN users u ON u.username = l.username
+      ORDER BY l.username ASC
     `);
     return res.json({
       ok: true,
       users: result.rows.map(r => ({
         username: r.username,
+        teamId: r.team_id || null,
         todayKey: r.today_key,
         stamps: r.stamps || [],
         updatedAt: r.updated_at instanceof Date
@@ -2732,7 +2736,8 @@ app.get('/api/admin/live-status', requireAuth, requireAdmin, async (req, res) =>
           : String(r.updated_at)
       }))
     });
-  } catch (err) {
+  } 
+  catch (err) {
     console.error('Live status error', err);
     return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
   }
@@ -2745,18 +2750,20 @@ app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) =>
     const monthIndex = Number(req.query.monthIndex ?? new Date().getMonth());
 
     const result = await db.query(`
-      SELECT username, date_key, action, old_time, new_time,
-             old_type, new_type, transmitted_at
-      FROM stamp_edits
-      WHERE year = $1 AND month_index = $2
-      ORDER BY username ASC, transmitted_at DESC
+      SELECT s.username, s.date_key, s.action, s.old_time, s.new_time,
+             s.old_type, s.new_type, s.transmitted_at, u.team_id
+      FROM stamp_edits s
+      LEFT JOIN users u ON u.username = s.username
+      WHERE s.year = $1 AND s.month_index = $2
+      ORDER BY s.username ASC, s.transmitted_at DESC
     `, [year, monthIndex]);
 
-    // Gruppieren nach User + Edit-Count
     const byUser = {};
     result.rows.forEach(r => {
-      if (!byUser[r.username]) byUser[r.username] = [];
-      byUser[r.username].push({
+      if (!byUser[r.username]) {
+        byUser[r.username] = { teamId: r.team_id || null, edits: [] };
+      }
+      byUser[r.username].edits.push({
         dateKey: r.date_key,
         action: r.action,
         oldTime: r.old_time,
@@ -2769,8 +2776,9 @@ app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) =>
       });
     });
 
-    const users = Object.entries(byUser).map(([username, edits]) => ({
+    const users = Object.entries(byUser).map(([username, { teamId, edits }]) => ({
       username,
+      teamId,
       editCount: edits.length,
       flagged: edits.length >= 10,
       edits
@@ -2783,7 +2791,178 @@ app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) =>
   }
 });
 
-// ---- Anlagen: global index + daily ledger + per-user-month snapshots ----
+
+// GET /api/admin/audit-pdf — Präsenz Audit PDF (letzte 5 Jahre, alle Mitarbeiter)
+app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const now = new Date();
+    const fiveYearsAgo = new Date(now.getFullYear() - 5, now.getMonth(), 1);
+
+    // Alle User laden
+    const usersResult = await db.query(`
+      SELECT id, username, team_id FROM users
+      WHERE active = TRUE AND role = 'user'
+      ORDER BY username ASC
+    `);
+    const users = usersResult.rows;
+
+    // Alle Submissions der letzten 5 Jahre laden
+    const subResult = await db.query(`
+      SELECT username, year, month_index, payload
+      FROM month_submissions
+      WHERE sent_at >= $1
+      ORDER BY username ASC, year ASC, month_index ASC
+    `, [fiveYearsAgo.toISOString()]);
+
+    // Stamp Edits laden (für "bearbeitet" Markierung)
+    const editsResult = await db.query(`
+      SELECT username, date_key FROM stamp_edits
+      WHERE transmitted_at >= $1
+    `, [fiveYearsAgo.toISOString()]);
+
+    const editedDays = new Set(
+      editsResult.rows.map(r => `${r.username}|${r.date_key}`)
+    );
+
+    // Submissions nach User gruppieren
+    const byUser = {};
+    users.forEach(u => {
+      byUser[u.username] = { teamId: u.team_id, submissions: [] };
+    });
+    subResult.rows.forEach(r => {
+      if (byUser[r.username]) {
+        byUser[r.username].submissions.push({
+          year: r.year,
+          monthIndex: r.month_index,
+          payload: r.payload
+        });
+      }
+    });
+
+    // PDF erstellen
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="Praesenz-Audit_${now.toISOString().slice(0,10)}.pdf"`
+    );
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50, autoFirstPage: true });
+    doc.pipe(res);
+
+    const TEAM_MAP = Object.fromEntries(
+      TEAMS.map(t => [t.id, t.name])
+    );
+
+    // ── Deckblatt ──
+    doc.fontSize(22).font('Helvetica-Bold').text('Präsenz Audit', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).font('Helvetica').text(
+      `Zeitraum: ${fiveYearsAgo.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })} – ${now.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}`,
+      { align: 'center' }
+    );
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor('#6B7280').text(
+      `Exportiert am: ${now.toLocaleString('de-CH')} · Norm Aufzüge`,
+      { align: 'center' }
+    );
+    doc.moveDown(2);
+
+    // ── Inhaltsverzeichnis ──
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text('Mitarbeiter');
+    doc.moveDown(0.5);
+    users.forEach(u => {
+      const team = TEAM_MAP[u.team_id] || u.team_id || '–';
+      doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`• ${u.username}  (${team})`);
+    });
+
+    // ── Pro Mitarbeiter ──
+    Object.entries(byUser).forEach(([username, { teamId, submissions }]) => {
+      doc.addPage();
+      const teamName = TEAM_MAP[teamId] || teamId || '–';
+
+      // User Header
+      doc.fontSize(16).font('Helvetica-Bold').fillColor('#1e293b')
+        .text(username, { underline: false });
+      doc.fontSize(10).font('Helvetica').fillColor('#6B7280')
+        .text(`Team: ${teamName}`);
+      doc.moveDown(0.8);
+
+      if (submissions.length === 0) {
+        doc.fontSize(10).fillColor('#94a3b8').text('Keine übertragenen Daten im Zeitraum.');
+        return;
+      }
+
+      submissions.forEach(sub => {
+        const monthLabel = new Date(sub.year, sub.monthIndex, 1)
+          .toLocaleDateString('de-CH', { month: 'long', year: 'numeric' });
+
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#334155')
+          .text(monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1));
+        doc.moveDown(0.3);
+
+        const daysObj = sub.payload?.days || {};
+        const sortedDays = Object.keys(daysObj).sort();
+
+        let hasAnyStamp = false;
+
+        sortedDays.forEach(dateKey => {
+          const dayData = daysObj[dateKey];
+          const stamps = Array.isArray(dayData?.stamps) ? dayData.stamps : [];
+          if (stamps.length === 0) return;
+
+          hasAnyStamp = true;
+          const isEdited = editedDays.has(`${username}|${dateKey}`);
+
+          // Datum
+          const d = new Date(dateKey + 'T00:00:00');
+          const dateLabel = d.toLocaleDateString('de-CH', {
+            weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
+          });
+
+          // Netto-Stunden berechnen
+          const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+          let totalMin = 0, lastIn = null;
+          sorted.forEach(s => {
+            const [hh, mm] = s.time.split(':').map(Number);
+            const mins = hh * 60 + mm;
+            if (s.type === 'in') lastIn = mins;
+            else if (s.type === 'out' && lastIn !== null) {
+              totalMin += mins - lastIn;
+              lastIn = null;
+            }
+          });
+          const netHours = totalMin > 0
+            ? `${Math.floor(totalMin/60)}h ${totalMin%60 > 0 ? totalMin%60+'m' : ''}`.trim()
+            : '–';
+
+          // Stempel-Zeilen
+          const stampStr = sorted
+            .map(s => `${s.type === 'in' ? 'Ein' : 'Aus'} ${s.time}`)
+            .join('  ·  ');
+
+          // Zeile rendern
+          const editMark = isEdited ? '  ✎' : '';
+          doc.fontSize(9).font('Helvetica').fillColor(isEdited ? '#d97706' : '#374151')
+            .text(`${dateLabel}    ${stampStr}    Netto: ${netHours}${editMark}`, {
+              continued: false
+            });
+        });
+
+        if (!hasAnyStamp) {
+          doc.fontSize(9).fillColor('#94a3b8').text('Keine Stempel in diesem Monat.');
+        }
+
+        doc.moveDown(0.8);
+      });
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error('Audit PDF error', err);
+    if (!res.headersSent) {
+      res.status(500).json({ ok: false, error: 'PDF konnte nicht erstellt werden' });
+    }
+  }
+});
 
 
 // ============================================================================
@@ -3896,7 +4075,7 @@ app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, async (req, res)
   if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
   if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
-  const index = readAnlagenIndex();
+  const index = await readAnlagenIndex();
   const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
     ? index.teams[teamId]
     : {};

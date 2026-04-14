@@ -55,6 +55,15 @@ let myWeekLocks = {}; // weekKey -> { locked, lockedAt, lockedBy }
 const anlagenSummaryCache = new Map(); // key: `${status}` -> anlagen[]
 const anlagenDetailCache = new Map(); // key: komNr -> detail
 
+
+// Teams — sync mit server.js TEAMS
+const TEAMS = [
+  { id: 'montage', name: 'Team Montage'},
+  { id: 'werkstatt', name: 'Team Werkstatt'},
+  { id: 'service', name: 'Team Service'},
+  { id: 'büro', name: 'Team Büro'},
+];
+
 /**
  * Admin / Personnel and payroll DOM handles
  */
@@ -572,7 +581,7 @@ async function loadAdminPayroll() {
 
 topNavTabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    syncDraftToServer();
+    if (_draftLoadComplete) syncDraftToServer();
     const view = tab.dataset.view; // "wochenplan", "pikett", "dashboard", "dokumente"
 
     // Switch active tab
@@ -602,10 +611,9 @@ topNavTabs.forEach((tab) => {
 });
 
 
-    window.addEventListener('beforeunload', () => {
-          syncDraftToServer();
-        });
-
+window.addEventListener('beforeunload', () => {
+  if (_draftLoadComplete) syncDraftToServer();
+});
 
 
 /**
@@ -664,12 +672,14 @@ function saveToStorage() {
 
 // Draft Sync — debounced, sendet aktuellen Monat an Server
 let _draftSyncTimer = null;
+let _draftLoadComplete = false
 
 function scheduleDraftSync() {
   if (_draftSyncTimer) clearTimeout(_draftSyncTimer);
   _draftSyncTimer = setTimeout(() => syncDraftToServer(), 3000);
 }
 
+// savedAt nur beim echten Sync updaten:
 async function syncDraftToServer() {
   const user = getCurrentUser();
   if (!user) return;
@@ -4407,6 +4417,7 @@ if (loginForm) {
 if (logoutBtn) {
   logoutBtn.addEventListener("click", () => {
     clearAuthSession();
+    _draftLoadComplete = false;
     if (userDisplayEl) {
       userDisplayEl.textContent = "–";
     }
@@ -5827,14 +5838,65 @@ function loadAdminSummary() {
 
 let praesenzPollInterval = null;
 let stampEditMonthOffset = 0;
+let praesenzTeamFilter = 'all';
+let praesenzEditFilter = 0; // 0 = alle, 10 = nur flagged
+let _liveStatusData = [];
+let _stampEditsData = [];
 
 function loadAdminPraesenz() {
+  renderPraesenzControls(); // ← NEU
   loadLiveStatus();
   loadStampEditLog();
-
-  // Polling alle 30 Sekunden
   if (praesenzPollInterval) clearInterval(praesenzPollInterval);
   praesenzPollInterval = setInterval(loadLiveStatus, 30000);
+}
+
+function renderPraesenzControls() {
+  const container = document.getElementById('praesenzLiveGrid');
+  if (!container) return;
+
+  // Controls nur einmal rendern
+  let controls = document.getElementById('praesenzControls');
+  if (!controls) {
+    controls = document.createElement('div');
+    controls.id = 'praesenzControls';
+    controls.className = 'praesenz-controls';
+    container.parentElement.insertBefore(controls, container);
+  }
+
+  controls.innerHTML = `
+    <div class="praesenz-controls-row">
+      <select id="praesenzTeamFilter" class="praesenz-filter-select">
+        <option value="all">Alle Teams</option>
+        ${TEAMS.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}
+      </select>
+      <select id="praesenzEditFilter" class="praesenz-filter-select">
+        <option value="0">Alle Mitarbeiter</option>
+        <option value="10">Nur flagged (≥10 Edits)</option>
+      </select>
+      <button id="auditPdfBtn" class="praesenz-audit-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Audit PDF (5 Jahre)
+      </button>
+    </div>
+  `;
+
+  document.getElementById('praesenzTeamFilter')?.addEventListener('change', e => {
+    praesenzTeamFilter = e.target.value;
+    renderLiveStatusFromCache();
+    renderStampEditLogFromCache();
+  });
+
+  document.getElementById('praesenzEditFilter')?.addEventListener('change', e => {
+    praesenzEditFilter = Number(e.target.value);
+    renderStampEditLogFromCache();
+  });
+
+  document.getElementById('auditPdfBtn')?.addEventListener('click', downloadAuditPdf);
 }
 
 function stopPraesenzPolling() {
@@ -5845,55 +5907,62 @@ function stopPraesenzPolling() {
 }
 
 async function loadLiveStatus() {
-  const container = document.getElementById('praesenzLiveGrid');
-  if (!container) return;
-
   try {
     const res = await authFetch('/api/admin/live-status');
     const data = await res.json();
     if (!data.ok) return;
-
-    const todayKey = getTodayKey();
-    container.innerHTML = '';
-
-    if (data.users.length === 0) {
-      container.innerHTML = '<div class="stamp-edit-empty">Noch keine Stempel-Daten vorhanden.</div>';
-      return;
-    }
-
-    data.users.forEach(u => {
-      const stamps = Array.isArray(u.stamps) ? u.stamps : [];
-      const isToday = u.todayKey === todayKey;
-      const stamped = isToday && isStampedIn(stamps);
-
-      // Letzter Stempel
-      const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
-      const last = sorted[sorted.length - 1];
-      const timeLabel = last ? `${last.type === 'in' ? 'Ein' : 'Aus'} ${last.time}` : '–';
-
-      const chip = document.createElement('div');
-      chip.className = 'praesenz-user-chip';
-
-      const dot = document.createElement('div');
-      dot.className = `praesenz-dot ${stamped ? 'is-in' : 'is-out'}`;
-
-      const name = document.createElement('div');
-      name.className = 'praesenz-name';
-      name.textContent = u.username;
-
-      const time = document.createElement('div');
-      time.className = 'praesenz-time';
-      time.textContent = isToday ? timeLabel : 'kein Eintrag heute';
-
-      chip.appendChild(dot);
-      chip.appendChild(name);
-      chip.appendChild(time);
-      container.appendChild(chip);
-    });
+    _liveStatusData = data.users;
+    renderLiveStatusFromCache();
   } catch (err) {
     console.error('Live status load failed', err);
   }
 }
+
+function renderLiveStatusFromCache() {
+  const container = document.getElementById('praesenzLiveGrid');
+  if (!container) return;
+
+  const todayKey = getTodayKey();
+  container.innerHTML = '';
+
+  const filtered = _liveStatusData.filter(u =>
+    praesenzTeamFilter === 'all' || u.teamId === praesenzTeamFilter
+  );
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="stamp-edit-empty">Noch keine Stempel-Daten vorhanden.</div>';
+    return;
+  }
+
+  filtered.forEach(u => {
+    const stamps = Array.isArray(u.stamps) ? u.stamps : [];
+    const isToday = u.todayKey === todayKey;
+    const stamped = isToday && isStampedIn(stamps);
+    const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+    const last = sorted[sorted.length - 1];
+    const timeLabel = last ? `${last.type === 'in' ? 'Ein' : 'Aus'} ${last.time}` : '–';
+
+    const chip = document.createElement('div');
+    chip.className = 'praesenz-user-chip';
+
+    const dot = document.createElement('div');
+    dot.className = `praesenz-dot ${stamped ? 'is-in' : 'is-out'}`;
+
+    const name = document.createElement('div');
+    name.className = 'praesenz-name';
+    name.textContent = u.username;
+
+    const time = document.createElement('div');
+    time.className = 'praesenz-time';
+    time.textContent = isToday ? timeLabel : 'kein Eintrag heute';
+
+    chip.appendChild(dot);
+    chip.appendChild(name);
+    chip.appendChild(time);
+    container.appendChild(chip);
+  });
+}
+
 
 function getStampEditMonthInfo() {
   const now = new Date();
@@ -5910,9 +5979,28 @@ async function loadStampEditLog() {
   if (!container) return;
 
   const info = getStampEditMonthInfo();
+  try {
+    const res = await authFetch(
+      `/api/admin/stamp-edits?year=${info.year}&monthIndex=${info.monthIndex}`
+    );
+    const data = await res.json();
+    if (!data.ok) return;
+    _stampEditsData = data.users;
+    renderStampEditLogFromCache(info);
+  } catch (err) {
+    console.error('Stamp edit log load failed', err);
+  }
+}
 
-  // Header mit Monat-Navigation rendern
+
+function renderStampEditLogFromCache(info) {
+  const container = document.getElementById('stampEditLogContainer');
+  if (!container) return;
+  if (!info) info = getStampEditMonthInfo();
+
   container.innerHTML = '';
+
+  // ── Header mit Navigation ──
   const header = document.createElement('div');
   header.className = 'stamp-edit-log-header';
 
@@ -5933,7 +6021,8 @@ async function loadStampEditLog() {
 
   const monthLabel = document.createElement('span');
   monthLabel.className = 'stamp-edit-month-label';
-  monthLabel.textContent = info.label.charAt(0).toUpperCase() + info.label.slice(1);
+  const lbl = info.label;
+  monthLabel.textContent = lbl.charAt(0).toUpperCase() + lbl.slice(1);
 
   const nextBtn = document.createElement('button');
   nextBtn.className = 'stamp-edit-month-arrow';
@@ -5950,96 +6039,186 @@ async function loadStampEditLog() {
   header.appendChild(monthControl);
   container.appendChild(header);
 
-  try {
-    const res = await authFetch(
-      `/api/admin/stamp-edits?year=${info.year}&monthIndex=${info.monthIndex}`
-    );
-    const data = await res.json();
-    if (!data.ok) return;
+  // Filter anwenden
+  let filtered = _stampEditsData.filter(u =>
+    praesenzTeamFilter === 'all' || u.teamId === praesenzTeamFilter
+  );
+  if (praesenzEditFilter >= 10) {
+    filtered = filtered.filter(u => u.flagged);
+  }
 
-    if (data.users.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'stamp-edit-empty';
-      empty.textContent = 'Keine Stempel-Bearbeitungen in diesem Monat.';
-      container.appendChild(empty);
-      return;
-    }
+  // ── Leaderboard Chart ──
+  if (filtered.length > 0) {
+    const chartWrap = document.createElement('div');
+    chartWrap.className = 'stamp-edit-chart';
 
-    data.users.forEach(u => {
-      const block = document.createElement('div');
-      block.className = `stamp-edit-user-block${u.flagged ? ' is-flagged' : ''}`;
+    const chartTitle = document.createElement('div');
+    chartTitle.className = 'stamp-edit-chart-title';
+    chartTitle.textContent = 'Edits pro Mitarbeiter';
+    chartWrap.appendChild(chartTitle);
 
-      const blockHeader = document.createElement('div');
-      blockHeader.className = 'stamp-edit-user-header';
+    const maxEdits = Math.max(...filtered.map(u => u.editCount), 1);
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const barHeight = 28;
+    const barGap = 8;
+    const labelWidth = 100;
+    const chartWidth = 380;
+    const svgHeight = filtered.length * (barHeight + barGap);
 
-      const name = document.createElement('div');
-      name.className = 'stamp-edit-user-name';
-      name.textContent = u.username;
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('viewBox', `0 0 ${labelWidth + chartWidth + 50} ${svgHeight}`);
 
-      const right = document.createElement('div');
-      right.className = 'stamp-edit-user-right';
+    filtered.forEach((u, i) => {
+      const y = i * (barHeight + barGap);
+      const barW = Math.max(4, (u.editCount / maxEdits) * chartWidth);
+      const color = u.flagged ? '#ef4444' : '#6366f1';
 
-      const countBadge = document.createElement('span');
-      countBadge.className = `stamp-edit-count ${u.flagged ? 'flagged' : 'normal'}`;
-      countBadge.textContent = `${u.editCount} Edit${u.editCount !== 1 ? 's' : ''}`;
+      const label = document.createElementNS(svgNS, 'text');
+      label.setAttribute('x', labelWidth - 8);
+      label.setAttribute('y', y + barHeight / 2 + 4);
+      label.setAttribute('text-anchor', 'end');
+      label.setAttribute('font-size', '12');
+      label.setAttribute('fill', '#475569');
+      label.setAttribute('font-family', 'sans-serif');
+      label.textContent = u.username;
 
-      const chevron = document.createElement('span');
-      chevron.className = 'stamp-edit-chevron';
-      chevron.textContent = '▾';
+      const bar = document.createElementNS(svgNS, 'rect');
+      bar.setAttribute('x', labelWidth);
+      bar.setAttribute('y', y);
+      bar.setAttribute('width', barW);
+      bar.setAttribute('height', barHeight);
+      bar.setAttribute('rx', '6');
+      bar.setAttribute('fill', color);
+      bar.setAttribute('opacity', '0.85');
 
-      right.appendChild(countBadge);
-      right.appendChild(chevron);
-      blockHeader.appendChild(name);
-      blockHeader.appendChild(right);
+      const countLabel = document.createElementNS(svgNS, 'text');
+      countLabel.setAttribute('x', labelWidth + barW + 6);
+      countLabel.setAttribute('y', y + barHeight / 2 + 4);
+      countLabel.setAttribute('font-size', '12');
+      countLabel.setAttribute('fill', color);
+      countLabel.setAttribute('font-weight', 'bold');
+      countLabel.setAttribute('font-family', 'sans-serif');
+      countLabel.textContent = u.editCount;
 
-      const entries = document.createElement('div');
-      entries.className = 'stamp-edit-entries';
-
-      u.edits.forEach(edit => {
-        const row = document.createElement('div');
-        row.className = 'stamp-edit-entry';
-
-        const action = document.createElement('span');
-        action.className = `stamp-edit-action ${edit.action}`;
-        action.textContent = edit.action === 'added' ? 'hinzugefügt'
-          : edit.action === 'deleted' ? 'gelöscht' : 'bearbeitet';
-
-        const detail = document.createElement('div');
-        detail.className = 'stamp-edit-detail';
-        if (edit.action === 'edited') {
-          detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime} → ${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
-        } else if (edit.action === 'added') {
-          detail.textContent = `${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
-        } else {
-          detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime}`;
-        }
-
-        const dateLabel = document.createElement('div');
-        dateLabel.className = 'stamp-edit-date-label';
-        dateLabel.textContent = edit.dateKey;
-
-        row.appendChild(action);
-        row.appendChild(detail);
-        row.appendChild(dateLabel);
-        entries.appendChild(row);
-      });
-
-      // Toggle
-      blockHeader.addEventListener('click', () => {
-        entries.classList.toggle('open');
-        chevron.classList.toggle('open');
-      });
-
-      block.appendChild(blockHeader);
-      block.appendChild(entries);
-      container.appendChild(block);
+      svg.appendChild(label);
+      svg.appendChild(bar);
+      svg.appendChild(countLabel);
     });
+
+    chartWrap.appendChild(svg);
+    container.appendChild(chartWrap);
+  }
+
+  // ── Edit-Log Liste ──
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'stamp-edit-empty';
+    empty.textContent = 'Keine Stempel-Bearbeitungen in diesem Monat.';
+    container.appendChild(empty);
+    return;
+  }
+
+  filtered.forEach(u => {
+    const block = document.createElement('div');
+    block.className = `stamp-edit-user-block${u.flagged ? ' is-flagged' : ''}`;
+
+    const blockHeader = document.createElement('div');
+    blockHeader.className = 'stamp-edit-user-header';
+
+    const name = document.createElement('div');
+    name.className = 'stamp-edit-user-name';
+    name.textContent = u.username;
+
+    const right = document.createElement('div');
+    right.className = 'stamp-edit-user-right';
+
+    const countBadge = document.createElement('span');
+    countBadge.className = `stamp-edit-count ${u.flagged ? 'flagged' : 'normal'}`;
+    countBadge.textContent = `${u.editCount} Edit${u.editCount !== 1 ? 's' : ''}`;
+
+    const chevron = document.createElement('span');
+    chevron.className = 'stamp-edit-chevron';
+    chevron.textContent = '▾';
+
+    right.appendChild(countBadge);
+    right.appendChild(chevron);
+    blockHeader.appendChild(name);
+    blockHeader.appendChild(right);
+
+    const entries = document.createElement('div');
+    entries.className = 'stamp-edit-entries';
+
+    u.edits.forEach(edit => {
+      const row = document.createElement('div');
+      row.className = 'stamp-edit-entry';
+
+      const action = document.createElement('span');
+      action.className = `stamp-edit-action ${edit.action}`;
+      action.textContent = edit.action === 'added' ? 'hinzugefügt'
+        : edit.action === 'deleted' ? 'gelöscht' : 'bearbeitet';
+
+      const detail = document.createElement('div');
+      detail.className = 'stamp-edit-detail';
+      if (edit.action === 'edited') {
+        detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime} → ${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
+      } else if (edit.action === 'added') {
+        detail.textContent = `${edit.newType === 'in' ? 'Ein' : 'Aus'} ${edit.newTime}`;
+      } else {
+        detail.textContent = `${edit.oldType === 'in' ? 'Ein' : 'Aus'} ${edit.oldTime}`;
+      }
+
+      const dateLabel = document.createElement('div');
+      dateLabel.className = 'stamp-edit-date-label';
+      dateLabel.textContent = edit.dateKey;
+
+      row.appendChild(action);
+      row.appendChild(detail);
+      row.appendChild(dateLabel);
+      entries.appendChild(row);
+    });
+
+    blockHeader.addEventListener('click', () => {
+      entries.classList.toggle('open');
+      chevron.classList.toggle('open');
+    });
+
+    block.appendChild(blockHeader);
+    block.appendChild(entries);
+    container.appendChild(block);
+  });
+}
+
+
+async function downloadAuditPdf() {
+  const btn = document.getElementById('auditPdfBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Wird erstellt…';
+  }
+  try {
+    const res = await authFetch('/api/admin/audit-pdf');
+    if (!res.ok) throw new Error('PDF-Erstellung fehlgeschlagen');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Praesenz-Audit_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   } catch (err) {
-    console.error('Stamp edit log load failed', err);
+    console.error('Audit PDF download failed', err);
+    alert('PDF konnte nicht erstellt werden.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Audit PDF (5 Jahre)`;
+    }
   }
 }
 
-// --- Flags: apply + save per day --- //
 
 /**
  * Push weekday checkbox and flag inputs into the current day draft object and persist them.
@@ -6891,6 +7070,14 @@ function renderAdminUsers(users) {
   });
 }
 
+
+function populateTeamDropdown() {
+  if (!modalTeam) return;
+  modalTeam.innerHTML = TEAMS.map(t =>
+    `<option value="${t.id}">${t.name}</option>`
+  ).join('');
+}
+
 function openNewUserModal() {
   editingUserId = null;
   adminUserModalTitle.textContent = 'Neuer Mitarbeiter';
@@ -6898,6 +7085,7 @@ function openNewUserModal() {
   modalEmail.value = '';
   modalPassword.value = '';
   modalRole.value = 'user';
+  populateTeamDropdown();
   modalTeam.value = 'montage';
   modalUsername.disabled = false;
   modalPassword.placeholder = 'Passwort';
@@ -6914,6 +7102,7 @@ function openEditUserModal(userId) {
   modalEmail.value = user.email || '';
   modalPassword.value = '';
   modalRole.value = user.role || 'user';
+  populateTeamDropdown();
   modalTeam.value = user.teamId || 'montage';
   modalUsername.disabled = true;
   modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
@@ -7261,7 +7450,7 @@ if (stampBtn) {
     const now = formatTimeHHMM(new Date());
 
     dayData.stamps.push({ type: stamped ? 'out' : 'in', time: now });
-    logStampEdit(todayKey, 'added', null, { type: stamped ? 'out' : 'in', time: now }); // ← NEU
+    
     saveToStorage();
     renderStampCard();
     sendLiveStamp(todayKey, dayData.stamps); // ← NEU
@@ -7542,7 +7731,7 @@ async function loadDraftFromServer() {
     const localRaw = localStorage.getItem(STORAGE_KEY + '_savedAt');
     const localTime = localRaw ? new Date(localRaw).getTime() : 0;
 
-    if (serverTime > localTime) {
+   if (serverTime > localTime) {
   if (draft.dayStore && typeof draft.dayStore === 'object') {
     const { year, month } = draft;
     Object.keys(dayStore).forEach((dateKey) => {
@@ -7567,8 +7756,7 @@ async function loadDraftFromServer() {
     pikettStore = draft.pikettStore;
     savePikettStore();
   }
-
-    }
+}
   } catch (err) {
     console.error('Draft load failed', err);
   }
@@ -7589,6 +7777,7 @@ function reloadAllDataForCurrentUser() {
 
   // Draft vom Server laden (async, überschreibt wenn Server neuer)
   loadDraftFromServer().then(() => { // ← NEU
+    _draftLoadComplete = true;
     renderWeekInfo();
     updateDayTitleWithDate();
     applyFlagsForCurrentDay();
