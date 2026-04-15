@@ -1630,6 +1630,31 @@
                       <select id="modalTeam" class="admin-user-modal-input">
                         </select>
                     </label>
+
+                      <!-- Nach dem Team-Select, vor adminUserModalError -->
+                      <div class="admin-user-modal-schedule">
+                        <div class="admin-user-modal-schedule-title">Arbeitszeitmodell</div>
+                        <div id="modalScheduleList" class="modal-schedule-list"></div>
+                        <div class="modal-schedule-add">
+                          <div class="modal-schedule-row">
+                            <input type="number" id="modalEmploymentPct" min="10" max="100" step="10"
+                              value="100" class="admin-user-modal-input modal-schedule-pct" placeholder="%" />
+                            <input type="date" id="modalScheduleValidFrom"
+                              class="admin-user-modal-input modal-schedule-date" />
+                          </div>
+                          <div class="modal-schedule-days">
+                            <label class="modal-schedule-day-label"><span>Mo</span><input type="number" id="schedMon" min="0" max="12" step="0.5" value="8" class="modal-day-input" /></label>
+                            <label class="modal-schedule-day-label"><span>Di</span><input type="number" id="schedTue" min="0" max="12" step="0.5" value="8" class="modal-day-input" /></label>
+                            <label class="modal-schedule-day-label"><span>Mi</span><input type="number" id="schedWed" min="0" max="12" step="0.5" value="8" class="modal-day-input" /></label>
+                            <label class="modal-schedule-day-label"><span>Do</span><input type="number" id="schedThu" min="0" max="12" step="0.5" value="8" class="modal-day-input" /></label>
+                            <label class="modal-schedule-day-label"><span>Fr</span><input type="number" id="schedFri" min="0" max="12" step="0.5" value="8" class="modal-day-input" /></label>
+                          </div>
+                          <button type="button" id="modalScheduleAddBtn" class="modal-schedule-add-btn">
+                            + Modell hinzufügen
+                          </button>
+                        </div>
+                      </div>
+
                     <div id="adminUserModalError" class="admin-user-modal-error hidden"></div>
                   </div>
                   <div class="admin-user-modal-footer">

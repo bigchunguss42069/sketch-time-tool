@@ -3264,15 +3264,8 @@ async function updateOvertimeYearCard() {
     const officialUeZ3 = Number(konto.ueZ3) || 0;
     const officialVacationDays = Number(konto.vacationDays) || 0;
 
-    const positiveForSelectedYear =
-      Number(konto.ueZ1PositiveByYear?.[String(selectedYear)]) || 0;
-
-    const vorarbeitFilled = Math.min(
-      Math.max(positiveForSelectedYear, 0),
-      vorarbeitRequired,
-    );
-
-    const officialUeZ1AfterVorarbeit = officialUeZ1Raw - vorarbeitFilled;
+    const vorarbeitFilled = Number(konto.vorarbeitBalance) || 0;
+    const officialUeZ1AfterVorarbeit = officialUeZ1Raw; // ÜZ1 ist bereits nach Vorarbeit
 
     overtimeYearUeZ1El.textContent = formatHoursSigned(
       officialUeZ1AfterVorarbeit,
@@ -7021,6 +7014,89 @@ async function loadAdminUsers() {
   }
 }
 
+
+// Work Schedule — laden und rendern
+async function loadWorkScheduleForModal(userId) {
+  const listEl = document.getElementById('modalScheduleList');
+  if (!listEl) return;
+  listEl.innerHTML = '<span style="font-size:12px;color:#94a3b8;">Wird geladen…</span>';
+
+  try {
+    const res = await authFetch(`/api/admin/work-schedule/${userId}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    listEl.innerHTML = '';
+    if (data.schedules.length === 0) {
+      listEl.innerHTML = '<span style="font-size:12px;color:#94a3b8;">Kein Modell hinterlegt — Standard 100% wird verwendet.</span>';
+      return;
+    }
+
+    data.schedules.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'modal-schedule-item';
+
+      const wd = s.work_days || {};
+      const days = ['mon','tue','wed','thu','fri'];
+      const dayLabels = ['Mo','Di','Mi','Do','Fr'];
+      const daysStr = days.map((d, i) =>
+        wd[d] > 0 ? `${dayLabels[i]}:${wd[d]}h` : null
+      ).filter(Boolean).join(' · ');
+
+      const info = document.createElement('div');
+      info.innerHTML = `<strong>${s.employment_pct}%</strong> · ab ${s.valid_from.slice(0,10)}<br>
+        <span style="font-size:11px;color:#64748b;">${daysStr}</span>`;
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'modal-schedule-delete';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        if (!confirm('Dieses Modell löschen?')) return;
+        await authFetch(`/api/admin/work-schedule/${s.id}`, { method: 'DELETE' });
+        loadWorkScheduleForModal(userId);
+      });
+
+      item.appendChild(info);
+      item.appendChild(delBtn);
+      listEl.appendChild(item);
+    });
+  } catch (err) {
+    listEl.innerHTML = `<span style="font-size:12px;color:#ef4444;">Fehler: ${err.message}</span>`;
+  }
+}
+
+// Work Schedule — neues Modell speichern
+async function saveWorkSchedule(userId) {
+  const pct = Number(document.getElementById('modalEmploymentPct')?.value);
+  const validFrom = document.getElementById('modalScheduleValidFrom')?.value;
+
+  if (!pct || !validFrom) {
+    alert('Bitte Pensum und Datum eingeben.');
+    return;
+  }
+
+  const workDays = {
+    mon: Number(document.getElementById('schedMon')?.value || 0),
+    tue: Number(document.getElementById('schedTue')?.value || 0),
+    wed: Number(document.getElementById('schedWed')?.value || 0),
+    thu: Number(document.getElementById('schedThu')?.value || 0),
+    fri: Number(document.getElementById('schedFri')?.value || 0),
+  };
+
+  try {
+    const res = await authFetch('/api/admin/work-schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, employmentPct: pct, workDays, validFrom })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    loadWorkScheduleForModal(userId);
+  } catch (err) {
+    alert(`Fehler: ${err.message}`);
+  }
+}
+
 function renderAdminUsers(users) {
   if (!adminUsersGrid) return;
   const search = adminUsersSearch ? adminUsersSearch.value.toLowerCase() : '';
@@ -7108,6 +7184,7 @@ function openEditUserModal(userId) {
   modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
   adminUserModalError.classList.add('hidden');
   adminUserModal.classList.remove('hidden');
+  loadWorkScheduleForModal(userId);
 }
 
 function closeUserModal() {
@@ -7211,6 +7288,13 @@ if (adminUserModalClose) adminUserModalClose.addEventListener('click', closeUser
 if (adminUserModalCancel) adminUserModalCancel.addEventListener('click', closeUserModal);
 if (adminUserModalSave) adminUserModalSave.addEventListener('click', saveUserModal);
 if (adminUsersSearch) adminUsersSearch.addEventListener('input', () => renderAdminUsers(allUsers));
+
+// Work Schedule Add-Button ← NEU
+document.getElementById('modalScheduleAddBtn')
+  ?.addEventListener('click', () => {
+    if (editingUserId) saveWorkSchedule(editingUserId);
+    else alert('Bitte erst speichern bevor ein Arbeitszeitmodell hinzugefügt wird.');
+  });
 
 /**
  * View helpers / active weekday switching

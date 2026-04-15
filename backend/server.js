@@ -13,6 +13,7 @@ const argon2 = require('argon2');
 const exportPdfBody = express.json({ limit: '10mb' });
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const cron = require('node-cron');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -741,89 +742,85 @@ function buildAcceptedAbsenceDaysSet(absencesArray, monthStartKey, monthEndKey) 
 }
 
 
-function computeUeZ1NetForMonth(payload, year, monthIndex) {
-  const DAILY_SOLL = 8.0;
-  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
+  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+  const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+  const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
+  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+    payload?.absences, monthStartKey, monthEndKey
+  );
 
   let sum = 0;
 
-  for (const [dateKey, dayData] of Object.entries(daysObj)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+  // Alle Werktage des Monats durchgehen — nicht nur die mit Einträgen
+  const cursor = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0);
 
-    const d = new Date(dateKey + 'T00:00:00');
-    if (Number.isNaN(d.getTime())) continue;
+  while (cursor <= end) {
+    const dateKey = formatDateKey(cursor);
+    const weekday = cursor.getDay();
+    cursor.setDate(cursor.getDate() + 1);
 
-    // Safety: ensure it belongs to the month being processed
-    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+    if (weekday === 0 || weekday === 6) continue; // Wochenende überspringen
 
-    const flags = (dayData && dayData.flags) ? dayData.flags : {};
-    const isFerien = !!flags.ferien;
+    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    if (soll === 0) continue; // Feiertag, Absenz oder freier Tag im Modell
 
-    const dayTotal = computeDailyWorkingHours(dayData);
-    const hasAnyHours = dayTotal > 0;
-    const hasAnyFlag = Object.values(flags).some(Boolean);
-    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
-
-    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
+    const dayData = daysObj[dateKey] || null;
+    const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+    const isFerien = !!(dayData?.flags?.ferien);
 
     let diff = 0;
-
     if (isFerien) {
-      if (!hasAnyHours) diff = 0;
-      else if (dayTotal < DAILY_SOLL) diff = 0;
-      else diff = dayTotal - DAILY_SOLL;
+      diff = dayTotal > soll ? dayTotal - soll : 0;
     } else {
-      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
-      else diff = 0;
+      diff = dayTotal - soll; // kann negativ sein — das ist gewollt
     }
 
     sum += diff;
   }
 
-  // Keep same style as totals (1 decimal)
   return Math.round(sum * 10) / 10;
 }
 
+
+
 // Compute only POSITIVE ÜZ1 hours for the month (for Vorarbeit tracking)
-function computeUeZ1PositiveForMonth(payload, year, monthIndex) {
-  const DAILY_SOLL = 8.0;
-  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
+  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+  const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+  const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
+  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+    payload?.absences, monthStartKey, monthEndKey
+  );
 
   let positiveSum = 0;
 
-  for (const [dateKey, dayData] of Object.entries(daysObj)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+  const cursor = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0);
 
-    const d = new Date(dateKey + 'T00:00:00');
-    if (Number.isNaN(d.getTime())) continue;
+  while (cursor <= end) {
+    const dateKey = formatDateKey(cursor);
+    const weekday = cursor.getDay();
+    cursor.setDate(cursor.getDate() + 1);
 
-    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+    if (weekday === 0 || weekday === 6) continue;
 
-    const flags = (dayData && dayData.flags) ? dayData.flags : {};
-    const isFerien = !!flags.ferien;
+    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    if (soll === 0) continue;
 
-    const dayTotal = computeDailyWorkingHours(dayData);
-    const hasAnyHours = dayTotal > 0;
-    const hasAnyFlag = Object.values(flags).some(Boolean);
-    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
-
-    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
+    const dayData = daysObj[dateKey] || null;
+    const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+    const isFerien = !!(dayData?.flags?.ferien);
 
     let diff = 0;
-
     if (isFerien) {
-      if (!hasAnyHours) diff = 0;
-      else if (dayTotal < DAILY_SOLL) diff = 0;
-      else diff = dayTotal - DAILY_SOLL;
+      diff = dayTotal > soll ? dayTotal - soll : 0;
     } else {
-      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
-      else diff = 0;
+      diff = dayTotal - soll;
     }
 
-    // Only count positive hours
-    if (diff > 0) {
-      positiveSum += diff;
-    }
+    if (diff > 0) positiveSum += diff;
   }
 
   return Math.round(positiveSum * 10) / 10;
@@ -838,60 +835,62 @@ function getPayrollYearConfig(year) {
   return PAYROLL_YEAR_CONFIG[year] || { vorarbeitRequired: 0 };
 }
 
-function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey) {
-  const DAILY_SOLL = 8.0;
-  const daysObj =
-    submission && submission.days && typeof submission.days === 'object'
-      ? submission.days
-      : {};
+
+async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey, userId) {
+  const daysObj = (submission?.days && typeof submission.days === 'object')
+    ? submission.days : {};
 
   let ueZ1Raw = 0;
   let ueZ1Positive = 0;
   let ueZ2 = 0;
   let ueZ3 = 0;
 
-  for (const [dateKey, dayData] of Object.entries(daysObj)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
-    if (dateKey < fromKey || dateKey > toKey) continue;
+  // Absenzen aus Submission
+  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+    submission?.absences, fromKey, toKey
+  );
 
-    const flags = (dayData && dayData.flags) ? dayData.flags : {};
-    const isFerien = !!flags.ferien;
+  // Alle Werktage im Zeitraum
+  const cursor = new Date(fromKey + 'T00:00:00');
+  const end = new Date(toKey + 'T00:00:00');
 
-    const dayTotal = computeDailyWorkingHours(dayData);
-    const hasAnyHours = dayTotal > 0;
-    const hasAnyFlag = Object.values(flags).some(Boolean);
-    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
+  while (cursor <= end) {
+    const dateKey = formatDateKey(cursor);
+    const weekday = cursor.getDay();
+    cursor.setDate(cursor.getDate() + 1);
 
-    if (!hasAnyHours && !hasAnyFlag && !hasStamps) continue;
+    if (weekday === 0 || weekday === 6) continue;
+
+    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    if (soll === 0) continue;
+
+    const dayData = daysObj[dateKey] || null;
+    const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+    const isFerien = !!(dayData?.flags?.ferien);
 
     let diff = 0;
-
     if (isFerien) {
-      if (!hasAnyHours) diff = 0;
-      else if (dayTotal < DAILY_SOLL) diff = 0;
-      else diff = dayTotal - DAILY_SOLL;
+      diff = dayTotal > soll ? dayTotal - soll : 0;
     } else {
-      if (hasAnyHours) diff = dayTotal - DAILY_SOLL;
-      else diff = 0;
+      diff = dayTotal - soll;
     }
 
     ueZ1Raw += diff;
     if (diff > 0) ueZ1Positive += diff;
   }
 
+  // Pikett
   const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
   for (const entry of pikettList) {
     const dateKey = String(entry?.date || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
     if (dateKey < fromKey || dateKey > toKey) continue;
-
     const h = toNumber(entry?.hours);
     if (entry?.isOvertime3) ueZ3 += h;
     else ueZ2 += h;
   }
 
   const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
-
   return {
     ueZ1Raw: r1(ueZ1Raw),
     ueZ1Positive: r1(ueZ1Positive),
@@ -1491,6 +1490,17 @@ async function ensureKontenTables() {
     CREATE INDEX IF NOT EXISTS idx_konten_snapshots_username_month_key
     ON konten_snapshots (username, month_key)
   `);
+
+
+  await db.query(`
+    ALTER TABLE konten 
+    ADD COLUMN IF NOT EXISTS vorarbeit_balance DOUBLE PRECISION NOT NULL DEFAULT 0
+  `);
+  await db.query(`
+    ALTER TABLE konten_snapshots
+    ADD COLUMN IF NOT EXISTS vorarbeit_balance DOUBLE PRECISION NOT NULL DEFAULT 0
+`);
+
 }
 
 function normalizeKontenObject(value) {
@@ -1507,6 +1517,7 @@ function mapKontenRow(row, fallback = {}) {
     ueZ1: Number(row?.ue_z1) || 0,
     ueZ2: Number(row?.ue_z2) || 0,
     ueZ3: Number(row?.ue_z3) || 0,
+    vorarbeitBalance: Number(row?.vorarbeit_balance) || 0,
     ueZ1PositiveByYear: normalizeKontenObject(row?.ue_z1_positive_by_year),
     vacationDays: Number(row?.vacation_days) || 0,
     vacationDaysPerYear: Number(row?.vacation_days_per_year) || 21,
@@ -1526,6 +1537,7 @@ function mapKontenSnapshotRow(row) {
     ueZ2: Number(row?.ue_z2) || 0,
     ueZ3: Number(row?.ue_z3) || 0,
     vacUsed: Number(row?.vac_used) || 0,
+    vorarbeitBalance: Number(row?.vorarbeit_balance) || 0,
   };
 }
 
@@ -1633,38 +1645,40 @@ async function persistKontenUserRecord({
     throw new Error('Missing DB client');
   }
 
-  await client.query(
-    `
-      UPDATE konten
-      SET
-        username = $2,
-        team_id = $3,
-        ue_z1 = $4,
-        ue_z2 = $5,
-        ue_z3 = $6,
-        ue_z1_positive_by_year = $7::jsonb,
-        vacation_days = $8,
-        vacation_days_per_year = $9,
-        credited_years = $10::jsonb,
-        updated_at = $11,
-        updated_by = $12
-      WHERE user_id = $1
-    `,
-    [
-      userId,
-      username,
-      teamId,
-      Number(konto.ueZ1) || 0,
-      Number(konto.ueZ2) || 0,
-      Number(konto.ueZ3) || 0,
-      JSON.stringify(konto.ueZ1PositiveByYear || {}),
-      Number(konto.vacationDays) || 0,
-      Number(konto.vacationDaysPerYear) || 21,
-      JSON.stringify(konto.creditedYears || {}),
-      konto.updatedAt || null,
-      konto.updatedBy || null,
-    ]
-  );
+ await client.query(
+  `
+    UPDATE konten
+    SET
+      username = $2,
+      team_id = $3,
+      ue_z1 = $4,
+      ue_z2 = $5,
+      ue_z3 = $6,
+      ue_z1_positive_by_year = $7::jsonb,
+      vacation_days = $8,
+      vacation_days_per_year = $9,
+      credited_years = $10::jsonb,
+      updated_at = $11,
+      updated_by = $12,
+      vorarbeit_balance = $13
+    WHERE user_id = $1
+  `,
+  [
+    userId,
+    username,
+    teamId,
+    Number(konto.ueZ1) || 0,
+    Number(konto.ueZ2) || 0,
+    Number(konto.ueZ3) || 0,
+    JSON.stringify(konto.ueZ1PositiveByYear || {}),
+    Number(konto.vacationDays) || 0,
+    Number(konto.vacationDaysPerYear) || 21,
+    JSON.stringify(konto.creditedYears || {}),
+    konto.updatedAt || null,
+    konto.updatedBy || null,
+    Number(konto.vorarbeitBalance) || 0,  // ← NEU $13
+  ]
+);
 }
 
 async function listKontenMonthKeys(username, client = db) {
@@ -1764,6 +1778,44 @@ function isBernHolidayKey(dateKey) {
   return !!(set && set.has(dateKey));
 }
 
+
+// Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
+// Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
+async function getDailySoll(userId, dateKey, acceptedAbsenceDaysSet) {
+  const weekday = new Date(dateKey + 'T00:00:00').getDay(); // 0=So, 6=Sa
+  
+  // Wochenende → immer 0
+  if (weekday === 0 || weekday === 6) return 0;
+  
+  // Feiertag → 0
+  if (isBernHolidayKey(dateKey)) return 0;
+  
+  // Genehmigte Absenz → 0
+  if (acceptedAbsenceDaysSet && acceptedAbsenceDaysSet.has(dateKey)) return 0;
+
+  // Arbeitszeitmodell laden
+  const result = await db.query(`
+    SELECT employment_pct, work_days FROM work_schedules
+    WHERE user_id = $1 AND valid_from <= $2
+    ORDER BY valid_from DESC
+    LIMIT 1
+  `, [userId, dateKey]);
+
+  if (result.rows.length === 0) {
+    // Kein Modell → Default 100% Mo-Fr 8h
+    const DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+    return DAY_KEYS[weekday] === 'sun' || DAY_KEYS[weekday] === 'sat' ? 0 : 8.0;
+  }
+
+  const row = result.rows[0];
+  const workDays = row.work_days || {};
+  const DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dayKey = DAY_KEYS[weekday];
+  
+  return toNumber(workDays[dayKey]) || 0;
+}
+
+
 // Calculate vacation days for an absence (weekdays minus holidays)
 function calculateAbsenceVacationDays(absence) {
   if (!absence || !absence.from || !absence.to) return 0;
@@ -1860,7 +1912,7 @@ async function updateKontenFromSubmission({
 
     const snapResult = await client.query(
       `
-        SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vac_used
+        SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vac_used, vorarbeit_balance
         FROM konten_snapshots
         WHERE user_id = $1
           AND year = $2
@@ -1870,7 +1922,8 @@ async function updateKontenFromSubmission({
       [ensured.userId, year, monthIndex]
     );
 
-    const prevSnap = snapResult.rows[0]
+
+const prevSnap = snapResult.rows[0]
       ? mapKontenSnapshotRow(snapResult.rows[0])
       : {
           ueZ1: 0,
@@ -1878,88 +1931,100 @@ async function updateKontenFromSubmission({
           ueZ2: 0,
           ueZ3: 0,
           vacUsed: 0,
+          vorarbeitBalance: 0,
         };
 
-    const nextSnap = {
-      ueZ1: computeUeZ1NetForMonth(payload, year, monthIndex),
-      ueZ1Positive: computeUeZ1PositiveForMonth(payload, year, monthIndex),
-      ueZ2: Number(totals?.pikett) || 0,
-      ueZ3: Number(totals?.overtime3) || 0,
-      vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
-    };
 
-    const nextKonto = {
+   const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+    const vorarbeitRequired = Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
+
+    const monthUeZ1 = await computeUeZ1NetForMonth(payload, year, monthIndex, ensured.userId);
+    const deltaUeZ1 = r1(monthUeZ1 - prevSnap.ueZ1);
+
+    const nextKonto = {           // ← muss VOR vorarbeitBalance kommen
       ...ensured.konto,
       updatedAt: new Date().toISOString(),
       updatedBy: updatedBy || username,
     };
 
+    let vorarbeitBalance = r1(Number(nextKonto.vorarbeitBalance) || 0);
+
     if (!nextKonto.creditedYears[yearStr]) {
       nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
       nextKonto.creditedYears[yearStr] = true;
+      vorarbeitBalance = 0;
     }
 
-    nextKonto.ueZ1 += nextSnap.ueZ1 - prevSnap.ueZ1;
+    let deltaUeZ1Global = deltaUeZ1;
+    if (deltaUeZ1 > 0) {
+      const inVorarbeit = Math.min(deltaUeZ1, vorarbeitRequired - vorarbeitBalance);
+      vorarbeitBalance = r1(Math.min(vorarbeitRequired, vorarbeitBalance + inVorarbeit));
+      deltaUeZ1Global = r1(deltaUeZ1 - inVorarbeit);
+    } else if (deltaUeZ1 < 0) {
+      const ausVorarbeit = Math.min(Math.abs(deltaUeZ1), vorarbeitBalance);
+      vorarbeitBalance = r1(Math.max(0, vorarbeitBalance - ausVorarbeit));
+      deltaUeZ1Global = r1(deltaUeZ1 + ausVorarbeit);
+    }
+
+    const nextSnap = {            // ← muss VOR nextKonto updates kommen
+      ueZ1: monthUeZ1,
+      ueZ1Positive: 0,
+      ueZ2: Number(totals?.pikett) || 0,
+      ueZ3: Number(totals?.overtime3) || 0,
+      vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
+      vorarbeitBalance,
+    };
+
+    nextKonto.vorarbeitBalance = vorarbeitBalance;
+    nextKonto.ueZ1 += deltaUeZ1Global;
     nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
     nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
     nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
 
-    if (!nextKonto.ueZ1PositiveByYear[yearStr]) {
-      nextKonto.ueZ1PositiveByYear[yearStr] = 0;
-    }
-
-    nextKonto.ueZ1PositiveByYear[yearStr] +=
-      nextSnap.ueZ1Positive - prevSnap.ueZ1Positive;
-
-    await persistKontenUserRecord({
-      client,
-      userId: ensured.userId,
-      username: ensured.username,
-      teamId: ensured.teamId,
-      konto: nextKonto,
-    });
-
     await client.query(
-      `
-        INSERT INTO konten_snapshots (
-          user_id,
-          username,
-          year,
-          month_index,
-          month_key,
-          ue_z1,
-          ue_z1_positive,
-          ue_z2,
-          ue_z3,
-          vac_used,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-        ON CONFLICT (user_id, year, month_index)
-        DO UPDATE SET
-          username = EXCLUDED.username,
-          month_key = EXCLUDED.month_key,
-          ue_z1 = EXCLUDED.ue_z1,
-          ue_z1_positive = EXCLUDED.ue_z1_positive,
-          ue_z2 = EXCLUDED.ue_z2,
-          ue_z3 = EXCLUDED.ue_z3,
-          vac_used = EXCLUDED.vac_used,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [
-        ensured.userId,
-        ensured.username,
-        year,
-        monthIndex,
-        monthKey,
-        nextSnap.ueZ1,
-        nextSnap.ueZ1Positive,
-        nextSnap.ueZ2,
-        nextSnap.ueZ3,
-        nextSnap.vacUsed,
-        nextKonto.updatedAt,
-      ]
-    );
+  `
+    INSERT INTO konten_snapshots (
+      user_id,
+      username,
+      year,
+      month_index,
+      month_key,
+      ue_z1,
+      ue_z1_positive,
+      ue_z2,
+      ue_z3,
+      vac_used,
+      vorarbeit_balance,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (user_id, year, month_index)
+    DO UPDATE SET
+      username = EXCLUDED.username,
+      month_key = EXCLUDED.month_key,
+      ue_z1 = EXCLUDED.ue_z1,
+      ue_z1_positive = EXCLUDED.ue_z1_positive,
+      ue_z2 = EXCLUDED.ue_z2,
+      ue_z3 = EXCLUDED.ue_z3,
+      vac_used = EXCLUDED.vac_used,
+      vorarbeit_balance = EXCLUDED.vorarbeit_balance,
+      updated_at = EXCLUDED.updated_at
+  `,
+  [
+    ensured.userId,
+    ensured.username,
+    year,
+    monthIndex,
+    monthKey,
+    nextSnap.ueZ1,
+    nextSnap.ueZ1Positive,
+    nextSnap.ueZ2,
+    nextSnap.ueZ3,
+    nextSnap.vacUsed,
+    nextSnap.vorarbeitBalance,  // ← NEU $11
+    nextKonto.updatedAt,        // ← $12
+  ]
+);
 
     await client.query('COMMIT');
     return nextKonto;
@@ -2053,6 +2118,7 @@ async function restoreVacationDaysForCancelledAbsence({
           WHERE user_id = $1
             AND year = $2
             AND month_index = $3
+            
         `,
         [
           ensured.userId,
@@ -2146,6 +2212,27 @@ async function ensureStampEditsTable() {
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_stamp_edits_username_month
     ON stamp_edits (username, year, month_index, transmitted_at DESC)
+  `);
+}
+
+
+
+async function ensureWorkSchedulesTable() {
+  if (!db) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS work_schedules (
+      id          SERIAL PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username    TEXT NOT NULL,
+      employment_pct INTEGER NOT NULL DEFAULT 100,
+      work_days   JSONB NOT NULL DEFAULT '{"mon":8.0,"tue":8.0,"wed":8.0,"thu":8.0,"fri":8.0}'::jsonb,
+      valid_from  DATE NOT NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_work_schedules_user_valid
+    ON work_schedules (user_id, valid_from DESC)
   `);
 }
 
@@ -2669,6 +2756,109 @@ function computeTransmissionTotals(payload) {
   };
 }
 
+// Auto-Transmit 00:00
+async function autoTransmitForUser(user) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const monthIndex = now.getMonth();
+
+  // Draft laden
+  const draftResult = await db.query(
+    'SELECT data FROM user_drafts WHERE user_id = $1',
+    [user.id]
+  );
+
+  if (draftResult.rows.length === 0) {
+    console.log(`[AutoTransmit] Kein Draft für ${user.username}, übersprungen.`);
+    return;
+  }
+
+  const draft = draftResult.rows[0].data;
+
+  // Nur aktuellen Monat aus Draft nehmen
+  const daysObj = draft.dayStore || {};
+  const monthDays = {};
+  Object.entries(daysObj).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    if (d.getFullYear() === year && d.getMonth() === monthIndex) {
+      monthDays[dateKey] = dayData;
+    }
+  });
+
+  // Pikett filtern — nur gespeicherte Einträge des aktuellen Monats
+  const pikettStore = Array.isArray(draft.pikettStore) ? draft.pikettStore : [];
+  const monthPikett = pikettStore.filter(p => {
+    if (!p.date || !p.saved) return false;
+    const d = new Date(p.date + 'T00:00:00');
+    return d.getFullYear() === year && d.getMonth() === monthIndex;
+  });
+
+  const payload = {
+    year,
+    monthIndex,
+    monthLabel: makeMonthLabel(year, monthIndex),
+    days: monthDays,
+    pikett: monthPikett,
+    absences: [],
+    stampEditLog: [],
+  };
+
+  // Locks prüfen
+  const allLocks = await readWeekLocksFromDb();
+  const userLocks = allLocks[user.username] || {};
+  const { lockedDateKeys, lockedWeekKeys } = collectLockedDatesForMonth(
+    userLocks, year, monthIndex
+  );
+
+  let payloadToSave = payload;
+
+  if (lockedDateKeys.size > 0) {
+    const prev = await loadLatestMonthSubmission(user.username, year, monthIndex);
+    if (prev) {
+      payloadToSave = mergeLockedWeeksPayload(payload, prev, lockedDateKeys);
+      payloadToSave._lockInfo = {
+        preservedWeekKeys: Array.from(lockedWeekKeys),
+        preservedDaysCount: lockedDateKeys.size,
+      };
+    }
+  }
+
+  const totals = computeTransmissionTotals(payloadToSave);
+
+  const timestamp = now.toISOString().replace(/[:.]/g, '-');
+  const monthStr = String(monthIndex + 1).padStart(2, '0');
+  const fileName = `${year}-${monthStr}-${timestamp}-auto.json`;
+
+  const submission = {
+    ...payloadToSave,
+    userId: user.username,
+    teamId: user.teamId || null,
+    receivedAt: now.toISOString(),
+    totals,
+    autoTransmit: true,
+  };
+
+  const serialized = JSON.stringify(submission, null, 2);
+  const sizeBytes = Buffer.byteLength(serialized, 'utf8');
+
+  await insertMonthSubmission({
+    id: fileName,
+    userId: user.id,
+    username: user.username,
+    teamId: user.teamId || null,
+    year,
+    monthIndex,
+    monthLabel: payload.monthLabel,
+    sentAt: now.toISOString(),
+    receivedAt: now.toISOString(),
+    sizeBytes,
+    totals,
+    payload: submission,
+  });
+
+  console.log(`[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`);
+}
+
 // ============================================================================
 // Admin transmission overview routes
 // ============================================================================
@@ -2790,6 +2980,72 @@ app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) =>
     return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
   }
 });
+
+
+
+
+// GET /api/admin/work-schedule/:userId — Modell-History laden
+app.get('/api/admin/work-schedule/:userId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT id, employment_pct, work_days, valid_from
+      FROM work_schedules
+      WHERE user_id = $1
+      ORDER BY valid_from DESC
+    `, [req.params.userId]);
+    return res.json({ ok: true, schedules: result.rows });
+  } catch (err) {
+    console.error('Work schedule load error', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+  }
+});
+
+// POST /api/admin/work-schedule — Neues Modell hinzufügen
+app.post('/api/admin/work-schedule', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { userId, employmentPct, workDays, validFrom } = req.body;
+    if (!userId || !employmentPct || !workDays || !validFrom) {
+      return res.status(400).json({ ok: false, error: 'Fehlende Felder' });
+    }
+
+    // Username holen
+    const userResult = await db.query(
+      'SELECT username FROM users WHERE id = $1', [userId]
+    );
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'User nicht gefunden' });
+    }
+
+    await db.query(`
+      INSERT INTO work_schedules (user_id, username, employment_pct, work_days, valid_from)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [
+      userId,
+      userResult.rows[0].username,
+      Number(employmentPct),
+      JSON.stringify(workDays),
+      validFrom
+    ]);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Work schedule save error', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Speichern' });
+  }
+});
+
+// DELETE /api/admin/work-schedule/:id — Eintrag löschen
+app.delete('/api/admin/work-schedule/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await db.query('DELETE FROM work_schedules WHERE id = $1', [req.params.id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Work schedule delete error', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Löschen' });
+  }
+});
+
+
 
 
 // GET /api/admin/audit-pdf — Präsenz Audit PDF (letzte 5 Jahre, alle Mitarbeiter)
@@ -5300,10 +5556,11 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       absencesById
     );
 
-    const partialOvertime = computePayrollPeriodOvertimeFromSubmission(
+    const partialOvertime = await computePayrollPeriodOvertimeFromSubmission(
       submission,
       fromKey,
-      toKey
+      toKey,
+      user.id
     );
 
     totals.stunden += partial.stunden;
@@ -5457,18 +5714,22 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
 
     if (!submission) continue;
 
-    const ytdPartial = computePayrollPeriodOvertimeFromSubmission(
+    const ytdPartial = await computePayrollPeriodOvertimeFromSubmission(
       submission,
       selectedYearStartKey,
-      toKey
+      toKey,
+      user.id
     );
+
+
     ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
 
     if (hasPriorVorarbeitWindow) {
-      const beforePartial = computePayrollPeriodOvertimeFromSubmission(
+      const beforePartial = await computePayrollPeriodOvertimeFromSubmission(
         submission,
         selectedYearStartKey,
-        priorVorarbeitEndKey
+        priorVorarbeitEndKey,
+        user.id
       );
       ytdPositiveBeforePeriod += beforePartial.ueZ1Positive;
     }
@@ -5960,6 +6221,7 @@ async function startServer() {
   await ensureDraftsTable(); 
   await ensureLiveStampsTable();
   await ensureStampEditsTable();
+  await ensureWorkSchedulesTable();
   await ensureAnlagenTables();
   await seedInitialUsers();
   
@@ -5968,6 +6230,28 @@ async function startServer() {
     console.log(`Server listening on port ${PORT}`);
   });
 }
+
+
+// Auto-Transmit täglich um 02:00 Uhr
+cron.schedule('0 2 * * *', async () => {
+  console.log('[AutoTransmit] Starte tägliche Auto-Übertragung...');
+  try {
+    const users = await listUsersFromDb({ role: 'user' });
+    for (const user of users) {
+      try {
+        await autoTransmitForUser(user);
+      } catch (err) {
+        console.error(`[AutoTransmit] Fehler bei ${user.username}:`, err.message);
+      }
+    }
+    console.log('[AutoTransmit] Abgeschlossen.');
+  } catch (err) {
+    console.error('[AutoTransmit] Kritischer Fehler:', err);
+  }
+}, {
+  timezone: 'Europe/Zurich'
+});
+
 
 startServer().catch((err) => {
   console.error('Server startup failed', err);
