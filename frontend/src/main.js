@@ -410,52 +410,45 @@ function renderAdminPayrollCards(rows) {
     const metrics = document.createElement("div");
     metrics.className = "admin-payroll-metrics";
 
-    metrics.appendChild(
-      createPayrollMetric(
-        "Arzt / Krank",
-        formatPayrollHours(totals.arztKrankHours),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric("Ferien", formatPayrollDays(totals.ferienDays)),
-    );
-    metrics.appendChild(
-      createPayrollMetric("Stunden", formatPayrollHours(totals.stunden)),
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        "Morgenessen",
-        formatPayrollCount(totals.morgenessenCount),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        "Mittagessen",
-        formatPayrollCount(totals.mittagessenCount),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        "Abendessen",
-        formatPayrollCount(totals.abendessenCount),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        "Schmutzzulage",
-        formatPayrollCount(totals.schmutzzulageCount),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        "Nebenauslagen",
-        formatPayrollCount(totals.nebenauslagenCount),
-      ),
-    );
-    metrics.appendChild(
-      createPayrollMetric("Pikett", formatPayrollHours(totals.pikettHours)),
-    );
+    // Hauptmetriken
+    metrics.appendChild(createPayrollMetric('Präsenz', formatPayrollHours(totals.praesenzStunden)));
+    metrics.appendChild(createPayrollMetric('Pikett', formatPayrollHours(totals.pikettHours)));
+    metrics.appendChild(createPayrollMetric('ÜZ3 Wochenende', formatPayrollHours(totals.ueZ3Hours)));
+    metrics.appendChild(createPayrollMetric('Morgenessen', formatPayrollCount(totals.morgenessenCount)));
+    metrics.appendChild(createPayrollMetric('Mittagessen', formatPayrollCount(totals.mittagessenCount)));
+    metrics.appendChild(createPayrollMetric('Abendessen', formatPayrollCount(totals.abendessenCount)));
+    metrics.appendChild(createPayrollMetric('Schmutzzulage', formatPayrollCount(totals.schmutzzulageCount)));
+    metrics.appendChild(createPayrollMetric('Nebenauslagen', formatPayrollCount(totals.nebenauslagenCount)));
 
+    // Absenzen-Sektion
+    const absMap = row.absencesByType || {};
+    
+      const absDivider = document.createElement('div');
+      absDivider.className = 'admin-payroll-divider';
+      const absTitle = document.createElement('div');
+      absTitle.className = 'admin-payroll-subtitle';
+      absTitle.textContent = 'Absenzen im Zeitraum';
+      const absMetrics = document.createElement('div');
+      absMetrics.className = 'admin-payroll-metrics admin-payroll-metrics--secondary';
+
+      const TYPE_LABELS = {
+        ferien: 'Ferien', krank: 'Krank / Arztbesuch', unfall: 'Unfall',
+        militaer: 'Militär', mutterschaft: 'Mutterschaft',
+        vaterschaft: 'Vaterschaftsurlaub', bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+        sonstiges: 'Sonstiges'
+      };
+
+      Object.entries(absMap).forEach(([type, data]) => {
+        if (data.days <= 0 && data.hours <= 0) return;
+        const label = TYPE_LABELS[type] || type;
+        const value = data.hours > 0
+          ? `${data.days}d / ${data.hours}h`
+          : `${data.days}d`;
+        absMetrics.appendChild(createPayrollMetric(label, value));
+      });
+
+      
+    
     const overtimeDivider = document.createElement("div");
     overtimeDivider.className = "admin-payroll-divider";
 
@@ -518,6 +511,17 @@ function renderAdminPayrollCards(rows) {
 
     card.appendChild(head);
     card.appendChild(metrics);
+
+
+    if (Object.keys(absMap).length > 0) {
+      card.appendChild(absDivider);
+      card.appendChild(absTitle);
+      card.appendChild(absMetrics);
+    }
+
+
+
+
     card.appendChild(overtimeDivider);
     card.appendChild(overtimeTitle);
     card.appendChild(overtimeMetrics);
@@ -1442,12 +1446,23 @@ if (pikettAddBtn) {
 
 if (absenceSaveBtn) {
   absenceSaveBtn.addEventListener("click", async () => {
-    const type = absenceTypeEl.value;
-    const from = absenceFromEl.value;
-    const to = absenceToEl.value;
-    const days = absenceDaysEl.value ? parseFloat(absenceDaysEl.value) : null;
+    const type    = absenceTypeEl.value;
+    const from    = absenceFromEl.value;
+    const to      = absenceToEl.value;
     const comment = absenceCommentEl.value.trim();
 
+    let days  = null;
+    let hours = null;
+
+    if (type === 'ferien') {
+      const halberTag = document.getElementById('absenceHalberTag')?.checked;
+      days = halberTag ? 0.5 : countAbsenceWorkdays(from, to);
+      if (halberTag) hours = 4; // halber Tag = 4h Ferien
+    } else if (type === 'krank') {
+      const hoursRaw = document.getElementById('absenceHours')?.value;
+      hours = hoursRaw ? Number(hoursRaw) : null;
+      days  = hours ? hours / 8 : 1;
+    }
     if (!type || !from || !to) {
       alert("Bitte Typ, Von und Bis ausfüllen.");
       return;
@@ -1480,6 +1495,70 @@ if (absenceSaveBtn) {
     }
   });
 }
+
+
+const BRIDGE_DAYS = new Set([
+  '2026-05-15','2026-12-28','2026-12-29','2026-12-30','2026-12-31'
+]);
+const BERN_HOLIDAYS_CLIENT = {
+  2025: new Set(['2025-01-01','2025-01-02','2025-04-18','2025-04-20','2025-04-21','2025-05-29','2025-06-09','2025-08-01','2025-09-21','2025-12-25','2025-12-26']),
+  2026: new Set(['2026-01-01','2026-01-02','2026-04-03','2026-04-05','2026-04-06','2026-05-14','2026-05-25','2026-08-01','2026-09-20','2026-12-25','2026-12-26']),
+  2027: new Set(['2027-01-01','2027-01-02','2027-03-26','2027-03-28','2027-03-29','2027-05-06','2027-05-17','2027-08-01','2027-09-19','2027-12-25','2027-12-26']),
+};
+
+
+function countAbsenceWorkdays(from, to) {
+  if (!from || !to) return 0;
+  let count = 0;
+  const cursor = new Date(from + 'T00:00:00');
+  const end    = new Date(to   + 'T00:00:00');
+  while (cursor <= end) {
+    const wd  = cursor.getDay();
+    const key = cursor.toISOString().slice(0, 10);
+    const year = cursor.getFullYear();
+    const holidays = BERN_HOLIDAYS_CLIENT[year] || new Set();
+    if (wd >= 1 && wd <= 5 && !holidays.has(key) && !BRIDGE_DAYS.has(key)) count++;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
+function updateAbsenceFormForType() {
+  const type = absenceTypeEl?.value;
+  const ferienExtra  = document.getElementById('absenceFerienExtra');
+  const krankExtra   = document.getElementById('absenceKrankExtra');
+  const halberTag    = document.getElementById('absenceHalberTag');
+
+  ferienExtra?.classList.toggle('hidden', type !== 'ferien');
+  krankExtra?.classList.toggle('hidden',  type !== 'krank');
+
+  if (type === 'ferien') updateAbsenceCalcBadge();
+}
+
+function updateAbsenceCalcBadge() {
+  const from  = absenceFromEl?.value;
+  const to    = absenceToEl?.value;
+  const badge = document.getElementById('absenceCalcBadge');
+  const halberTag = document.getElementById('absenceHalberTag');
+  if (!badge) return;
+
+  const isSameDay = from && to && from === to;
+  halberTag?.closest('label')?.classList.toggle('hidden', !isSameDay);
+  if (isSameDay && halberTag?.checked) {
+    badge.textContent = '0.5 Werktage';
+  } else {
+    const count = countAbsenceWorkdays(from, to);
+    badge.textContent = `${count} Werktag${count !== 1 ? 'e' : ''}`;
+  }
+}
+
+absenceTypeEl?.addEventListener('change', updateAbsenceFormForType);
+absenceFromEl?.addEventListener('change', updateAbsenceCalcBadge);
+absenceToEl?.addEventListener('change',   updateAbsenceCalcBadge);
+document.getElementById('absenceHalberTag')
+  ?.addEventListener('change', updateAbsenceCalcBadge);
+
+
 
 // Update Pikett entries when the user edits fields
 document.addEventListener("input", (event) => {
@@ -3526,8 +3605,9 @@ function updateDashboardWeekListForCurrentMonth() {
     const header = document.createElement("div");
     header.className = "week-row-header";
 
-    const left = document.createElement("div");
-    left.className = "week-row-left";
+    // Zeile 1: KW + Badge + Stunden + Chevron
+    const topRow = document.createElement("div");
+    topRow.className = "week-row-top";
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "week-label";
@@ -3539,16 +3619,10 @@ function updateDashboardWeekListForCurrentMonth() {
       (di) => di.weekday >= 1 && di.weekday <= 5
     ).length;
 
+    // Zeile 2: Datum
     const datesSpan = document.createElement("span");
     datesSpan.className = "week-dates";
-    datesSpan.textContent = `${fromStr} – ${toStr} · ${workDaysInMonth} Tage`;
-
-    left.appendChild(labelSpan);
-    left.appendChild(datesSpan);
-
-    const right = document.createElement("div");
-    right.className = "week-right";
-
+    datesSpan.textContent = `${fromStr}\u00A0–\u00A0${toStr}\u00A0(${workDaysInMonth}d)`;
     const expectedDates = Object.entries(w.days)
       .filter(([, di]) => di.weekday >= 1 && di.weekday <= 5)
       .map(([dateKey]) => dateKey);
@@ -3560,44 +3634,37 @@ function updateDashboardWeekListForCurrentMonth() {
     });
 
     const statusBadge = document.createElement("div");
+    if (expectedDates.length === 0) {
+      statusBadge.className = "week-status-badge status-weekend";
+      statusBadge.innerHTML = `<svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>Wochenende`;
+    } else if (missingCount === 0) {
+      statusBadge.className = "week-status-badge status-ok";
+      statusBadge.innerHTML = `<svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Erfasst`;
+    } else {
+      statusBadge.className = "week-status-badge status-missing";
+      statusBadge.innerHTML = `<svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${missingCount} fehlend`;
+    }
 
-if (expectedDates.length === 0) {
-  statusBadge.className = "week-status-badge status-weekend";
-  statusBadge.innerHTML = `
-    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"/>
-    </svg>
-    Nur Wochenende`;
-} else if (missingCount === 0) {
-  statusBadge.className = "week-status-badge status-ok";
-  statusBadge.innerHTML = `
-    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-    </svg>
-    Alle erfasst`;
-} else {
-  statusBadge.className = "week-status-badge status-missing";
-  statusBadge.innerHTML = `
-    <svg class="week-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-    </svg>
-    ${missingCount} fehlend`;
-}
+    const totalSpan = document.createElement("span");
+    totalSpan.className = "week-total";
+    totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
 
-const totalSpan = document.createElement("span");
-totalSpan.className = "week-total";
-totalSpan.textContent = w.totalHours.toFixed(1).replace(".", ",") + " h";
+    const chevron = document.createElement("span");
+    chevron.className = "week-chevron";
+    chevron.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
-const chevron = document.createElement("span");
-chevron.className = "week-chevron";
-chevron.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+    topRow.appendChild(labelSpan);
+    topRow.appendChild(statusBadge);
+    const spacer = document.createElement("div");
+    spacer.style.flex = "1";
+    topRow.appendChild(spacer);
+    topRow.appendChild(totalSpan);
+    topRow.appendChild(chevron);
+    topRow.appendChild(totalSpan);
+    topRow.appendChild(chevron);
 
-right.appendChild(statusBadge);
-right.appendChild(totalSpan);
-right.appendChild(chevron);
-
-    header.appendChild(left);
-    header.appendChild(right);
+    header.appendChild(topRow);
+    header.appendChild(datesSpan);
 
     // Tagesdetails
     const daysEl = document.createElement("div");
@@ -7594,9 +7661,20 @@ document.querySelectorAll('.stamp-meal-pill').forEach(pill => {
 
 // Edit Section — Datepicker
 if (stampEditDate) {
+  stampEditDate.max = getTodayKey();
   stampEditDate.addEventListener('change', () => {
     const dateKey = stampEditDate.value;
+    const todayKey = getTodayKey();
     renderStampEditSection(dateKey);
+    stampEditDate.max = getTodayKey(); // ← im renderStampCard() oder beim Init
+
+
+    // Zukunft verhindern
+    if (dateKey > todayKey) {
+      alert('Zukünftige Tage können nicht bearbeitet werden.');
+      stampEditDate.value = todayKey;
+      return;
+    }
 
     const locked = isDateLocked(dateKey);
     const body = document.querySelector('.stamp-edit-body');
@@ -7631,7 +7709,9 @@ if (stampEditAddBtn) {
     const dateKey = stampEditDate?.value;
     if (!dateKey) { alert('Bitte zuerst ein Datum auswählen.'); return; }
     if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
-
+    if (isDateLocked(dateKey)) { alert('Diese Woche ist gesperrt.'); return; }
+    if (dateKey > getTodayKey()) { alert('Zukünftige Tage können nicht bearbeitet werden.'); return; }
+    
     openStampModal({
       title: 'Stempel hinzufügen',
       time: '',
@@ -7729,6 +7809,17 @@ if (stampModalSave) {
   stampModalSave.addEventListener('click', () => {
     const time = stampModalTime.value;
     if (!time) return;
+
+    // Zukunft verhindern wenn Datum = heute
+    const dateKey = stampEditDate?.value || getTodayKey();
+    if (dateKey === getTodayKey()) {
+      const nowStr = formatTimeHHMM(new Date());
+      if (time > nowStr) {
+        alert(`Zeit darf nicht in der Zukunft liegen (jetzt: ${nowStr}).`);
+        return;
+      }
+    }
+
     if (stampModalCallback) stampModalCallback(stampModalSelectedType, time);
     closeStampModal();
   });

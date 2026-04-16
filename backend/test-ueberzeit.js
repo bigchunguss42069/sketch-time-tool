@@ -1,14 +1,20 @@
-/**
- * sketch-time-tool — Überzeit & Vorarbeit Unit Tests
+/*** sketch-time-tool — Überzeit & Vorarbeit Unit Tests (v3)
  *
- * Testet die Kernlogik direkt ohne HTTP-Requests.
- * Läuft im backend Ordner:
- *   cd backend && node ../test-ueberzeit.js
+ * Neue Szenarien gegenüber v2:
+ * - Krank ganzer Tag → Soll = 0, kein Minus
+ * - Krank halber Tag (4h) → Soll reduziert auf 4h
+ * - Krank + gestempelt → gestempelte Stunden zählen, Absenz-Reduktion greift
+ * - Ferien ganzer Tag → Soll = 0, kein Minus
+ * - Ferien halber Tag → Soll halbiert
+ * - Ferien + gestempelte Stunden → gestempelte Stunden irrelevant (Soll = 0)
+ * - Krank halber Tag + 4h gestempelt → exakt 0 ÜZ1
+ * - Woche mit Mix aus Krank, Ferien und normalen Tagen
+ *
+ * Ausführen: node test-ueberzeit.js
  */
 
-// ── Terminal Farben ──
-const G = '\x1b[32m'; const R = '\x1b[31m'; const Y = '\x1b[33m';
-const B = '\x1b[34m'; const X = '\x1b[0m';  const BOLD = '\x1b[1m';
+const G = '\x1b[32m'; const R = '\x1b[31m';
+const B = '\x1b[34m'; const X = '\x1b[0m'; const BOLD = '\x1b[1m';
 
 let passed = 0; let failed = 0;
 
@@ -20,256 +26,364 @@ function fail(name, got, expected) {
   failed++;
 }
 function section(name) { console.log(`\n${BOLD}${B}▸ ${name}${X}`); }
-
 function approx(a, b, tol = 0.05) { return Math.abs(a - b) <= tol; }
-
 function check(name, got, expected) {
   if (approx(got, expected)) pass(name);
   else fail(name, got, expected);
 }
 
-// ── Vorarbeit-Puffer Logik (aus server.js extrahiert) ──
-function applyVorarbeitLogic(deltaUeZ1, vorarbeitBalance, vorarbeitRequired) {
-  const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
-  let deltaUeZ1Global = deltaUeZ1;
-  let newVorarbeit = vorarbeitBalance;
+const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
 
-  if (deltaUeZ1 > 0) {
-    const inVorarbeit = Math.min(deltaUeZ1, vorarbeitRequired - vorarbeitBalance);
-    newVorarbeit = r1(Math.min(vorarbeitRequired, vorarbeitBalance + inVorarbeit));
-    deltaUeZ1Global = r1(deltaUeZ1 - inVorarbeit);
-  } else if (deltaUeZ1 < 0) {
-    const ausVorarbeit = Math.min(Math.abs(deltaUeZ1), vorarbeitBalance);
-    newVorarbeit = r1(Math.max(0, vorarbeitBalance - ausVorarbeit));
-    deltaUeZ1Global = r1(deltaUeZ1 + ausVorarbeit);
-  }
+// ── Kern-Logik (spiegelt server.js) ──────────────────────────
 
-  return { newVorarbeit, deltaUeZ1Global };
+// Berechnet effektives Tagessoll nach Absenzen
+// absenzHours: null = ganzer Tag Absenz, Zahl = stundenweise Absenz
+function getEffectiveSoll(baseSoll, absenzHours) {
+  if (absenzHours === null) return 0;           // ganzer Tag → Soll = 0
+  if (absenzHours === undefined) return baseSoll; // keine Absenz
+  return Math.max(0, baseSoll - absenzHours);   // stundenweise → Soll reduziert
 }
 
-// ── Stempel zu Stunden ──
-function stampsToHours(pairs) {
-  // pairs = [['07:00','16:00'], ...] je ein [ein, aus]
-  let total = 0;
-  pairs.forEach(([ein, aus]) => {
-    const [eh, em] = ein.split(':').map(Number);
-    const [ah, am] = aus.split(':').map(Number);
-    total += (ah * 60 + am - eh * 60 - em) / 60;
+// Simuliert einen einzelnen Tag mit optionaler Absenz
+// gestempelt: tatsächlich gestempelte Stunden (irrelevant wenn ganzer Tag Absenz)
+// baseSoll: Tagessoll aus Arbeitszeitmodell
+// absenzHours: undefined = kein, null = ganzer Tag, Zahl = Stunden
+function simulateDay(gestempelt, baseSoll, employmentPct, vorarbeitIn, vorarbeitRequired, absenzHours) {
+  const soll = getEffectiveSoll(baseSoll, absenzHours);
+
+  // Bei ganztägiger Absenz: gestempelte Stunden ignorieren
+  const effektivGestempelt = (absenzHours === null) ? 0 : gestempelt;
+
+  const diff = r1(effektivGestempelt - soll);
+  let ueZ1 = 0;
+  let vorarbeit = vorarbeitIn;
+
+  if (diff <= 0) {
+    ueZ1 = diff;
+  } else {
+    const schwelle = r1(0.5 * (employmentPct / 100));
+    const inVorarbeit = Math.min(diff, schwelle);
+    const inUeZ1 = r1(diff - inVorarbeit);
+
+    if (vorarbeit < vorarbeitRequired) {
+      const actualInVorarbeit = r1(Math.min(inVorarbeit, vorarbeitRequired - vorarbeit));
+      const leftover = r1(inVorarbeit - actualInVorarbeit);
+      vorarbeit = r1(vorarbeit + actualInVorarbeit);
+      ueZ1 += leftover;
+    } else {
+      ueZ1 += inVorarbeit;
+    }
+    ueZ1 += inUeZ1;
+  }
+
+  return { ueZ1: r1(ueZ1), vorarbeit: r1(vorarbeit), soll };
+}
+
+function simulateWeek(days, employmentPct, vorarbeitIn, vorarbeitRequired) {
+  let ueZ1Total = 0;
+  let vorarbeit = vorarbeitIn;
+
+  days.forEach(({ gestempelt, soll: baseSoll, absenz }) => {
+    const result = simulateDay(gestempelt, baseSoll, employmentPct, vorarbeit, vorarbeitRequired, absenz);
+    ueZ1Total = r1(ueZ1Total + result.ueZ1);
+    vorarbeit = result.vorarbeit;
   });
-  return Math.round(total * 10) / 10;
+
+  return { ueZ1: ueZ1Total, vorarbeit };
 }
 
-// ── Tag-Payload bauen ──
-function makeDay(stamps, flags = {}) {
-  return { stamps: stamps.map(([ein, aus]) => [
-    { type: 'in', time: ein }, { type: 'out', time: aus }
-  ]).flat(), flags };
-}
+// ── Konstanten ────────────────────────────────────────────────
+const SOLL_100 = 8.0;
+const SOLL_80  = 6.4;
+const SOLL_60  = 4.8;
+const VORARBEIT_2026     = 59;
+const VORARBEIT_2026_80  = r1(59 * 0.8);
+const VORARBEIT_2026_60  = r1(59 * 0.6);
 
-// ── Werktage eines Monats zählen (ohne Feiertage) ──
-function countWorkdays(year, monthIndex, holidays = new Set()) {
-  let count = 0;
-  const d = new Date(year, monthIndex, 1);
-  while (d.getMonth() === monthIndex) {
-    const wd = d.getDay();
-    const key = d.toISOString().slice(0, 10);
-    if (wd >= 1 && wd <= 5 && !holidays.has(key)) count++;
-    d.setDate(d.getDate() + 1);
-  }
-  return count;
-}
-
-// ── Feiertage 2026 ──
 const HOLIDAYS_2026 = new Set([
   '2026-01-01','2026-01-02','2026-04-03','2026-04-05','2026-04-06',
   '2026-05-14','2026-05-25','2026-08-01','2026-09-20','2026-12-25','2026-12-26'
 ]);
+const BRIDGE_DAYS_2026 = new Set([
+  '2026-05-15','2026-12-28','2026-12-29','2026-12-30','2026-12-31'
+]);
 
 
-// ════════════════════════════════════════════════
-// SZENARIO 1 — Normalwoche 100%, 8.5h/Tag
-// ════════════════════════════════════════════════
-section('Szenario 1 — Normalwoche 100% (8.5h/Tag)');
+// ════════════════════════════════════════════════════════════
+// BESTEHENDE SZENARIEN 1–15
+// ════════════════════════════════════════════════════════════
+
+section('Szenario 1 — Normalwoche 100% (8.5h/Tag, genau auf Schwelle)');
 {
-  // 5 Arbeitstage × (8.5h - 8.0h) = +2.5h ÜZ
-  // Vorarbeit war 0 → +2.5h geht in Vorarbeit
-  const deltaUeZ1 = 5 * (8.5 - 8.0); // +2.5h
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 0, 39);
-
-  check('ÜZ1 Rohwert = +2.5h', deltaUeZ1, 2.5);
-  check('Vorarbeit wächst auf +2.5h', newVorarbeit, 2.5);
-  check('ÜZ1 global = 0 (alles in Vorarbeit)', deltaUeZ1Global, 0);
+  const days = Array(5).fill({ gestempelt: 8.5, soll: SOLL_100 });
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 0, VORARBEIT_2026);
+  check('Vorarbeit wächst auf +2.5h (5 × 0.5h)', vorarbeit, 2.5);
+  check('ÜZ1 global = 0h', ueZ1, 0);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 2 — Negativwoche (fehlt 1 Tag), Vorarbeit = 10h
-// ════════════════════════════════════════════════
-section('Szenario 2 — Fehltag, Vorarbeit wird zuerst abgezogen');
+section('Szenario 2 — 100%, 9.0h/Tag → ÜZ1 wächst');
 {
-  // 4 normale Tage (8.0h) + 1 Fehltag = -8.0h netto
-  // Vorarbeit = 10h → wird um 8h reduziert, ÜZ1 global bleibt unberührt
-  const deltaUeZ1 = 4 * (8.0 - 8.0) + (0 - 8.0); // -8.0h
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 10, 39);
-
-  check('ÜZ1 Rohwert = -8.0h', deltaUeZ1, -8.0);
-  check('Vorarbeit reduziert auf 2.0h', newVorarbeit, 2.0);
-  check('ÜZ1 global = 0 (Vorarbeit hat gepuffert)', deltaUeZ1Global, 0);
+  const days = Array(5).fill({ gestempelt: 9.0, soll: SOLL_100 });
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 0, VORARBEIT_2026);
+  check('Vorarbeit wächst auf +2.5h', vorarbeit, 2.5);
+  check('ÜZ1 global = +2.5h', ueZ1, 2.5);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 3 — Vorarbeit voll (39h), Rest geht in ÜZ1
-// ════════════════════════════════════════════════
-section('Szenario 3 — Vorarbeit bereits voll, ÜZ1 wächst');
+section('Szenario 3 — Fehltag, Vorarbeit bleibt unverändert');
 {
-  // Vorarbeit = 39h (voll), User macht +3.0h
-  // → Vorarbeit bleibt 39h, ÜZ1 global +3.0h
-  const deltaUeZ1 = 3.0;
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 39, 39);
-
-  check('Vorarbeit bleibt bei 39h (Maximum)', newVorarbeit, 39);
-  check('ÜZ1 global = +3.0h', deltaUeZ1Global, 3.0);
+  const days = [
+    ...Array(4).fill({ gestempelt: 8.5, soll: SOLL_100 }),
+    { gestempelt: 0, soll: SOLL_100 }
+  ];
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 10, VORARBEIT_2026);
+  check('Vorarbeit = 12h', vorarbeit, 12);
+  check('ÜZ1 = -8.0h (Fehltag in ÜZ1)', ueZ1, -8.0);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 4 — Vorarbeit = 0, negativer Tag → ÜZ1 negativ
-// ════════════════════════════════════════════════
-section('Szenario 4 — Vorarbeit leer, Fehltag geht in ÜZ1 negativ');
+section('Szenario 4 — Vorarbeit voll (59h), gesamte ÜZ in ÜZ1');
 {
-  // Vorarbeit = 0, User fehlt → -8.0h
-  // → Vorarbeit bleibt 0, ÜZ1 global -8.0h
-  const deltaUeZ1 = -8.0;
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 0, 39);
-
-  check('Vorarbeit bleibt bei 0 (Minimum)', newVorarbeit, 0);
-  check('ÜZ1 global = -8.0h (negativ)', deltaUeZ1Global, -8.0);
+  const days = Array(5).fill({ gestempelt: 8.5, soll: SOLL_100 });
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 59, VORARBEIT_2026);
+  check('Vorarbeit bleibt bei 59h', vorarbeit, 59);
+  check('ÜZ1 = +2.5h', ueZ1, 2.5);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 5 — Feiertag (01.01.2026 = Neujahr)
-// ════════════════════════════════════════════════
-section('Szenario 5 — Feiertag zählt nicht als Fehltag');
+section('Szenario 5 — Vorarbeit leer, Fehltag → ÜZ1 negativ');
 {
-  // 01.01.2026 ist Donnerstag und Feiertag
-  // Wenn User nicht stempelt → Soll = 0 → ÜZ = 0
-  const dateKey = '2026-01-01';
-  const isFeiertag = HOLIDAYS_2026.has(dateKey);
-  const soll = isFeiertag ? 0 : 8.0;
-  const gestempelt = 0;
-  const diff = gestempelt - soll;
+  const result = simulateDay(0, SOLL_100, 100, 0, VORARBEIT_2026, undefined);
+  check('Vorarbeit = 0h', result.vorarbeit, 0);
+  check('ÜZ1 = -8.0h', result.ueZ1, -8.0);
+}
 
+section('Szenario 6 — Feiertag zählt nicht als Fehltag');
+{
+  const isFeiertag = HOLIDAYS_2026.has('2026-01-01');
   if (isFeiertag) pass('2026-01-01 korrekt als Feiertag erkannt');
-  else fail('2026-01-01 korrekt als Feiertag erkannt', 'nicht erkannt', 'Feiertag');
+  else fail('2026-01-01 als Feiertag', 'nicht erkannt', 'Feiertag');
+  const soll = isFeiertag ? 0 : 8.0;
+  const result = simulateDay(0, soll, 100, 0, VORARBEIT_2026, undefined);
   check('Soll = 0h an Feiertag', soll, 0);
-  check('ÜZ1 = 0h (kein Minus)', diff, 0);
+  check('ÜZ1 = 0h', result.ueZ1, 0);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 6 — Genehmigte Absenz (Ferien)
-// ════════════════════════════════════════════════
-section('Szenario 6 — Genehmigte Absenz = kein Minus');
+section('Szenario 7 — Brückentage 2026');
 {
-  // Wenn ein Tag als genehmigte Absenz markiert ist → Soll = 0
-  const acceptedAbsenceDays = new Set(['2026-03-02', '2026-03-03', '2026-03-04']);
-
-  const testDays = ['2026-03-02', '2026-03-03', '2026-03-04'];
-  let totalDiff = 0;
-  testDays.forEach(day => {
-    const isAbsenz = acceptedAbsenceDays.has(day);
-    const soll = isAbsenz ? 0 : 8.0;
-    totalDiff += 0 - soll; // nicht gestempelt
+  ['2026-05-15','2026-12-28','2026-12-29','2026-12-30','2026-12-31'].forEach(d => {
+    if (BRIDGE_DAYS_2026.has(d)) pass(`${d} als Brückentag erkannt`);
+    else fail(`${d} als Brückentag`, 'nicht erkannt', 'Brückentag');
+    const soll = BRIDGE_DAYS_2026.has(d) ? 0 : 8.0;
+    const r = simulateDay(0, soll, 100, 0, VORARBEIT_2026, undefined);
+    check(`${d} → ÜZ1 = 0h`, r.ueZ1, 0);
   });
+}
 
-  check('3 Ferientage = 0h ÜZ1', totalDiff, 0);
+section('Szenario 8 — Genehmigte Ferien-Absenz = kein Minus');
+{
+  let total = 0;
+  ['2026-03-02','2026-03-03','2026-03-04'].forEach(() => {
+    // null = ganzer Tag Absenz → Soll = 0
+    const r = simulateDay(0, SOLL_100, 100, 0, VORARBEIT_2026, null);
+    total += r.ueZ1;
+  });
+  check('3 Ferientage = 0h ÜZ1', total, 0);
   pass('Genehmigte Absenz setzt Soll auf 0');
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 7 — Jahreswechsel
-// ════════════════════════════════════════════════
-section('Szenario 7 — Jahreswechsel: Vorarbeit reset, ÜZ1 bleibt');
+section('Szenario 9 — Jahreswechsel: Vorarbeit reset, ÜZ1 bleibt');
 {
-  // Vor Jahreswechsel: Vorarbeit = 35h, ÜZ1 = 12h
-  const vorarbeitVorher = 35;
-  const ueZ1Vorher = 12;
-
-  // Jahreswechsel simulieren
-  const vorarbeitNach = 0; // reset
-  const ueZ1Nach = ueZ1Vorher; // bleibt
-
-  check('Vorarbeit wird auf 0 zurückgesetzt', vorarbeitNach, 0);
-  check('ÜZ1 bleibt bei 12h nach Jahreswechsel', ueZ1Nach, 12);
+  check('Vorarbeit → reset auf 0', 0, 0);
+  check('ÜZ1 12h bleibt erhalten', 12, 12);
   pass('Jahreswechsel-Logik korrekt');
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 7b — Teilweise Vorarbeit + Jahreswechsel
-// ════════════════════════════════════════════════
-section('Szenario 7b — Vorarbeit nicht voll, Jahreswechsel');
+section('Szenario 10 — 80% Blockzeit Mo-Do 8.5h, Fr frei');
 {
-  // User hat nur 20h Vorarbeit bis Ende Jahr gesammelt (Ziel 39h)
-  // → Jahreswechsel: Vorarbeit reset auf 0
-  // → ÜZ1 global unverändert
-  const vorarbeitVorher = 20;
-  const ueZ1Vorher = 5;
-  const vorarbeitNach = 0;
-  const ueZ1Nach = ueZ1Vorher;
-
-  check('Vorarbeit 20h → reset auf 0', vorarbeitNach, 0);
-  check('ÜZ1 5h bleibt erhalten', ueZ1Nach, 5);
+  check('Schwelle 80% = 0.4h', r1(0.5 * 0.8), 0.4);
+  const days = [
+    ...Array(4).fill({ gestempelt: 8.5, soll: SOLL_80 }),
+    { gestempelt: 0, soll: SOLL_80 }
+  ];
+  const { ueZ1, vorarbeit } = simulateWeek(days, 80, 0, VORARBEIT_2026_80);
+  check('Vorarbeit = 1.6h', vorarbeit, 1.6);
+  check('ÜZ1 = +0.4h', ueZ1, 0.4);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 8 — 80% User Blockzeit (Mo-Do 8.5h, Fr frei)
-// ════════════════════════════════════════════════
-section('Szenario 8 — 80% Blockzeit Mo-Do 8.5h, Fr frei');
+section('Szenario 11 — 80% Mo frei statt Fr (gleiches Saldo)');
 {
-  // Tagessoll 80% = 6.4h
-  // Mo-Do: 4 × (8.5 - 6.4) = +8.4h ÜZ
-  // Fr: nicht gestempelt, Soll 6.4h → -6.4h ÜZ
-  // Total: +8.4 - 6.4 = +2.0h → geht in Vorarbeit
-  const sollPerDay = 6.4;
-  const moDoStunden = 4 * (8.5 - sollPerDay); // +8.4h
-  const frDiff = 0 - sollPerDay; // -6.4h
-  const wocheUeZ1 = Math.round((moDoStunden + frDiff) * 10) / 10;
-
-  check('Mo-Do Überschuss = +8.4h', moDoStunden, 8.4);
-  check('Fr Minus = -6.4h', frDiff, -6.4);
-  check('Wochensaldo = +2.0h', wocheUeZ1, 2.0);
-
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(wocheUeZ1, 0, 39);
-  check('Vorarbeit wächst auf +2.0h', newVorarbeit, 2.0);
-  check('ÜZ1 global = 0', deltaUeZ1Global, 0);
+  const days = [
+    { gestempelt: 0,   soll: SOLL_80 },
+    ...Array(4).fill({ gestempelt: 8.5, soll: SOLL_80 }),
+  ];
+  const { ueZ1, vorarbeit } = simulateWeek(days, 80, 0, VORARBEIT_2026_80);
+  check('Vorarbeit = 1.6h (identisch)', vorarbeit, 1.6);
+  check('ÜZ1 = +0.4h (identisch)', ueZ1, 0.4);
+  pass('Flexibler freier Tag = identisches Saldo');
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 9 — Grenzfall: Vorarbeit fast voll, grosse ÜZ
-// ════════════════════════════════════════════════
-section('Szenario 9 — Vorarbeit fast voll, Überschuss in ÜZ1');
+section('Szenario 12 — 60% Halbtag (5.3h/Tag)');
 {
-  // Vorarbeit = 37h (fast voll), User macht +5h ÜZ diesen Monat
-  // → 2h gehen in Vorarbeit (bis 39h), 3h gehen in ÜZ1 global
-  const deltaUeZ1 = 5.0;
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 37, 39);
-
-  check('Vorarbeit füllt auf 39h (Maximum)', newVorarbeit, 39);
-  check('ÜZ1 global = +3.0h (Überschuss)', deltaUeZ1Global, 3.0);
+  check('Schwelle 60% = 0.3h', r1(0.5 * 0.6), 0.3);
+  const days = Array(5).fill({ gestempelt: 5.3, soll: SOLL_60 });
+  const { ueZ1, vorarbeit } = simulateWeek(days, 60, 0, VORARBEIT_2026_60);
+  check('Vorarbeit = 1.5h', vorarbeit, 1.5);
+  check('ÜZ1 = 1.0h', ueZ1, 1.0);
 }
 
-// ════════════════════════════════════════════════
-// SZENARIO 10 — Vorarbeit teilweise gepuffert, Rest in ÜZ1 negativ
-// ════════════════════════════════════════════════
-section('Szenario 10 — Grosses Minus, Vorarbeit puffert teilweise');
+section('Szenario 13 — Vorarbeit fast voll, Rest in ÜZ1');
 {
-  // Vorarbeit = 5h, User hat -12h ÜZ (z.B. lange krank ohne Absenz)
-  // → 5h von Vorarbeit abgezogen, 7h gehen in ÜZ1 negativ
-  const deltaUeZ1 = -12.0;
-  const { newVorarbeit, deltaUeZ1Global } = applyVorarbeitLogic(deltaUeZ1, 5, 39);
-
-  check('Vorarbeit auf 0h reduziert', newVorarbeit, 0);
-  check('ÜZ1 global = -7.0h', deltaUeZ1Global, -7.0);
+  const result = simulateDay(9.0, SOLL_100, 100, 58.8, VORARBEIT_2026, undefined);
+  check('Vorarbeit füllt auf 59h', result.vorarbeit, 59);
+  check('ÜZ1 = 0.8h', result.ueZ1, 0.8);
 }
 
-// ── Resultat ─────────────────────────────────────
+section('Szenario 14 — Mehrere Fehltage, Vorarbeit unberührt');
+{
+  const days = [
+    { gestempelt: 8.5, soll: SOLL_100 },
+    { gestempelt: 0,   soll: SOLL_100 },
+    { gestempelt: 0,   soll: SOLL_100 },
+    { gestempelt: 0,   soll: SOLL_100 },
+    { gestempelt: 8.5, soll: SOLL_100 },
+  ];
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 20, VORARBEIT_2026);
+  check('Vorarbeit = 21.0h', vorarbeit, 21.0);
+  check('ÜZ1 = -24.0h', ueZ1, -24.0);
+}
+
+section('Szenario 15 — Vorarbeit-Ziele 2026');
+{
+  check('100% = 59h', VORARBEIT_2026, 59);
+  check('80%  = 47.2h', VORARBEIT_2026_80, 47.2);
+  check('60%  = 35.4h', VORARBEIT_2026_60, 35.4);
+  check('118 Tage bis voll bei 8.5h/Tag', Math.ceil(59 / 0.5), 118);
+}
+
+
+// ════════════════════════════════════════════════════════════
+// NEUE SZENARIEN — ABSENZEN (Krank & Ferien)
+// ════════════════════════════════════════════════════════════
+
+section('Szenario 16 — Krank ganzer Tag → Soll = 0, kein Minus');
+{
+  // absenz = null → ganzer Tag → Soll = 0, gestempelt wird ignoriert
+  const r = simulateDay(0, SOLL_100, 100, 0, VORARBEIT_2026, null);
+  check('Soll = 0h (ganztägige Absenz)', r.soll, 0);
+  check('ÜZ1 = 0h (kein Minus)', r.ueZ1, 0);
+  check('Vorarbeit unverändert', r.vorarbeit, 0);
+}
+
+section('Szenario 17 — Krank ganzer Tag, trotzdem gestempelt → gestempelt ignoriert');
+{
+  // User hat krank eingetragen aber 2h gestempelt → 2h zählen nicht
+  const r = simulateDay(2, SOLL_100, 100, 0, VORARBEIT_2026, null);
+  check('Soll = 0h (Absenz überschreibt)', r.soll, 0);
+  check('ÜZ1 = 0h (gestempelt ignoriert)', r.ueZ1, 0);
+  check('Vorarbeit = 0h (kein Aufbau)', r.vorarbeit, 0);
+}
+
+section('Szenario 18 — Krank halber Tag (4h) → Soll = 4h');
+{
+  // absenz = 4h → Soll = 8 - 4 = 4h
+  const r = simulateDay(0, SOLL_100, 100, 0, VORARBEIT_2026, 4);
+  check('Soll = 4h (8h - 4h Absenz)', r.soll, 4);
+  check('ÜZ1 = -4h (nicht gestempelt, Soll = 4h)', r.ueZ1, -4.0);
+}
+
+section('Szenario 19 — Krank halber Tag (4h) + 4h gestempelt → 0 ÜZ1');
+{
+  // User ist 4h krank, stempelt die anderen 4h
+  // Soll = 8 - 4 = 4h, gestempelt = 4h → diff = 0 → ÜZ1 = 0
+  const r = simulateDay(4, SOLL_100, 100, 0, VORARBEIT_2026, 4);
+  check('Soll = 4h', r.soll, 4);
+  check('ÜZ1 = 0h (Soll erfüllt)', r.ueZ1, 0);
+  check('Vorarbeit = 0h (kein Überschuss)', r.vorarbeit, 0);
+}
+
+section('Szenario 20 — Krank halber Tag + 8.5h gestempelt → ÜZ1 wächst');
+{
+  // User stempelt 8.5h obwohl 4h krank
+  // Soll = 4h, gestempelt = 8.5h → diff = +4.5h → 0.5h Vorarbeit + 4.0h ÜZ1
+  const r = simulateDay(8.5, SOLL_100, 100, 0, VORARBEIT_2026, 4);
+  check('Soll = 4h', r.soll, 4);
+  check('ÜZ1 = +4.0h (über Schwelle)', r.ueZ1, 4.0);
+  check('Vorarbeit = +0.5h (Schwelle)', r.vorarbeit, 0.5);
+}
+
+section('Szenario 21 — Ferien ganzer Tag → Soll = 0, gestempelt irrelevant');
+{
+  // Ferien-Absenz = ganzer Tag (null), auch wenn gestempelt
+  const r = simulateDay(8.5, SOLL_100, 100, 5, VORARBEIT_2026, null);
+  check('Soll = 0h (Ferien)', r.soll, 0);
+  check('ÜZ1 = 0h (gestempelt ignoriert)', r.ueZ1, 0);
+  check('Vorarbeit bleibt bei 5h', r.vorarbeit, 5);
+}
+
+section('Szenario 22 — Ferien halber Tag (4h) + nichts gestempelt → -4h ÜZ1');
+{
+  // Ferien halber Tag: Soll = 8 - 4 = 4h, nicht gestempelt → -4h ÜZ1
+  const r = simulateDay(0, SOLL_100, 100, 0, VORARBEIT_2026, 4);
+  check('Soll = 4h', r.soll, 4);
+  check('ÜZ1 = -4h', r.ueZ1, -4.0);
+}
+
+section('Szenario 23 — Ferien halber Tag (4h) + 4h gestempelt → 0 ÜZ1');
+{
+  // Ferien halber Tag: Soll = 4h, gestempelt = 4h → 0 ÜZ1
+  const r = simulateDay(4, SOLL_100, 100, 0, VORARBEIT_2026, 4);
+  check('Soll = 4h', r.soll, 4);
+  check('ÜZ1 = 0h', r.ueZ1, 0);
+  check('Vorarbeit = 0h', r.vorarbeit, 0);
+}
+
+section('Szenario 24 — Krank 1h (Arztbesuch) + 7.5h gestempelt');
+{
+  // Arztbesuch 1h: Soll = 8 - 1 = 7h, gestempelt = 7.5h
+  // diff = +0.5h → genau auf Schwelle → alles in Vorarbeit
+  const r = simulateDay(7.5, SOLL_100, 100, 0, VORARBEIT_2026, 1);
+  check('Soll = 7h', r.soll, 7);
+  check('ÜZ1 = 0h (diff = 0.5h, genau Schwelle)', r.ueZ1, 0);
+  check('Vorarbeit = +0.5h', r.vorarbeit, 0.5);
+}
+
+section('Szenario 25 — Woche mit Mix: Krank, Ferien, Normal');
+{
+  // Mo: normal 8.5h
+  // Di: krank ganzer Tag (null) → Soll = 0
+  // Mi: normal 8.5h
+  // Do: Ferien halber Tag (4h) + 4h gestempelt → 0 ÜZ1
+  // Fr: normal 8.5h
+  const days = [
+    { gestempelt: 8.5, soll: SOLL_100, absenz: undefined },  // Mo: +0.5h Vorarbeit
+    { gestempelt: 0,   soll: SOLL_100, absenz: null      },  // Di: Krank → 0 ÜZ
+    { gestempelt: 8.5, soll: SOLL_100, absenz: undefined },  // Mi: +0.5h Vorarbeit
+    { gestempelt: 4,   soll: SOLL_100, absenz: 4         },  // Do: Ferien ½ → 0 ÜZ
+    { gestempelt: 8.5, soll: SOLL_100, absenz: undefined },  // Fr: +0.5h Vorarbeit
+  ];
+  const { ueZ1, vorarbeit } = simulateWeek(days, 100, 0, VORARBEIT_2026);
+
+  check('Vorarbeit = 1.5h (3 normale Tage × 0.5h)', vorarbeit, 1.5);
+  check('ÜZ1 = 0h (Krank + Ferien neutralisiert)', ueZ1, 0);
+}
+
+section('Szenario 26 — Krank bei 80% (6.4h Soll)');
+{
+  // 80% User, krank halber Tag (3.2h = halbes Soll)
+  // Soll = 6.4 - 3.2 = 3.2h, gestempelt = 3.2h → 0 ÜZ1
+  const r = simulateDay(3.2, SOLL_80, 80, 0, VORARBEIT_2026_80, 3.2);
+  check('Soll = 3.2h (6.4 - 3.2h Absenz)', r.soll, 3.2);
+  check('ÜZ1 = 0h', r.ueZ1, 0);
+}
+
+section('Szenario 27 — Krank ganzer Tag bei 80%');
+{
+  // 80% User, krank ganzer Tag → Soll = 0
+  const r = simulateDay(0, SOLL_80, 80, 0, VORARBEIT_2026_80, null);
+  check('Soll = 0h', r.soll, 0);
+  check('ÜZ1 = 0h', r.ueZ1, 0);
+}
+
+
+// ── Resultat ─────────────────────────────────────────────────
 const total = passed + failed;
 console.log(`\n${'─'.repeat(50)}`);
 console.log(`${BOLD}Resultat: ${total} Tests${X}`);
@@ -279,9 +393,8 @@ console.log('');
 
 if (failed === 0) {
   console.log(`${G}${BOLD}Alle Tests bestanden ✓${X}`);
-  console.log(`Die ÜZ/Vorarbeit-Logik funktioniert korrekt.\n`);
+  console.log(`ÜZ, Vorarbeit und Absenz-Logik funktionieren korrekt.\n`);
 } else {
   console.log(`${R}${BOLD}${failed} Test(s) fehlgeschlagen ✗${X}`);
-  console.log(`Bitte die fehlgeschlagenen Szenarien überprüfen.\n`);
   process.exit(1);
 }

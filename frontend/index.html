@@ -255,7 +255,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Sitzung/Kurs</span>
+                        <span>Sitzung</span>
                         <input
                           type="number"
                           min="0"
@@ -267,7 +267,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Arzt/Krank</span>
+                        <span>Transport</span>
                         <input
                           type="number"
                           min="0"
@@ -450,7 +450,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Sitzung/Kurs</span>
+                        <span>Sitzung</span>
                         <input
                           type="number"
                           min="0"
@@ -462,7 +462,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Arzt/Krank</span>
+                        <span>Transport</span>
                         <input
                           type="number"
                           min="0"
@@ -641,7 +641,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Sitzung/Kurs</span>
+                        <span>Sitzung</span>
                         <input
                           type="number"
                           min="0"
@@ -653,7 +653,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Arzt/Krank</span>
+                        <span>Transport</span>
                         <input
                           type="number"
                           min="0"
@@ -826,11 +826,11 @@
                         <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="schulung" placeholder="0,0" />
                       </label>
                       <label class="day-hours-item">
-                        <span>Sitzung/Kurs</span>
+                        <span>Sitzung</span>
                         <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="sitzungKurs" placeholder="0,0" />
                       </label>
                       <label class="day-hours-item">
-                        <span>Arzt/Krank</span>
+                        <span>Transport</span>
                         <input type="number" min="0" step="0.25" class="day-hours-input" data-dayhour="arztKrank" placeholder="0,0" />
                       </label>
                     </div>
@@ -904,7 +904,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Sitzung/Kurs</span>
+                        <span>Sitzung</span>
                         <input
                           type="number"
                           min="0"
@@ -916,7 +916,7 @@
                       </label>
 
                       <label class="day-hours-item">
-                        <span>Arzt/Krank</span>
+                        <span>Transport</span>
                         <input
                           type="number"
                           min="0"
@@ -1259,24 +1259,15 @@
                     <div class="absence-form-row">
                       <label class="absence-label">
                         <span>Art</span>
-                        <select
-                          id="absenceType"
-                          class="absence-input"
-                        >
+                        <select id="absenceType" class="absence-input">
                           <option value="ferien">Ferien</option>
+                          <option value="krank">Krank / Arztbesuch</option>
                           <option value="unfall">Unfall</option>
-                          <option value="militaer">
-                            Militär
-                          </option>
-                          <option value="bezahlteAbwesenheit">
-                            Bezahlte Abwesenheit
-                          </option>
-                          <option value="vaterschaft">
-                            Vaterschaftsurlaub
-                          </option>
-                          <option value="sonstiges">
-                            Sonstiges
-                          </option>
+                          <option value="militaer">Militär</option>
+                          <option value="mutterschaft">Mutterschaft</option>
+                          <option value="vaterschaft">Vaterschaftsurlaub</option>
+                          <option value="bezahlteAbwesenheit">Bezahlte Abwesenheit</option>
+                          <option value="sonstiges">Sonstiges</option>
                         </select>
                       </label>
                     </div>
@@ -1302,17 +1293,21 @@
                       </label>
                     </div>
 
-                    <div class="absence-form-row">
+                    <!-- Ferien: automatische Berechnung + halber Tag -->
+                    <div id="absenceFerienExtra" class="absence-form-row hidden">
+                      <div class="absence-calc-badge" id="absenceCalcBadge">0 Werktage</div>
+                      <label class="absence-toggle-label">
+                        <input type="checkbox" id="absenceHalberTag" />
+                        <span>Halber Tag</span>
+                      </label>
+                    </div>
+
+                    <!-- Krank: Stunden optional -->
+                    <div id="absenceKrankExtra" class="absence-form-row hidden">
                       <label class="absence-label">
-                        <span>Tage (optional)</span>
-                        <input
-                          type="number"
-                          id="absenceDays"
-                          min="0"
-                          step="0.25"
-                          placeholder="auto"
-                          class="absence-input"
-                        />
+                        <span>Stunden krank (leer = ganzer Tag)</span>
+                        <input type="number" id="absenceHours" min="0.5" max="8" step="0.5"
+                              placeholder="z.B. 4" class="absence-input" />
                       </label>
                     </div>
 

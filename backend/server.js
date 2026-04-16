@@ -706,39 +706,35 @@ function buildPikettHoursByDate(pikettArray) {
   return map;
 }
 
-function buildAcceptedAbsenceDaysSet(absencesArray, monthStartKey, monthEndKey) {
-  const set = new Set();
-  if (!Array.isArray(absencesArray)) return set;
+function buildAcceptedAbsenceHoursMap(absencesArray, monthStartKey, monthEndKey) {
+  // Map: dateKey → hours (null = ganzer Tag)
+  const map = new Map();
+  if (!Array.isArray(absencesArray)) return map;
 
-  absencesArray.forEach((a) => {
+  absencesArray.forEach(a => {
     const st = String(a.status || '').toLowerCase();
     if (!a || (st !== 'accepted' && st !== 'cancel_requested')) return;
-
     if (!a.from || !a.to) return;
 
-    const fromKey = String(a.from).slice(0, 10);
-    const toKey = String(a.to).slice(0, 10);
-
-    // normalize order
-    const startKey = fromKey <= toKey ? fromKey : toKey;
-    const endKey = fromKey <= toKey ? toKey : fromKey;
-
-    // overlap with month?
+    const startKey = a.from <= a.to ? a.from : a.to;
+    const endKey   = a.from <= a.to ? a.to   : a.from;
     if (endKey < monthStartKey || startKey > monthEndKey) return;
 
     const cursor = new Date(startKey + 'T00:00:00');
-    const end = new Date(endKey + 'T00:00:00');
+    const end    = new Date(endKey   + 'T00:00:00');
 
     while (cursor <= end) {
       const k = formatDateKey(cursor);
       if (k >= monthStartKey && k <= monthEndKey) {
-        set.add(k);
+        // hours: wenn mehrtägig → ganzer Tag (null), wenn eintägig → a.hours
+        const isMultiDay = startKey !== endKey;
+        map.set(k, isMultiDay ? null : (a.hours ?? null));
       }
       cursor.setDate(cursor.getDate() + 1);
     }
   });
 
-  return set;
+  return map;
 }
 
 
@@ -746,7 +742,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
   const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
-  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+  const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
     payload?.absences, monthStartKey, monthEndKey
   );
 
@@ -763,8 +759,8 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue; // Wochenende überspringen
 
-    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
-    if (soll === 0) continue; // Feiertag, Absenz oder freier Tag im Modell
+    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
@@ -785,12 +781,77 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
 
 
+async function computeMonthUeZ1AndVorarbeit(payload, year, monthIndex, userId, vorarbeitBalanceIn, vorarbeitRequired) {
+  const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
+  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+  const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+  const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
+  const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
+    payload?.absences, monthStartKey, monthEndKey
+  );
+
+  let ueZ1 = 0;
+  let vorarbeit = vorarbeitBalanceIn;
+
+  const cursor = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0);
+
+  while (cursor <= end) {
+    const dateKey = formatDateKey(cursor);
+    const weekday = cursor.getDay();
+    cursor.setDate(cursor.getDate() + 1);
+
+    if (weekday === 0 || weekday === 6) continue;
+
+    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    if (soll === 0) continue;
+
+    const dayData = daysObj[dateKey] || null;
+    const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+    const isFerien = !!(dayData?.flags?.ferien);
+
+    let diff = 0;
+    if (isFerien) {
+      diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else {
+      diff = dayTotal - soll;
+    }
+
+    if (diff <= 0) {
+      // Minus geht komplett in ÜZ1, Vorarbeit unberührt
+      ueZ1 += diff;
+    } else {
+      // Positiv: erste 0.5h × Pensum → Vorarbeit, Rest → ÜZ1
+      const schwelle = r1(0.5 * (employmentPct / 100));
+      const inVorarbeit = Math.min(diff, schwelle);
+      const inUeZ1 = r1(diff - inVorarbeit);
+
+      if (vorarbeit < vorarbeitRequired) {
+        const actualInVorarbeit = r1(Math.min(inVorarbeit, vorarbeitRequired - vorarbeit));
+        const leftover = r1(inVorarbeit - actualInVorarbeit);
+        vorarbeit = r1(vorarbeit + actualInVorarbeit);
+        ueZ1 += leftover;
+      } else {
+        ueZ1 += inVorarbeit;
+      }
+      ueZ1 += inUeZ1;
+    }
+  }
+
+  return {
+    ueZ1: r1(ueZ1),
+    vorarbeitBalance: r1(vorarbeit),
+  };
+}
+
+
+
 // Compute only POSITIVE ÜZ1 hours for the month (for Vorarbeit tracking)
 async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
   const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
-  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+  const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
     payload?.absences, monthStartKey, monthEndKey
   );
 
@@ -806,7 +867,7 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue;
 
-    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
@@ -828,7 +889,7 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
 
 const PAYROLL_YEAR_CONFIG = {
   2025: { vorarbeitRequired: 39 },
-  2026: { vorarbeitRequired: 39 },
+  2026: { vorarbeitRequired: 59 },
 };
 
 function getPayrollYearConfig(year) {
@@ -846,7 +907,7 @@ async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, t
   let ueZ3 = 0;
 
   // Absenzen aus Submission
-  const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+  const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
     submission?.absences, fromKey, toKey
   );
 
@@ -861,7 +922,7 @@ async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, t
 
     if (weekday === 0 || weekday === 6) continue;
 
-    const soll = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
@@ -919,7 +980,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 
   const acceptedAbsenceDays = (acceptedAbsenceDaysOverride instanceof Set)
     ? acceptedAbsenceDaysOverride
-    : buildAcceptedAbsenceDaysSet(submission?.absences, monthStartKey, monthEndKey);
+    : buildAcceptedAbsenceHoursMap(submission?.absences, monthStartKey, monthEndKey);
 
   let monthTotalHours = 0;
 
@@ -1190,6 +1251,11 @@ async function ensureAbsencesTable() {
   `);
 
   await db.query(`
+  ALTER TABLE absences
+  ADD COLUMN IF NOT EXISTS hours DOUBLE PRECISION
+`);
+
+  await db.query(`
     CREATE INDEX IF NOT EXISTS idx_absences_username_created
     ON absences (username, created_at DESC)
   `);
@@ -1223,6 +1289,7 @@ function toIsoTimestamp(value) {
 
 function mapAbsenceRow(row) {
   if (!row) return null;
+  
 
   return {
     id: row.id,
@@ -1245,6 +1312,7 @@ function mapAbsenceRow(row) {
     decidedBy: row.decided_by || null,
     cancelRequestedAt: toIsoTimestamp(row.cancel_requested_at),
     cancelRequestedBy: row.cancel_requested_by || null,
+    hours: row.hours == null ? null : Number(row.hours),
   };
 }
 
@@ -1283,22 +1351,9 @@ async function findAbsenceByUserAndId(username, id, client = db) {
 
 async function insertAbsenceForUser(
   {
-    id,
-    userId,
-    username,
-    teamId,
-    type,
-    from,
-    to,
-    days,
-    comment,
-    status,
-    createdAt,
-    createdBy,
-    decidedAt,
-    decidedBy,
-    cancelRequestedAt,
-    cancelRequestedBy,
+    id, userId, username, teamId, type, from, to, days, hours, comment,
+        status, createdAt, createdBy, decidedAt, decidedBy,
+        cancelRequestedAt, cancelRequestedBy
   },
   client = db
 ) {
@@ -1309,46 +1364,20 @@ async function insertAbsenceForUser(
   const result = await client.query(
     `
       INSERT INTO absences (
-        id,
-        user_id,
-        username,
-        team_id,
-        type,
-        from_date,
-        to_date,
-        days,
-        comment,
-        status,
-        created_at,
-        created_by,
-        decided_at,
-        decided_by,
-        cancel_requested_at,
-        cancel_requested_by
+        id, user_id, username, team_id, type, from_date, to_date,
+        days, hours, comment, status, created_at, created_by,
+        decided_at, decided_by, cancel_requested_at, cancel_requested_by
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16
+        $11, $12, $13, $14, $15, $16, $17
       )
       RETURNING *
     `,
     [
-      id,
-      userId,
-      username,
-      teamId,
-      type,
-      from,
-      to,
-      days,
-      comment,
-      status,
-      createdAt,
-      createdBy,
-      decidedAt,
-      decidedBy,
-      cancelRequestedAt,
-      cancelRequestedBy,
+      id, userId, username, teamId, type, from, to, days, hours ?? null,
+      comment, status, createdAt, createdBy, decidedAt, decidedBy,
+      cancelRequestedAt, cancelRequestedBy
     ]
   );
 
@@ -1778,41 +1807,66 @@ function isBernHolidayKey(dateKey) {
   return !!(set && set.has(dateKey));
 }
 
+const COMPANY_BRIDGE_DAYS = {
+  2026: new Set([
+    '2026-05-15',
+    '2026-12-28',
+    '2026-12-29',
+    '2026-12-30',
+    '2026-12-31',
+    
+  ]),
+};
+
+function isCompanyBridgeDay(dateKey) {
+  const year = Number(String(dateKey).slice(0, 4));
+  const set = COMPANY_BRIDGE_DAYS[year];
+  return !!(set && set.has(dateKey));
+}
+
 
 // Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
 // Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
-async function getDailySoll(userId, dateKey, acceptedAbsenceDaysSet) {
-  const weekday = new Date(dateKey + 'T00:00:00').getDay(); // 0=So, 6=Sa
-  
-  // Wochenende → immer 0
-  if (weekday === 0 || weekday === 6) return 0;
-  
-  // Feiertag → 0
-  if (isBernHolidayKey(dateKey)) return 0;
-  
-  // Genehmigte Absenz → 0
-  if (acceptedAbsenceDaysSet && acceptedAbsenceDaysSet.has(dateKey)) return 0;
+async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
+  const weekday = new Date(dateKey + 'T00:00:00').getDay();
+  if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
+  if (isBernHolidayKey(dateKey)) return { soll: 0, employmentPct: 100 };
+  if (isCompanyBridgeDay(dateKey)) return { soll: 0, employmentPct: 100 };
+
+  // Absenz prüfen
+  if (acceptedAbsenceHoursMap && acceptedAbsenceHoursMap.has(dateKey)) {
+    const absHours = acceptedAbsenceHoursMap.get(dateKey);
+    if (absHours === null) return { soll: 0, employmentPct: 100 }; // ganzer Tag
+    // Stundenweise — Soll wird weiter unten reduziert
+  }
 
   // Arbeitszeitmodell laden
   const result = await db.query(`
     SELECT employment_pct, work_days FROM work_schedules
     WHERE user_id = $1 AND valid_from <= $2
-    ORDER BY valid_from DESC
-    LIMIT 1
+    ORDER BY valid_from DESC LIMIT 1
   `, [userId, dateKey]);
 
-  if (result.rows.length === 0) {
-    // Kein Modell → Default 100% Mo-Fr 8h
-    const DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
-    return DAY_KEYS[weekday] === 'sun' || DAY_KEYS[weekday] === 'sat' ? 0 : 8.0;
-  }
-
-  const row = result.rows[0];
-  const workDays = row.work_days || {};
   const DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
   const dayKey = DAY_KEYS[weekday];
-  
-  return toNumber(workDays[dayKey]) || 0;
+  let baseSoll = 8.0;
+  let employmentPct = 100;
+
+  if (result.rows.length > 0) {
+    const row = result.rows[0];
+    baseSoll = toNumber((row.work_days || {})[dayKey]) || 0;
+    employmentPct = Number(row.employment_pct) || 100;
+  }
+
+  // Stundenweise Absenz abziehen
+  if (acceptedAbsenceHoursMap && acceptedAbsenceHoursMap.has(dateKey)) {
+    const absHours = acceptedAbsenceHoursMap.get(dateKey);
+    if (absHours !== null) {
+      baseSoll = Math.max(0, baseSoll - absHours);
+    }
+  }
+
+  return { soll: baseSoll, employmentPct };
 }
 
 
@@ -1841,9 +1895,11 @@ function calculateAbsenceVacationDays(absence) {
     const weekday = cursor.getDay();
     const dateKey = formatDateKey(cursor);
 
-    if (weekday >= 1 && weekday <= 5 && !isBernHolidayKey(dateKey)) {
-      days += 1;
-    }
+   if (weekday >= 1 && weekday <= 5
+    && !isBernHolidayKey(dateKey)
+    && !isCompanyBridgeDay(dateKey)) { // ← NEU
+    days += absence.hours ? 0.5 : 1;
+}
 
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -1938,10 +1994,7 @@ const prevSnap = snapResult.rows[0]
    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
     const vorarbeitRequired = Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
 
-    const monthUeZ1 = await computeUeZ1NetForMonth(payload, year, monthIndex, ensured.userId);
-    const deltaUeZ1 = r1(monthUeZ1 - prevSnap.ueZ1);
-
-    const nextKonto = {           // ← muss VOR vorarbeitBalance kommen
+    const nextKonto = {
       ...ensured.konto,
       updatedAt: new Date().toISOString(),
       updatedBy: updatedBy || username,
@@ -1955,28 +2008,25 @@ const prevSnap = snapResult.rows[0]
       vorarbeitBalance = 0;
     }
 
-    let deltaUeZ1Global = deltaUeZ1;
-    if (deltaUeZ1 > 0) {
-      const inVorarbeit = Math.min(deltaUeZ1, vorarbeitRequired - vorarbeitBalance);
-      vorarbeitBalance = r1(Math.min(vorarbeitRequired, vorarbeitBalance + inVorarbeit));
-      deltaUeZ1Global = r1(deltaUeZ1 - inVorarbeit);
-    } else if (deltaUeZ1 < 0) {
-      const ausVorarbeit = Math.min(Math.abs(deltaUeZ1), vorarbeitBalance);
-      vorarbeitBalance = r1(Math.max(0, vorarbeitBalance - ausVorarbeit));
-      deltaUeZ1Global = r1(deltaUeZ1 + ausVorarbeit);
-    }
+    const { ueZ1: monthUeZ1, vorarbeitBalance: newVorarbeitBalance } =
+      await computeMonthUeZ1AndVorarbeit(
+        payload, year, monthIndex, ensured.userId,
+        vorarbeitBalance, vorarbeitRequired
+      );
 
-    const nextSnap = {            // ← muss VOR nextKonto updates kommen
+    const deltaUeZ1 = r1(monthUeZ1 - prevSnap.ueZ1);
+
+    const nextSnap = {
       ueZ1: monthUeZ1,
       ueZ1Positive: 0,
       ueZ2: Number(totals?.pikett) || 0,
       ueZ3: Number(totals?.overtime3) || 0,
       vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
-      vorarbeitBalance,
+      vorarbeitBalance: newVorarbeitBalance,
     };
 
-    nextKonto.vorarbeitBalance = vorarbeitBalance;
-    nextKonto.ueZ1 += deltaUeZ1Global;
+    nextKonto.vorarbeitBalance = newVorarbeitBalance;
+    nextKonto.ueZ1 += deltaUeZ1;
     nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
     nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
     nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
@@ -2504,102 +2554,61 @@ function round1(n) {
 // Core payroll aggregation for one transmitted submission inside a selected period.
 function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById) {
   const result = {
-    stunden: 0,
-    arztKrankHours: 0,
-    ferienDays: 0,
+    praesenzStunden: 0,
     morgenessenCount: 0,
     mittagessenCount: 0,
     abendessenCount: 0,
     schmutzzulageCount: 0,
     nebenauslagenCount: 0,
     pikettHours: 0,
+    ueZ3Hours: 0,
   };
 
-  const daysObj =
-    submission && submission.days && typeof submission.days === 'object'
-      ? submission.days
-      : {};
+  const daysObj = (submission?.days && typeof submission.days === 'object')
+    ? submission.days : {};
 
   for (const [dateKey, dayData] of Object.entries(daysObj)) {
     if (!isDateKeyInClosedRange(dateKey, fromKey, toKey)) continue;
     if (!dayData || typeof dayData !== 'object') continue;
 
-    // Stunden = all non-pikett / non-ÜZ3 hours in the selected period
-    if (Array.isArray(dayData.entries)) {
-      for (const entry of dayData.entries) {
-        if (!entry || !entry.hours || typeof entry.hours !== 'object') continue;
-        for (const v of Object.values(entry.hours)) {
-          result.stunden += toNumber(v);
-        }
-      }
+    // Präsenzstunden aus Stamps
+    if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
+      result.praesenzStunden += computeNetWorkingHoursFromStamps(dayData.stamps);
     }
 
-    if (Array.isArray(dayData.specialEntries)) {
-      for (const special of dayData.specialEntries) {
-        if (!special) continue;
-        result.stunden += toNumber(special.hours);
-      }
-    }
-
-    const dayHours =
-      dayData.dayHours && typeof dayData.dayHours === 'object'
-        ? dayData.dayHours
-        : {};
-
-    const arztKrank = toNumber(dayHours.arztKrank);
-    const schulung = toNumber(dayHours.schulung);
-    const sitzungKurs = toNumber(dayHours.sitzungKurs);
-
-    result.arztKrankHours += arztKrank;
-    result.stunden += arztKrank + schulung + sitzungKurs;
-
-    const meal =
-      dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
-        ? dayData.mealAllowance
-        : {};
-
+    // Mahlzeiten
+    const meal = dayData.mealAllowance || {};
     if (meal['1']) result.morgenessenCount += 1;
     if (meal['2']) result.mittagessenCount += 1;
     if (meal['3']) result.abendessenCount += 1;
 
-    const flags =
-      dayData.flags && typeof dayData.flags === 'object'
-        ? dayData.flags
-        : {};
-
+    // Zulagen
+    const flags = dayData.flags || {};
     if (flags.schmutzzulage) result.schmutzzulageCount += 1;
     if (flags.nebenauslagen) result.nebenauslagenCount += 1;
   }
 
+  // Pikett ÜZ2 + ÜZ3
   const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
   for (const entry of pikettList) {
     const dateKey = String(entry?.date || '').slice(0, 10);
     if (!isDateKeyInClosedRange(dateKey, fromKey, toKey)) continue;
-
-    if (entry?.isOvertime3) continue;
-    result.pikettHours += toNumber(entry?.hours);
+    const h = toNumber(entry?.hours);
+    if (entry?.isOvertime3) result.ueZ3Hours += h;
+    else result.pikettHours += h;
   }
 
+  // Absenzen aus Submission für absencesById sammeln (unverändert)
   const absences = Array.isArray(submission?.absences) ? submission.absences : [];
   for (const abs of absences) {
-    const id =
-      abs && abs.id
-        ? String(abs.id)
-        : [
-            String(abs?.type || '').toLowerCase(),
-            String(abs?.from || ''),
-            String(abs?.to || ''),
-            String(abs?.comment || ''),
-          ].join('|');
-
-    if (!absencesById.has(id)) {
-      absencesById.set(id, abs);
-    }
+    const id = abs?.id ? String(abs.id)
+      : [String(abs?.type||''), String(abs?.from||''), String(abs?.to||''), String(abs?.comment||'')].join('|');
+    if (!absencesById.has(id)) absencesById.set(id, abs);
   }
 
-  result.stunden = round1(result.stunden);
-  result.arztKrankHours = round1(result.arztKrankHours);
+  result.praesenzStunden = round1(result.praesenzStunden);
   result.pikettHours = round1(result.pikettHours);
+  result.ueZ3Hours = round1(result.ueZ3Hours);
 
   return result;
 }
@@ -4748,6 +4757,13 @@ app.post('/api/absences', requireAuth, async (req, res) => {
   const daysRaw = req.body?.days;
   const days = daysRaw === '' || daysRaw == null ? null : Number(daysRaw);
 
+    const hoursRaw = req.body?.hours;
+    const hours = hoursRaw === '' || hoursRaw == null ? null : Number(hoursRaw);
+
+    // Krank = automatisch accepted, kein Admin nötig
+    const isKrank = type === 'krank';
+    const now = new Date().toISOString();
+
   if (!type) {
     return res.status(400).json({ ok: false, error: 'Missing type' });
   }
@@ -4776,14 +4792,18 @@ app.post('/api/absences', requireAuth, async (req, res) => {
       from,
       to,
       days,
+      hours,
       comment,
-      status: 'pending',
+      
       createdAt: new Date().toISOString(),
       createdBy: username,
-      decidedAt: null,
-      decidedBy: null,
+      
       cancelRequestedAt: null,
       cancelRequestedBy: null,
+      status: isKrank ? 'accepted' : 'pending',
+      decidedAt: isKrank ? now : null,
+      decidedBy: isKrank ? 'system' : null,
+
     });
 
     return res.json({ ok: true, absence });
@@ -5092,7 +5112,7 @@ app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res)
 
         const storedAbsences = await listUserAbsencesFromDb(user.username);
 
-        const acceptedAbsenceDays = buildAcceptedAbsenceDaysSet(
+        const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
           storedAbsences,
           monthStartKey,
           monthEndKey
@@ -5477,7 +5497,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
     rowMap.set(dateKey, {
       dateKey,
       stunden: 0,
-      arztKrankHours: 0,
+      praesenzStunden: 0,
       ferien: false,
       morgenessen: false,
       mittagessen: false,
@@ -5508,15 +5528,14 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const auditRowMap = new Map();
 
   const totals = {
-    stunden: 0,
-    arztKrankHours: 0,
-    ferienDays: 0,
-    morgenessenCount: 0,
-    mittagessenCount: 0,
-    abendessenCount: 0,
-    schmutzzulageCount: 0,
-    nebenauslagenCount: 0,
-    pikettHours: 0,
+  praesenzStunden: 0,
+  morgenessenCount: 0,
+  mittagessenCount: 0,
+  abendessenCount: 0,
+  schmutzzulageCount: 0,
+  nebenauslagenCount: 0,
+  pikettHours: 0,
+  ueZ3Hours: 0,
   };
 
   const overtime = {
@@ -5563,8 +5582,8 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       user.id
     );
 
-    totals.stunden += partial.stunden;
-    totals.arztKrankHours += partial.arztKrankHours;
+    totals.praesenzStunden += partial.praesenzStunden;
+    totals.ueZ3Hours += partial.ueZ3Hours;
     totals.morgenessenCount += partial.morgenessenCount;
     totals.mittagessenCount += partial.mittagessenCount;
     totals.abendessenCount += partial.abendessenCount;
@@ -5587,32 +5606,20 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       if (!dayData || typeof dayData !== 'object') continue;
 
       const row = ensurePayrollAuditRow(auditRowMap, dateKey);
-      row.stunden += num(computeNonPikettHours(dayData));
 
-      const dayHours =
-        dayData.dayHours && typeof dayData.dayHours === 'object'
-          ? dayData.dayHours
-          : {};
+      // Präsenzstunden aus Stamps
+      if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
+        row.praesenzStunden += num(computeNetWorkingHoursFromStamps(dayData.stamps));
+      }
 
-      row.arztKrankHours += num(dayHours.arztKrank);
+      const meal = dayData.mealAllowance || {};
+        if (meal['1']) row.morgenessen = true;
+        if (meal['2']) row.mittagessen = true;
+        if (meal['3']) row.abendessen = true;
 
-      const meal =
-        dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
-          ? dayData.mealAllowance
-          : {};
-
-      if (meal['1']) row.morgenessen = true;
-      if (meal['2']) row.mittagessen = true;
-      if (meal['3']) row.abendessen = true;
-
-      const flags =
-        dayData.flags && typeof dayData.flags === 'object'
-          ? dayData.flags
-          : {};
-
-      if (flags.ferien) row.ferien = true;
-      if (flags.schmutzzulage) row.schmutzzulage = true;
-      if (flags.nebenauslagen) row.nebenauslagen = true;
+        const flags = dayData.flags || {};
+        if (flags.schmutzzulage) row.schmutzzulage = true;
+        if (flags.nebenauslagen) row.nebenauslagen = true;
     }
 
     const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
@@ -5764,8 +5771,7 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     .map((row) => ({
       dateKey: row.dateKey,
       dateLabel: formatDateDisplayEU(row.dateKey),
-      stunden: r1(row.stunden),
-      arztKrankHours: r1(row.arztKrankHours),
+      praesenzStunden: r1(row.praesenzStunden),
       ferien: !!row.ferien,
       morgenessen: !!row.morgenessen,
       mittagessen: !!row.mittagessen,
@@ -5779,6 +5785,30 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
+
+    // Absenzen direkt aus DB laden
+    const dbAbsResult = await db.query(`
+      SELECT type, from_date, to_date, days, hours
+      FROM absences
+      WHERE username = $1
+        AND status = 'accepted'
+        AND to_date >= $2
+        AND from_date <= $3
+      ORDER BY from_date ASC
+    `, [user.username, fromKey, toKey]);
+
+    const absencesByType = {};
+    for (const row of dbAbsResult.rows) {
+      const type = String(row.type || '').toLowerCase();
+      if (!absencesByType[type]) absencesByType[type] = { days: 0, hours: 0 };
+      const days = computeAbsenceDaysInPeriod(
+        { from: row.from_date, to: row.to_date, days: row.days },
+        periodStart, periodEnd
+      );
+      absencesByType[type].days = round1(absencesByType[type].days + days);
+      if (row.hours) absencesByType[type].hours = round1(absencesByType[type].hours + toNumber(row.hours));
+    }
+
   return {
     username: user.username,
     displayName: user.username,
@@ -5788,6 +5818,7 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       missingMonths,
     },
     totals,
+    absencesByType, 
     overtime: {
       ueZ1Raw: overtime.ueZ1Raw,
       vorarbeitApplied: vorarbeitAppliedInPeriod,
@@ -5947,17 +5978,34 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, 
     doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
 
     sectionTitle('Lohndaten im Zeitraum');
-    writeMetricLines([
-      ['Arzt / Krank', fmtHours(row.totals.arztKrankHours)],
-      ['Ferien', fmtDays(row.totals.ferienDays)],
-      ['Stunden', fmtHours(row.totals.stunden)],
-      ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
-      ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
-      ['Abendessen', fmtCount(row.totals.abendessenCount)],
-      ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
-      ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
-      ['Pikett', fmtHours(row.totals.pikettHours)],
-    ]);
+      writeMetricLines([
+        ['Präsenz', fmtHours(row.totals.praesenzStunden)],
+        ['Pikett', fmtHours(row.totals.pikettHours)],
+        ['ÜZ3 Wochenende', fmtHours(row.totals.ueZ3Hours)],
+        ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
+        ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
+        ['Abendessen', fmtCount(row.totals.abendessenCount)],
+        ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
+        ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
+      ]);
+
+      // Absenzen aus DB
+      if (row.absencesByType && Object.keys(row.absencesByType).length > 0) {
+        sectionTitle('Absenzen im Zeitraum');
+        const TYPE_LABELS = {
+          ferien: 'Ferien', krank: 'Krank / Arztbesuch', unfall: 'Unfall',
+          militaer: 'Militär', mutterschaft: 'Mutterschaft',
+          vaterschaft: 'Vaterschaftsurlaub', bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+          sonstiges: 'Sonstiges'
+        };
+        const absLines = Object.entries(row.absencesByType)
+          .filter(([, data]) => data.days > 0 || data.hours > 0)
+          .map(([type, data]) => [
+            TYPE_LABELS[type] || type,
+            data.hours > 0 ? `${data.days}d / ${data.hours}h` : `${data.days}d`
+          ]);
+        if (absLines.length > 0) writeMetricLines(absLines);
+      }
 
     sectionTitle('Überzeit in dieser Lohnperiode');
     writeMetricLines([
@@ -5993,7 +6041,7 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, 
         doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
 
         doc.font('Helvetica').fontSize(8.5).text(
-          `Stunden: ${fmtHours(entry.stunden)}   |   Arzt/Krank: ${fmtHours(entry.arztKrankHours)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
+          `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
         );
 
         doc.text(
@@ -6022,6 +6070,10 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, 
     return res.status(500).json({ ok: false, error: 'PDF export failed' });
   }
 });
+
+
+
+
 
 // ============================================================================
 // Admin transmission summary route
