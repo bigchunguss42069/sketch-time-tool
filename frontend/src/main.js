@@ -240,6 +240,17 @@ function showToast(message, type = 'info', duration = 3500) {
   }, duration);
 }
 
+// ── XSS Protection ───────────────────────────────────────────────
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /**
  * Auth / sync status pill
  */
@@ -627,6 +638,9 @@ async function loadAdminPayroll() {
     }
 
     const rows = Array.isArray(data.rows) ? data.rows : [];
+    const filteredRows = adminActiveTeamFilter
+      ? rows.filter((r) => r.teamId === adminActiveTeamFilter)
+      : rows;
     const summary = data.summary || {};
 
     payrollSummaryBarEl.textContent =
@@ -634,7 +648,7 @@ async function loadAdminPayroll() {
       `Zeitraum ${formatDateDisplayEU(data.period?.from || from)} – ${formatDateDisplayEU(data.period?.to || to)} · ` +
       `Nur übertragene Daten berücksichtigt`;
 
-    renderAdminPayrollCards(rows);
+    renderAdminPayrollCards(filteredRows);
   } catch (err) {
     console.error(err);
     payrollSummaryBarEl.textContent = 'Lohndaten konnten nicht geladen werden.';
@@ -2700,6 +2714,9 @@ async function loadAdminPersonnel() {
       throw new Error(kontData.error || 'Konten konnten nicht geladen werden');
 
     let absences = Array.isArray(absData.absences) ? absData.absences : [];
+    if (adminActiveTeamFilter) {
+      absences = absences.filter((a) => a.teamId === adminActiveTeamFilter);
+    }
     if (search) {
       absences = absences.filter((a) => {
         const hay =
@@ -2709,7 +2726,12 @@ async function loadAdminPersonnel() {
     }
 
     renderAdminAbsenceList(absences);
-    renderAdminKontenGrid(Array.isArray(kontData.users) ? kontData.users : []);
+    const kontenUsers = Array.isArray(kontData.users) ? kontData.users : [];
+    renderAdminKontenGrid(
+      adminActiveTeamFilter
+        ? kontenUsers.filter((u) => u.teamId === adminActiveTeamFilter)
+        : kontenUsers
+    );
   } catch (e) {
     console.error(e);
     adminAbsenceListEl.innerHTML = `<div class="admin-error">${e.message || 'Fehler'}</div>`;
@@ -2877,7 +2899,7 @@ function renderAdminKontenGrid(rows) {
 
     card.innerHTML = `
       <div class="admin-konto-header">
-        <div class="admin-konto-user">${username}</div>
+        <div class="admin-konto-user">${escapeHtml(username)}</div>
       </div>
 
       <div class="admin-konto-metrics">
@@ -4493,6 +4515,38 @@ if (adminAbsenceSearchEl) {
   adminAbsenceSearchEl.addEventListener('input', () => loadAdminPersonnel());
 }
 
+const adminTeamFilterEl = document.getElementById('adminTeamFilter');
+const adminTeamFilterAbsencesEl = document.getElementById(
+  'adminTeamFilterAbsences'
+);
+const adminTeamFilterPayrollEl = document.getElementById(
+  'adminTeamFilterPayroll'
+);
+let adminActiveTeamFilter = '';
+
+function onTeamFilterChange(value) {
+  adminActiveTeamFilter = value;
+  if (adminTeamFilterEl) adminTeamFilterEl.value = value;
+  if (adminTeamFilterAbsencesEl) adminTeamFilterAbsencesEl.value = value;
+  if (adminTeamFilterPayrollEl) adminTeamFilterPayrollEl.value = value;
+  loadAdminSummary();
+  loadAdminPersonnel();
+  loadAdminPayroll();
+}
+
+if (adminTeamFilterEl)
+  adminTeamFilterEl.addEventListener('change', (e) =>
+    onTeamFilterChange(e.target.value)
+  );
+if (adminTeamFilterAbsencesEl)
+  adminTeamFilterAbsencesEl.addEventListener('change', (e) =>
+    onTeamFilterChange(e.target.value)
+  );
+if (adminTeamFilterPayrollEl)
+  adminTeamFilterPayrollEl.addEventListener('change', (e) =>
+    onTeamFilterChange(e.target.value)
+  );
+
 /**
  * Current-day total calculation
  */
@@ -5708,7 +5762,10 @@ function loadAdminSummary() {
       adminSummaryContainer.innerHTML = '';
 
       // Only show real employees in overview
-      const users = data.users;
+      const allUsers = data.users;
+      const users = adminActiveTeamFilter
+        ? allUsers.filter((u) => u.teamId === adminActiveTeamFilter)
+        : allUsers;
 
       if (users.length === 0) {
         adminSummaryContainer.innerHTML = '<p>Keine Benutzer gefunden.</p>';
@@ -7261,7 +7318,7 @@ async function loadWorkScheduleForModal(userId) {
         .join(' · ');
 
       const info = document.createElement('div');
-      info.innerHTML = `<strong>${s.employment_pct}%</strong> · ab ${s.valid_from.slice(0, 10)}<br>
+      info.innerHTML = `<strong>${s.valid_from.slice(0, 10)}</strong> · ab ${s.valid_from.slice(0, 10)}<br>
         <span style="font-size:11px;color:#64748b;">${daysStr}</span>`;
 
       const delBtn = document.createElement('button');
@@ -7336,14 +7393,14 @@ function renderAdminUsers(users) {
       (u) => `
     <div class="admin-user-item">
       <div class="admin-user-item-header">
-        <span class="admin-user-item-name">${u.username}</span>
+        <span class="admin-user-item-name">${escapeHtml(u.username)}</span>
         <span class="admin-user-item-badge ${u.active === false ? 'inactive' : u.role}">
           ${u.active === false ? 'Inaktiv' : u.role === 'admin' ? 'Admin' : 'Mitarbeiter'}
         </span>
       </div>
       <div class="admin-user-item-meta">
-        <span>${u.email || '–'}</span>
-        <span>${u.teamId || '–'}</span>
+        <span>${escapeHtml(u.email) || '–'}</span>
+        <span>${escapeHtml(u.teamId) || '–'}</span>
       </div>
       <div class="admin-user-item-actions">
         <button class="admin-user-btn" data-action="edit" data-id="${u.id}">Bearbeiten</button>

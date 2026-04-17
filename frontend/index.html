@@ -1428,7 +1428,15 @@
               </div>
             </div>
 
-
+            <div class="admin-team-filter-bar">
+              <select id="adminTeamFilter" class="admin-team-filter-select">
+                <option value="">Alle Teams</option>
+                <option value="montage">Team Montage</option>
+                <option value="werkstatt">Team Werkstatt</option>
+                <option value="service">Team Service</option>
+                <option value="büro">Team Büro</option>
+              </select>
+            </div>
             
               <div
                 id="adminSummaryContainer"
@@ -1449,6 +1457,8 @@
                
                 </p>
               </div>
+
+              
           
               <div class="anlagen-layout">
               <div class="anlagen-sidebar">
@@ -1500,6 +1510,16 @@
                   type="text"
                   placeholder="Suchen (Benutzer, Typ, Kommentar)…"
                 />
+
+                <div class="admin-team-filter-bar">
+                  <select id="adminTeamFilterAbsences" class="admin-team-filter-select">
+                    <option value="">Alle Teams</option>
+                    <option value="montage">Team Montage</option>
+                    <option value="werkstatt">Team Werkstatt</option>
+                    <option value="service">Team Service</option>
+                    <option value="büro">Team Büro</option>
+                  </select>
+                </div>
 
                 <select id="adminAbsenceStatusFilter" class="admin-personnel-status">
                   <option value="pending" selected>Offen</option>
@@ -1555,6 +1575,16 @@
             <button id="payrollRefreshBtn" class="admin-payroll-refresh" type="button">
               Aktualisieren
             </button>
+
+            <div class="admin-team-filter-bar">
+              <select id="adminTeamFilterPayroll" class="admin-team-filter-select">
+                <option value="">Alle Teams</option>
+                <option value="montage">Team Montage</option>
+                <option value="werkstatt">Team Werkstatt</option>
+                <option value="service">Team Service</option>
+                <option value="büro">Team Büro</option>
+              </select>
+            </div>
           </div>
 
           <div id="payrollSummaryBar" class="admin-payroll-summary">

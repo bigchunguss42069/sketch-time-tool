@@ -5137,3 +5137,16 @@ body.in-admin-view #view-admin {
 .toast.toast--warning {
   background: #e67e22;
 }
+
+.admin-team-filter-bar {
+  margin-bottom: 1rem;
+}
+
+.admin-team-filter-select {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #fff);
+  font-size: 0.875rem;
+  cursor: pointer;
+}

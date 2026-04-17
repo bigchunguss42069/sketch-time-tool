@@ -37,7 +37,7 @@ if (db) {
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN,
-    methods: ['GET', 'POST', 'DELETE'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -5359,7 +5359,9 @@ app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
       users.map((u) => listUserAbsencesFromDb(u.username))
     );
 
-    const all = nested.flat();
+    const all = nested.flatMap((absences, i) =>
+      absences.map((a) => ({ ...a, teamId: users[i].teamId || null }))
+    );
 
     const filtered =
       status === 'all' ? all : all.filter((a) => a && a.status === status);
@@ -6398,6 +6400,7 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       required: vorarbeitRequired,
       changeInPeriod: vorarbeitAppliedInPeriod,
     },
+    teamId: user.teamId || null,
     auditRows,
   };
 }
@@ -6424,13 +6427,12 @@ app.get(
     const periodEnd = fromDate <= toDate ? toDate : fromDate;
     const fromKey = formatDateKey(periodStart);
     const toKey = formatDateKey(periodEnd);
-    const teamId = String(req.user.teamId || '');
-
     try {
       const users = await listUsersFromDb({
         role: 'user',
-        teamId: teamId || null,
+        teamId: null,
       });
+
       const rows = await Promise.all(
         users.map((user) =>
           buildPayrollPeriodDataForUser(user, periodStart, periodEnd)
