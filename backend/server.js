@@ -5748,10 +5748,6 @@ app.post('/api/draft/sync', requireAuth, async (req, res) => {
         'SELECT updated_at FROM user_drafts WHERE user_id = $1',
         [req.user.id]
       );
-      if (existing.rows.length > 0) {
-        return res.status(409).json({ ok: false, conflict: true });
-      }
-
       if (current.rows.length > 0) {
         const serverTime = new Date(current.rows[0].updated_at).getTime();
         const clientBase = new Date(basedOn).getTime();
