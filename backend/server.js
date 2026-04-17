@@ -654,10 +654,12 @@ function computeNetWorkingHoursFromStamps(stamps) {
 // Verwendet für ÜZ1-Berechnung
 function computeDailyWorkingHours(dayData) {
   if (!dayData || typeof dayData !== 'object') return 0;
+  // Für ÜZ1-Berechnung zählen nur Stempel — dayHours (Transport, Schulung etc.)
+  // und Kommissionsstunden sind nur für die Auswertung relevant, nicht für ÜZ.
   if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
     return computeNetWorkingHoursFromStamps(dayData.stamps);
   }
-  return computeNonPikettHours(dayData);
+  return 0;
 }
 
 

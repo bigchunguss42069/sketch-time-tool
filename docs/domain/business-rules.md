@@ -432,7 +432,7 @@ Vom Betrieb bezahlte Absenzen sind bei Teilzeitpensum entsprechend anzupassen.
 
 ### Bekannte Lücke
 
-* Halber Tag krank: Wenn stundenweise Absenz eingetragen wird, aber keine entsprechenden Stempel vorhanden sind, entsteht Minus in ÜZ. Dieses Verhalten ist aktuell bekannt und fachlich zu überprüfen.
+* Halber Tag krank: Wenn stundenweise Absenz eingetragen wird (z.B. 4h krank), wird das Tagessoll entsprechend reduziert (z.B. 8h → 4h). Der Mitarbeitende ist verantwortlich, die verbleibenden Stunden zu stempeln. Fehlen die Stempel, entsteht ein Minus in ÜZ — dieses Verhalten ist **bewusst so entschieden** und fachlich korrekt.
 
 ---
 
@@ -536,7 +536,7 @@ Die folgenden Jahresdaten müssen gepflegt werden:
 
 ### Bereits bekannte Lücken
 
-* Halber Tag krank ohne entsprechende Stempel erzeugt aktuell Minus in ÜZ
+* Halber Tag krank ohne entsprechende Stempel erzeugt Minus in ÜZ — **bewusstes Verhalten**, kein Bug (Mitarbeitende sind für die Stempelung der verbleibenden Stunden verantwortlich)
 * Pikett-Präsenz erscheint nicht im Live-Präsenz-Tab
 * Ferienanspruch nach Alter ist noch manuell via Admin zu setzen
 * Nichtraucher-Tag ist noch nicht implementiert

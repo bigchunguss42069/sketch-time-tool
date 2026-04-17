@@ -1,5 +1,3 @@
-
-
 import "./style.css";
 
 /**
@@ -2243,7 +2241,7 @@ function buildAdminDayDrawer(data) {
       el(
         "div",
         "admin-day-mini-line",
-        `Arzt/Krank: ${formatHoursSafe(dayHours.arztKrank)}`,
+        `Transport: ${formatHoursSafe(dayHours.arztKrank)}`,
       ),
     );
     totalsGrid.appendChild(mini);
@@ -2908,7 +2906,7 @@ function calculateUsedVacationDaysFromFlags(year) {
       });
     }
 
-    // 2) Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Arzt/Krank)
+    // 2) Tagesbezogene Stunden (Schulung / Sitzung/Kurs / Transport)
     if (dayData.dayHours) {
       const { schulung, sitzungKurs, arztKrank } = dayData.dayHours;
       [schulung, sitzungKurs, arztKrank].forEach((val) => {
