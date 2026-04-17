@@ -31,38 +31,55 @@ if (db) {
   });
 }
 
-
 // ============================================================================
 // Global middleware
 // ============================================================================
-app.use(cors({
-  origin: process.env.CORS_ORIGIN,
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}))
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN,
+    methods: ['GET', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 app.use(helmet());
 app.use(express.json({ limit: '25mb' }));
-
-
 
 // ============================================================================
 // In-memory identity data and option labels
 // ============================================================================
 // Note: Now users are in postgres with argon2 hashes
-// 
+//
 
 // Teams
 const TEAMS = [
   { id: 'montage', name: 'Team Montage' },
-  { id: 'werkstatt', name: 'Team Werkstatt'},
-  { id: 'service', name: 'Team Service'},
-  { id: 'büro', name: 'Team Büro'},
+  { id: 'werkstatt', name: 'Team Werkstatt' },
+  { id: 'service', name: 'Team Service' },
+  { id: 'büro', name: 'Team Büro' },
 ];
 
 const INITIAL_USERS = [
-  { id: 'u1', username: 'demo', passwordEnv: 'SEED_PASSWORD_DEMO', role: 'user', teamId: 'montage' },
-  { id: 'u2', username: 'chef', passwordEnv: 'SEED_PASSWORD_CHEF', role: 'admin', teamId: 'montage' },
-  { id: 'u3', username: 'markus', passwordEnv: 'SEED_PASSWORD_MARKUS', role: 'user', teamId: 'montage' },
+  {
+    id: 'u1',
+    username: 'demo',
+    passwordEnv: 'SEED_PASSWORD_DEMO',
+    role: 'user',
+    teamId: 'montage',
+  },
+  {
+    id: 'u2',
+    username: 'chef',
+    passwordEnv: 'SEED_PASSWORD_CHEF',
+    role: 'admin',
+    teamId: 'montage',
+  },
+  {
+    id: 'u3',
+    username: 'markus',
+    passwordEnv: 'SEED_PASSWORD_MARKUS',
+    role: 'user',
+    teamId: 'montage',
+  },
 ];
 
 const OPTION_LABELS = {
@@ -198,7 +215,6 @@ async function ensureUsersTable() {
   await db.query(`
   ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT
 `);
-
 }
 
 async function ensureMonthSubmissionsTable() {
@@ -555,9 +571,7 @@ async function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.user || req.user.role !== 'admin') {
-    return res
-      .status(403)
-      .json({ ok: false, error: 'Admin role required' });
+    return res.status(403).json({ ok: false, error: 'Admin role required' });
   }
   next();
 }
@@ -595,7 +609,9 @@ function formatDateDisplayEU(dateKey) {
 
 // Same ISO week logic as frontend (UTC-based)
 function getISOWeekInfo(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d = new Date(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+  );
   const dayNum = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
@@ -615,7 +631,6 @@ function clampToNumber(value) {
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
 }
-
 
 // Berechnet Netto-Arbeitszeit aus Stempel-Paaren (in Stunden)
 function computeNetWorkingHoursFromStamps(stamps) {
@@ -662,8 +677,6 @@ function computeDailyWorkingHours(dayData) {
   return 0;
 }
 
-
-
 function computeNonPikettHours(dayData) {
   if (!dayData || typeof dayData !== 'object') return 0;
 
@@ -708,22 +721,26 @@ function buildPikettHoursByDate(pikettArray) {
   return map;
 }
 
-function buildAcceptedAbsenceHoursMap(absencesArray, monthStartKey, monthEndKey) {
+function buildAcceptedAbsenceHoursMap(
+  absencesArray,
+  monthStartKey,
+  monthEndKey
+) {
   // Map: dateKey → hours (null = ganzer Tag)
   const map = new Map();
   if (!Array.isArray(absencesArray)) return map;
 
-  absencesArray.forEach(a => {
+  absencesArray.forEach((a) => {
     const st = String(a.status || '').toLowerCase();
     if (!a || (st !== 'accepted' && st !== 'cancel_requested')) return;
     if (!a.from || !a.to) return;
 
     const startKey = a.from <= a.to ? a.from : a.to;
-    const endKey   = a.from <= a.to ? a.to   : a.from;
+    const endKey = a.from <= a.to ? a.to : a.from;
     if (endKey < monthStartKey || startKey > monthEndKey) return;
 
     const cursor = new Date(startKey + 'T00:00:00');
-    const end    = new Date(endKey   + 'T00:00:00');
+    const end = new Date(endKey + 'T00:00:00');
 
     while (cursor <= end) {
       const k = formatDateKey(cursor);
@@ -739,13 +756,15 @@ function buildAcceptedAbsenceHoursMap(absencesArray, monthStartKey, monthEndKey)
   return map;
 }
 
-
 async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
-  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+  const daysObj =
+    payload?.days && typeof payload.days === 'object' ? payload.days : {};
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
   const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-    payload?.absences, monthStartKey, monthEndKey
+    payload?.absences,
+    monthStartKey,
+    monthEndKey
   );
 
   let sum = 0;
@@ -761,12 +780,16 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue; // Wochenende überspringen
 
-    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(
+      userId,
+      dateKey,
+      acceptedAbsenceDays
+    );
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-    const isFerien = !!(dayData?.flags?.ferien);
+    const isFerien = !!dayData?.flags?.ferien;
 
     let diff = 0;
     if (isFerien) {
@@ -781,15 +804,23 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
   return Math.round(sum * 10) / 10;
 }
 
-
-
-async function computeMonthUeZ1AndVorarbeit(payload, year, monthIndex, userId, vorarbeitBalanceIn, vorarbeitRequired) {
-  const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
-  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+async function computeMonthUeZ1AndVorarbeit(
+  payload,
+  year,
+  monthIndex,
+  userId,
+  vorarbeitBalanceIn,
+  vorarbeitRequired
+) {
+  const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+  const daysObj =
+    payload?.days && typeof payload.days === 'object' ? payload.days : {};
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
   const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-    payload?.absences, monthStartKey, monthEndKey
+    payload?.absences,
+    monthStartKey,
+    monthEndKey
   );
 
   let ueZ1 = 0;
@@ -805,12 +836,16 @@ async function computeMonthUeZ1AndVorarbeit(payload, year, monthIndex, userId, v
 
     if (weekday === 0 || weekday === 6) continue;
 
-    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(
+      userId,
+      dateKey,
+      acceptedAbsenceDays
+    );
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-    const isFerien = !!(dayData?.flags?.ferien);
+    const isFerien = !!dayData?.flags?.ferien;
 
     let diff = 0;
     if (isFerien) {
@@ -829,7 +864,9 @@ async function computeMonthUeZ1AndVorarbeit(payload, year, monthIndex, userId, v
       const inUeZ1 = r1(diff - inVorarbeit);
 
       if (vorarbeit < vorarbeitRequired) {
-        const actualInVorarbeit = r1(Math.min(inVorarbeit, vorarbeitRequired - vorarbeit));
+        const actualInVorarbeit = r1(
+          Math.min(inVorarbeit, vorarbeitRequired - vorarbeit)
+        );
         const leftover = r1(inVorarbeit - actualInVorarbeit);
         vorarbeit = r1(vorarbeit + actualInVorarbeit);
         ueZ1 += leftover;
@@ -846,15 +883,16 @@ async function computeMonthUeZ1AndVorarbeit(payload, year, monthIndex, userId, v
   };
 }
 
-
-
 // Compute only POSITIVE ÜZ1 hours for the month (for Vorarbeit tracking)
 async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
-  const daysObj = (payload?.days && typeof payload.days === 'object') ? payload.days : {};
+  const daysObj =
+    payload?.days && typeof payload.days === 'object' ? payload.days : {};
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
   const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-    payload?.absences, monthStartKey, monthEndKey
+    payload?.absences,
+    monthStartKey,
+    monthEndKey
   );
 
   let positiveSum = 0;
@@ -869,12 +907,16 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue;
 
-    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(
+      userId,
+      dateKey,
+      acceptedAbsenceDays
+    );
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-    const isFerien = !!(dayData?.flags?.ferien);
+    const isFerien = !!dayData?.flags?.ferien;
 
     let diff = 0;
     if (isFerien) {
@@ -898,10 +940,16 @@ function getPayrollYearConfig(year) {
   return PAYROLL_YEAR_CONFIG[year] || { vorarbeitRequired: 0 };
 }
 
-
-async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, toKey, userId) {
-  const daysObj = (submission?.days && typeof submission.days === 'object')
-    ? submission.days : {};
+async function computePayrollPeriodOvertimeFromSubmission(
+  submission,
+  fromKey,
+  toKey,
+  userId
+) {
+  const daysObj =
+    submission?.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
 
   let ueZ1Raw = 0;
   let ueZ1Positive = 0;
@@ -910,7 +958,9 @@ async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, t
 
   // Absenzen aus Submission
   const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-    submission?.absences, fromKey, toKey
+    submission?.absences,
+    fromKey,
+    toKey
   );
 
   // Alle Werktage im Zeitraum
@@ -924,12 +974,16 @@ async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, t
 
     if (weekday === 0 || weekday === 6) continue;
 
-    const { soll, employmentPct } = await getDailySoll(userId, dateKey, acceptedAbsenceDays);
+    const { soll, employmentPct } = await getDailySoll(
+      userId,
+      dateKey,
+      acceptedAbsenceDays
+    );
     if (soll === 0) continue;
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-    const isFerien = !!(dayData?.flags?.ferien);
+    const isFerien = !!dayData?.flags?.ferien;
 
     let diff = 0;
     if (isFerien) {
@@ -962,27 +1016,37 @@ async function computePayrollPeriodOvertimeFromSubmission(submission, fromKey, t
   };
 }
 
-
 /**
  * Build month overview from a saved submission file.
  * Missing rule (matches your dashboard):
  * weekday is missing if totalHours==0 AND ferien==false AND no accepted absence on that day
  */
-function buildMonthOverviewFromSubmission(submission, year, monthIndex, acceptedAbsenceDaysOverride) {
+function buildMonthOverviewFromSubmission(
+  submission,
+  year,
+  monthIndex,
+  acceptedAbsenceDaysOverride
+) {
   const monthStart = new Date(year, monthIndex, 1);
   const monthEnd = new Date(year, monthIndex + 1, 0);
   const monthStartKey = formatDateKey(monthStart);
   const monthEndKey = formatDateKey(monthEnd);
 
-  const daysObj = (submission && submission.days && typeof submission.days === 'object')
-    ? submission.days
-    : {};
+  const daysObj =
+    submission && submission.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
 
   const pikettByDate = buildPikettHoursByDate(submission?.pikett);
 
-  const acceptedAbsenceDays = (acceptedAbsenceDaysOverride instanceof Set)
-    ? acceptedAbsenceDaysOverride
-    : buildAcceptedAbsenceHoursMap(submission?.absences, monthStartKey, monthEndKey);
+  const acceptedAbsenceDays =
+    acceptedAbsenceDaysOverride instanceof Set
+      ? acceptedAbsenceDaysOverride
+      : buildAcceptedAbsenceHoursMap(
+          submission?.absences,
+          monthStartKey,
+          monthEndKey
+        );
 
   let monthTotalHours = 0;
 
@@ -1000,18 +1064,19 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     const nonPikett = computeNonPikettHours(dayData);
     const pikett = pikettByDate.get(dateKey) || 0;
     const totalHours = nonPikett + pikett;
-    const stampHours = (Array.isArray(dayData?.stamps) && dayData.stamps.length > 0)
-      ? computeNetWorkingHoursFromStamps(dayData.stamps)
-      : null;
+    const stampHours =
+      Array.isArray(dayData?.stamps) && dayData.stamps.length > 0
+        ? computeNetWorkingHoursFromStamps(dayData.stamps)
+        : null;
 
     monthTotalHours += totalHours;
 
     const hasAcceptedAbsence = acceptedAbsenceDays.has(dateKey);
 
     let status = 'missing';
-    
 
-    const hasStamps = Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
+    const hasStamps =
+      Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
     if (ferien) status = 'ferien';
     else if (hasAcceptedAbsence) status = 'absence';
     else if (totalHours > 0 || hasStamps) status = 'ok';
@@ -1029,7 +1094,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
         workDaysInMonth: 0,
         missingCount: 0,
         weekTotalHours: 0,
-        weekStampHours: 0, 
+        weekStampHours: 0,
         days: [], // weekdays only for UI list
       });
     }
@@ -1043,7 +1108,8 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     // week total includes ALL days (also weekends)
     w.weekTotalHours += totalHours;
 
-    if (stampHours !== null) w.weekStampHours = (w.weekStampHours || 0) + stampHours;
+    if (stampHours !== null)
+      w.weekStampHours = (w.weekStampHours || 0) + stampHours;
 
     // UI wants weekdays list only
     if (weekday >= 1 && weekday <= 5) {
@@ -1052,10 +1118,10 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 
       w.days.push({
         dateKey,
-        weekday,       // for "Mo/Di/..." mapping in frontend
+        weekday, // for "Mo/Di/..." mapping in frontend
         totalHours,
         stampHours,
-        status,        // "missing" | "ok" | "ferien" | "absence"
+        status, // "missing" | "ok" | "ferien" | "absence"
       });
     }
 
@@ -1077,7 +1143,7 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
     workDaysInMonth: w.workDaysInMonth,
     missingCount: w.missingCount,
     weekTotalHours: w.weekTotalHours,
-    weekStampHours: w.weekStampHours || null, 
+    weekStampHours: w.weekStampHours || null,
     days: w.days,
   }));
 
@@ -1089,7 +1155,6 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
   };
 }
 
-
 // ---- Auth routes ----
 
 // Login: POST /api/auth/login
@@ -1097,16 +1162,17 @@ function buildMonthOverviewFromSubmission(submission, year, monthIndex, accepted
 // Authentication routes
 // ============================================================================
 
-
 // Limiter for login
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 Minuten
   max: 10, // max 10 Versuche pro 15 Minuten
-  message: { ok: false, error: 'Zu viele Login-Versuche, bitte warte 15 Minuten.' },
+  message: {
+    ok: false,
+    error: 'Zu viele Login-Versuche, bitte warte 15 Minuten.',
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
-
 
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   try {
@@ -1147,7 +1213,6 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     return res.status(500).json({ ok: false, error: 'Login failed' });
   }
 });
-
 
 // Current user: GET /api/auth/me
 app.get('/api/auth/me', requireAuth, (req, res) => {
@@ -1291,7 +1356,6 @@ function toIsoTimestamp(value) {
 
 function mapAbsenceRow(row) {
   if (!row) return null;
-  
 
   return {
     id: row.id,
@@ -1353,9 +1417,23 @@ async function findAbsenceByUserAndId(username, id, client = db) {
 
 async function insertAbsenceForUser(
   {
-    id, userId, username, teamId, type, from, to, days, hours, comment,
-        status, createdAt, createdBy, decidedAt, decidedBy,
-        cancelRequestedAt, cancelRequestedBy
+    id,
+    userId,
+    username,
+    teamId,
+    type,
+    from,
+    to,
+    days,
+    hours,
+    comment,
+    status,
+    createdAt,
+    createdBy,
+    decidedAt,
+    decidedBy,
+    cancelRequestedAt,
+    cancelRequestedBy,
   },
   client = db
 ) {
@@ -1377,9 +1455,23 @@ async function insertAbsenceForUser(
       RETURNING *
     `,
     [
-      id, userId, username, teamId, type, from, to, days, hours ?? null,
-      comment, status, createdAt, createdBy, decidedAt, decidedBy,
-      cancelRequestedAt, cancelRequestedBy
+      id,
+      userId,
+      username,
+      teamId,
+      type,
+      from,
+      to,
+      days,
+      hours ?? null,
+      comment,
+      status,
+      createdAt,
+      createdBy,
+      decidedAt,
+      decidedBy,
+      cancelRequestedAt,
+      cancelRequestedBy,
     ]
   );
 
@@ -1454,7 +1546,10 @@ function findAcceptedAbsenceForDate(absences, dateKey) {
 
       const fromKey = String(a.from || '').slice(0, 10);
       const toKey = String(a.to || '').slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) {
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(fromKey) ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(toKey)
+      ) {
         return false;
       }
 
@@ -1522,7 +1617,6 @@ async function ensureKontenTables() {
     ON konten_snapshots (username, month_key)
   `);
 
-
   await db.query(`
     ALTER TABLE konten 
     ADD COLUMN IF NOT EXISTS vorarbeit_balance DOUBLE PRECISION NOT NULL DEFAULT 0
@@ -1531,7 +1625,6 @@ async function ensureKontenTables() {
     ALTER TABLE konten_snapshots
     ADD COLUMN IF NOT EXISTS vorarbeit_balance DOUBLE PRECISION NOT NULL DEFAULT 0
 `);
-
 }
 
 function normalizeKontenObject(value) {
@@ -1572,7 +1665,11 @@ function mapKontenSnapshotRow(row) {
   };
 }
 
-async function ensureKontenUserRecord({ username, teamId = null, client = db }) {
+async function ensureKontenUserRecord({
+  username,
+  teamId = null,
+  client = db,
+}) {
   if (!client) {
     throw new Error('DATABASE_URL is not configured');
   }
@@ -1676,8 +1773,8 @@ async function persistKontenUserRecord({
     throw new Error('Missing DB client');
   }
 
- await client.query(
-  `
+  await client.query(
+    `
     UPDATE konten
     SET
       username = $2,
@@ -1694,22 +1791,22 @@ async function persistKontenUserRecord({
       vorarbeit_balance = $13
     WHERE user_id = $1
   `,
-  [
-    userId,
-    username,
-    teamId,
-    Number(konto.ueZ1) || 0,
-    Number(konto.ueZ2) || 0,
-    Number(konto.ueZ3) || 0,
-    JSON.stringify(konto.ueZ1PositiveByYear || {}),
-    Number(konto.vacationDays) || 0,
-    Number(konto.vacationDaysPerYear) || 21,
-    JSON.stringify(konto.creditedYears || {}),
-    konto.updatedAt || null,
-    konto.updatedBy || null,
-    Number(konto.vorarbeitBalance) || 0,  // ← NEU $13
-  ]
-);
+    [
+      userId,
+      username,
+      teamId,
+      Number(konto.ueZ1) || 0,
+      Number(konto.ueZ2) || 0,
+      Number(konto.ueZ3) || 0,
+      JSON.stringify(konto.ueZ1PositiveByYear || {}),
+      Number(konto.vacationDays) || 0,
+      Number(konto.vacationDaysPerYear) || 21,
+      JSON.stringify(konto.creditedYears || {}),
+      konto.updatedAt || null,
+      konto.updatedBy || null,
+      Number(konto.vorarbeitBalance) || 0, // ← NEU $13
+    ]
+  );
 }
 
 async function listKontenMonthKeys(username, client = db) {
@@ -1798,9 +1895,45 @@ async function updateKontenManualValues({ username, values, updatedBy }) {
 
 // Same holiday list as frontend (extend yearly as needed)
 const BERN_HOLIDAYS = {
-  2025: new Set(['2025-01-01','2025-01-02','2025-04-18','2025-04-20','2025-04-21','2025-05-29','2025-06-09','2025-08-01','2025-09-21','2025-12-25','2025-12-26']),
-  2026: new Set(['2026-01-01','2026-01-02','2026-04-03','2026-04-05','2026-04-06','2026-05-14','2026-05-25','2026-08-01','2026-09-20','2026-12-25','2026-12-26']),
-  2027: new Set(['2027-01-01','2027-01-02','2027-03-26','2027-03-28','2027-03-29','2027-05-06','2027-05-17','2027-08-01','2027-09-19','2027-12-25','2027-12-26']),
+  2025: new Set([
+    '2025-01-01',
+    '2025-01-02',
+    '2025-04-18',
+    '2025-04-20',
+    '2025-04-21',
+    '2025-05-29',
+    '2025-06-09',
+    '2025-08-01',
+    '2025-09-21',
+    '2025-12-25',
+    '2025-12-26',
+  ]),
+  2026: new Set([
+    '2026-01-01',
+    '2026-01-02',
+    '2026-04-03',
+    '2026-04-05',
+    '2026-04-06',
+    '2026-05-14',
+    '2026-05-25',
+    '2026-08-01',
+    '2026-09-20',
+    '2026-12-25',
+    '2026-12-26',
+  ]),
+  2027: new Set([
+    '2027-01-01',
+    '2027-01-02',
+    '2027-03-26',
+    '2027-03-28',
+    '2027-03-29',
+    '2027-05-06',
+    '2027-05-17',
+    '2027-08-01',
+    '2027-09-19',
+    '2027-12-25',
+    '2027-12-26',
+  ]),
 };
 
 function isBernHolidayKey(dateKey) {
@@ -1816,7 +1949,6 @@ const COMPANY_BRIDGE_DAYS = {
     '2026-12-29',
     '2026-12-30',
     '2026-12-31',
-    
   ]),
 };
 
@@ -1825,7 +1957,6 @@ function isCompanyBridgeDay(dateKey) {
   const set = COMPANY_BRIDGE_DAYS[year];
   return !!(set && set.has(dateKey));
 }
-
 
 // Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
 // Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
@@ -1843,13 +1974,16 @@ async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
   }
 
   // Arbeitszeitmodell laden
-  const result = await db.query(`
+  const result = await db.query(
+    `
     SELECT employment_pct, work_days FROM work_schedules
     WHERE user_id = $1 AND valid_from <= $2
     ORDER BY valid_from DESC LIMIT 1
-  `, [userId, dateKey]);
+  `,
+    [userId, dateKey]
+  );
 
-  const DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+  const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const dayKey = DAY_KEYS[weekday];
   let baseSoll = 8.0;
   let employmentPct = 100;
@@ -1871,7 +2005,6 @@ async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
   return { soll: baseSoll, employmentPct };
 }
 
-
 // Calculate vacation days for an absence (weekdays minus holidays)
 function calculateAbsenceVacationDays(absence) {
   if (!absence || !absence.from || !absence.to) return 0;
@@ -1882,7 +2015,8 @@ function calculateAbsenceVacationDays(absence) {
   let fromDate = new Date(absence.from + 'T00:00:00');
   let toDate = new Date(absence.to + 'T00:00:00');
 
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return 0;
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
+    return 0;
 
   if (toDate < fromDate) {
     const tmp = fromDate;
@@ -1897,11 +2031,15 @@ function calculateAbsenceVacationDays(absence) {
     const weekday = cursor.getDay();
     const dateKey = formatDateKey(cursor);
 
-   if (weekday >= 1 && weekday <= 5
-    && !isBernHolidayKey(dateKey)
-    && !isCompanyBridgeDay(dateKey)) { // ← NEU
-    days += absence.hours ? 0.5 : 1;
-}
+    if (
+      weekday >= 1 &&
+      weekday <= 5 &&
+      !isBernHolidayKey(dateKey) &&
+      !isCompanyBridgeDay(dateKey)
+    ) {
+      // ← NEU
+      days += absence.hours ? 0.5 : 1;
+    }
 
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -1912,7 +2050,10 @@ function calculateAbsenceVacationDays(absence) {
 // vacation day fraction = max(0, 1 - (hoursWorked/8))
 function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
   const DAILY_SOLL = 8.0;
-  const daysObj = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+  const daysObj =
+    payload && payload.days && typeof payload.days === 'object'
+      ? payload.days
+      : {};
   let used = 0;
 
   for (const [dateKey, dayData] of Object.entries(daysObj)) {
@@ -1932,7 +2073,7 @@ function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
     if (isBernHolidayKey(dateKey)) continue;
 
     const worked = computeNonPikettHours(dayData);
-    const fraction = Math.max(0, 1 - (worked / DAILY_SOLL));
+    const fraction = Math.max(0, 1 - worked / DAILY_SOLL);
 
     const rounded = Math.round(fraction * 4) / 4;
     used += rounded;
@@ -1980,8 +2121,7 @@ async function updateKontenFromSubmission({
       [ensured.userId, year, monthIndex]
     );
 
-
-const prevSnap = snapResult.rows[0]
+    const prevSnap = snapResult.rows[0]
       ? mapKontenSnapshotRow(snapResult.rows[0])
       : {
           ueZ1: 0,
@@ -1992,9 +2132,9 @@ const prevSnap = snapResult.rows[0]
           vorarbeitBalance: 0,
         };
 
-
-   const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
-    const vorarbeitRequired = Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
+    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+    const vorarbeitRequired =
+      Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
 
     const nextKonto = {
       ...ensured.konto,
@@ -2012,8 +2152,12 @@ const prevSnap = snapResult.rows[0]
 
     const { ueZ1: monthUeZ1, vorarbeitBalance: newVorarbeitBalance } =
       await computeMonthUeZ1AndVorarbeit(
-        payload, year, monthIndex, ensured.userId,
-        vorarbeitBalance, vorarbeitRequired
+        payload,
+        year,
+        monthIndex,
+        ensured.userId,
+        vorarbeitBalance,
+        vorarbeitRequired
       );
 
     const deltaUeZ1 = r1(monthUeZ1 - prevSnap.ueZ1);
@@ -2034,7 +2178,7 @@ const prevSnap = snapResult.rows[0]
     nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
 
     await client.query(
-  `
+      `
     INSERT INTO konten_snapshots (
       user_id,
       username,
@@ -2062,21 +2206,21 @@ const prevSnap = snapResult.rows[0]
       vorarbeit_balance = EXCLUDED.vorarbeit_balance,
       updated_at = EXCLUDED.updated_at
   `,
-  [
-    ensured.userId,
-    ensured.username,
-    year,
-    monthIndex,
-    monthKey,
-    nextSnap.ueZ1,
-    nextSnap.ueZ1Positive,
-    nextSnap.ueZ2,
-    nextSnap.ueZ3,
-    nextSnap.vacUsed,
-    nextSnap.vorarbeitBalance,  // ← NEU $11
-    nextKonto.updatedAt,        // ← $12
-  ]
-);
+      [
+        ensured.userId,
+        ensured.username,
+        year,
+        monthIndex,
+        monthKey,
+        nextSnap.ueZ1,
+        nextSnap.ueZ1Positive,
+        nextSnap.ueZ2,
+        nextSnap.ueZ3,
+        nextSnap.vacUsed,
+        nextSnap.vorarbeitBalance, // ← NEU $11
+        nextKonto.updatedAt, // ← $12
+      ]
+    );
 
     await client.query('COMMIT');
     return nextKonto;
@@ -2267,8 +2411,6 @@ async function ensureStampEditsTable() {
   `);
 }
 
-
-
 async function ensureWorkSchedulesTable() {
   if (!db) return;
   await db.query(`
@@ -2287,7 +2429,6 @@ async function ensureWorkSchedulesTable() {
     ON work_schedules (user_id, valid_from DESC)
   `);
 }
-
 
 function mapWeekLockRow(row) {
   return {
@@ -2449,7 +2590,10 @@ function absenceOverlapsLockedDates(abs, lockedDateKeys) {
 
   const fromKey = String(abs.from).slice(0, 10);
   const toKey = String(abs.to).slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromKey) || !/^\d{4}-\d{2}-\d{2}$/.test(toKey)) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(fromKey) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(toKey)
+  ) {
     return false;
   }
 
@@ -2469,7 +2613,11 @@ function absenceOverlapsLockedDates(abs, lockedDateKeys) {
 
 // Load the newest saved snapshot for a specific user/month combination.
 async function loadLatestMonthSubmission(username, year, monthIndex) {
-  const record = await getLatestMonthSubmissionRecord(username, year, monthIndex);
+  const record = await getLatestMonthSubmissionRecord(
+    username,
+    year,
+    monthIndex
+  );
   return record ? record.submission : null;
 }
 
@@ -2554,7 +2702,12 @@ function round1(n) {
 }
 
 // Core payroll aggregation for one transmitted submission inside a selected period.
-function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById) {
+function aggregatePayrollFromSubmission(
+  submission,
+  fromKey,
+  toKey,
+  absencesById
+) {
   const result = {
     praesenzStunden: 0,
     morgenessenCount: 0,
@@ -2566,8 +2719,10 @@ function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById
     ueZ3Hours: 0,
   };
 
-  const daysObj = (submission?.days && typeof submission.days === 'object')
-    ? submission.days : {};
+  const daysObj =
+    submission?.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
 
   for (const [dateKey, dayData] of Object.entries(daysObj)) {
     if (!isDateKeyInClosedRange(dateKey, fromKey, toKey)) continue;
@@ -2575,7 +2730,9 @@ function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById
 
     // Präsenzstunden aus Stamps
     if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
-      result.praesenzStunden += computeNetWorkingHoursFromStamps(dayData.stamps);
+      result.praesenzStunden += computeNetWorkingHoursFromStamps(
+        dayData.stamps
+      );
     }
 
     // Mahlzeiten
@@ -2601,10 +2758,18 @@ function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById
   }
 
   // Absenzen aus Submission für absencesById sammeln (unverändert)
-  const absences = Array.isArray(submission?.absences) ? submission.absences : [];
+  const absences = Array.isArray(submission?.absences)
+    ? submission.absences
+    : [];
   for (const abs of absences) {
-    const id = abs?.id ? String(abs.id)
-      : [String(abs?.type||''), String(abs?.from||''), String(abs?.to||''), String(abs?.comment||'')].join('|');
+    const id = abs?.id
+      ? String(abs.id)
+      : [
+          String(abs?.type || ''),
+          String(abs?.from || ''),
+          String(abs?.to || ''),
+          String(abs?.comment || ''),
+        ].join('|');
     if (!absencesById.has(id)) absencesById.set(id, abs);
   }
 
@@ -2615,16 +2780,23 @@ function aggregatePayrollFromSubmission(submission, fromKey, toKey, absencesById
   return result;
 }
 
-
 // Preserve already-locked day payloads during retransmission of the same month.
-function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys) {
+function mergeLockedWeeksPayload(
+  newPayload,
+  previousSubmission,
+  lockedDateKeys
+) {
   const merged = { ...newPayload };
 
   // 1) days: locked dates are taken from previous submission (or removed if absent)
-  const newDays = (merged.days && typeof merged.days === 'object') ? { ...merged.days } : {};
-  const oldDays = (previousSubmission && previousSubmission.days && typeof previousSubmission.days === 'object')
-    ? previousSubmission.days
-    : {};
+  const newDays =
+    merged.days && typeof merged.days === 'object' ? { ...merged.days } : {};
+  const oldDays =
+    previousSubmission &&
+    previousSubmission.days &&
+    typeof previousSubmission.days === 'object'
+      ? previousSubmission.days
+      : {};
 
   lockedDateKeys.forEach((dk) => {
     if (Object.prototype.hasOwnProperty.call(oldDays, dk)) {
@@ -2638,7 +2810,9 @@ function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys)
 
   // 2) pikett: locked dates are taken from previous submission
   const newPikett = Array.isArray(merged.pikett) ? merged.pikett : [];
-  const oldPikett = Array.isArray(previousSubmission?.pikett) ? previousSubmission.pikett : [];
+  const oldPikett = Array.isArray(previousSubmission?.pikett)
+    ? previousSubmission.pikett
+    : [];
 
   merged.pikett = [
     ...newPikett.filter((p) => p && p.date && !lockedDateKeys.has(p.date)),
@@ -2647,10 +2821,16 @@ function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys)
 
   // 3) absences: if an absence overlaps locked dates, keep the previous version
   const newAbs = Array.isArray(merged.absences) ? merged.absences : [];
-  const oldAbs = Array.isArray(previousSubmission?.absences) ? previousSubmission.absences : [];
+  const oldAbs = Array.isArray(previousSubmission?.absences)
+    ? previousSubmission.absences
+    : [];
 
-  const keptNew = newAbs.filter((a) => !absenceOverlapsLockedDates(a, lockedDateKeys));
-  const keptOld = oldAbs.filter((a) => absenceOverlapsLockedDates(a, lockedDateKeys));
+  const keptNew = newAbs.filter(
+    (a) => !absenceOverlapsLockedDates(a, lockedDateKeys)
+  );
+  const keptOld = oldAbs.filter((a) =>
+    absenceOverlapsLockedDates(a, lockedDateKeys)
+  );
 
   // de-dupe by id (old should override for locked overlaps)
   const byId = new Map();
@@ -2670,7 +2850,6 @@ function mergeLockedWeeksPayload(newPayload, previousSubmission, lockedDateKeys)
 
   return merged;
 }
-
 
 // Helper: get (and create) the folder for a given user
 
@@ -2694,10 +2873,10 @@ function toNumber(val) {
 
 // Summarise a transmitted month payload for index metadata and overview cards.
 function computeTransmissionTotals(payload) {
-  let kom = 0;        // Kommissionsstunden + Spezialbuchungen (ÜZ1)
-  let dayHours = 0;   // Tagesbezogene Stunden
-  let pikett = 0;     // ÜZ2 (Pikett)
-  let overtime3 = 0;  // ÜZ3 (Wochenende ohne Pikett)
+  let kom = 0; // Kommissionsstunden + Spezialbuchungen (ÜZ1)
+  let dayHours = 0; // Tagesbezogene Stunden
+  let pikett = 0; // ÜZ2 (Pikett)
+  let overtime3 = 0; // ÜZ3 (Wochenende ohne Pikett)
 
   // days: object keyed by YYYY-MM-DD -> dayData
   if (payload && payload.days && typeof payload.days === 'object') {
@@ -2707,7 +2886,8 @@ function computeTransmissionTotals(payload) {
       // Kommissionsstunden
       if (Array.isArray(dayData.entries)) {
         for (const entry of dayData.entries) {
-          if (!entry || !entry.hours || typeof entry.hours !== 'object') continue;
+          if (!entry || !entry.hours || typeof entry.hours !== 'object')
+            continue;
           for (const v of Object.values(entry.hours)) {
             kom += toNumber(v);
           }
@@ -2746,7 +2926,6 @@ function computeTransmissionTotals(payload) {
   // normalize to 1 decimal like your UI
   const r1 = (n) => Math.round(n * 10) / 10;
 
-  
   // Nettoarbeitszeit aus Stempelungen pro Tag
   let stampHours = 0;
   if (payload && payload.days && typeof payload.days === 'object') {
@@ -2780,7 +2959,9 @@ async function autoTransmitForUser(user) {
   );
 
   if (draftResult.rows.length === 0) {
-    console.log(`[AutoTransmit] Kein Draft für ${user.username}, übersprungen.`);
+    console.log(
+      `[AutoTransmit] Kein Draft für ${user.username}, übersprungen.`
+    );
     return;
   }
 
@@ -2798,7 +2979,7 @@ async function autoTransmitForUser(user) {
 
   // Pikett filtern — nur gespeicherte Einträge des aktuellen Monats
   const pikettStore = Array.isArray(draft.pikettStore) ? draft.pikettStore : [];
-  const monthPikett = pikettStore.filter(p => {
+  const monthPikett = pikettStore.filter((p) => {
     if (!p.date || !p.saved) return false;
     const d = new Date(p.date + 'T00:00:00');
     return d.getFullYear() === year && d.getMonth() === monthIndex;
@@ -2818,13 +2999,19 @@ async function autoTransmitForUser(user) {
   const allLocks = await readWeekLocksFromDb();
   const userLocks = allLocks[user.username] || {};
   const { lockedDateKeys, lockedWeekKeys } = collectLockedDatesForMonth(
-    userLocks, year, monthIndex
+    userLocks,
+    year,
+    monthIndex
   );
 
   let payloadToSave = payload;
 
   if (lockedDateKeys.size > 0) {
-    const prev = await loadLatestMonthSubmission(user.username, year, monthIndex);
+    const prev = await loadLatestMonthSubmission(
+      user.username,
+      year,
+      monthIndex
+    );
     if (prev) {
       payloadToSave = mergeLockedWeeksPayload(payload, prev, lockedDateKeys);
       payloadToSave._lockInfo = {
@@ -2867,34 +3054,42 @@ async function autoTransmitForUser(user) {
     payload: submission,
   });
 
-  console.log(`[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`);
+  console.log(
+    `[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`
+  );
 }
 
 // ============================================================================
 // Admin transmission overview routes
 // ============================================================================
-app.get('/api/admin/users/:username/transmissions', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const username = req.params.username;
-    const user = await findUserByUsername(username);
+app.get(
+  '/api/admin/users/:username/transmissions',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const username = req.params.username;
+      const user = await findUserByUsername(username);
 
-    if (!user) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
+      if (!user) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+
+      const transmissions = await listUserTransmissions(username);
+
+      return res.json({
+        ok: true,
+        username,
+        transmissions,
+      });
+    } catch (err) {
+      console.error('Failed to load user transmissions', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not load transmissions' });
     }
-
-    const transmissions = await listUserTransmissions(username);
-
-    return res.json({
-      ok: true,
-      username,
-      transmissions,
-    });
-  } catch (err) {
-    console.error('Failed to load user transmissions', err);
-    return res.status(500).json({ ok: false, error: 'Could not load transmissions' });
   }
-});
-
+);
 
 // POST /api/stamps/live — Stamp-Status updaten (User)
 app.post('/api/stamps/live', requireAuth, async (req, res) => {
@@ -2903,12 +3098,15 @@ app.post('/api/stamps/live', requireAuth, async (req, res) => {
     if (!todayKey || !Array.isArray(stamps)) {
       return res.status(400).json({ ok: false, error: 'Ungültige Daten' });
     }
-    await db.query(`
+    await db.query(
+      `
       INSERT INTO live_stamps (user_id, username, today_key, stamps, updated_at)
       VALUES ($1, $2, $3, $4, NOW())
       ON CONFLICT (user_id) DO UPDATE
         SET today_key = $3, stamps = $4, updated_at = NOW()
-    `, [req.user.id, req.user.username, todayKey, JSON.stringify(stamps)]);
+    `,
+      [req.user.id, req.user.username, todayKey, JSON.stringify(stamps)]
+    );
     return res.json({ ok: true });
   } catch (err) {
     console.error('Live stamp error', err);
@@ -2917,147 +3115,185 @@ app.post('/api/stamps/live', requireAuth, async (req, res) => {
 });
 
 // GET /api/admin/live-status — Live Stamp-Status aller User (Admin)
-app.get('/api/admin/live-status', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const result = await db.query(`
+app.get(
+  '/api/admin/live-status',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await db.query(`
       SELECT l.username, l.today_key, l.stamps, l.updated_at, u.team_id
       FROM live_stamps l
       LEFT JOIN users u ON u.username = l.username
       ORDER BY l.username ASC
     `);
-    return res.json({
-      ok: true,
-      users: result.rows.map(r => ({
-        username: r.username,
-        teamId: r.team_id || null,
-        todayKey: r.today_key,
-        stamps: r.stamps || [],
-        updatedAt: r.updated_at instanceof Date
-          ? r.updated_at.toISOString()
-          : String(r.updated_at)
-      }))
-    });
-  } 
-  catch (err) {
-    console.error('Live status error', err);
-    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+      return res.json({
+        ok: true,
+        users: result.rows.map((r) => ({
+          username: r.username,
+          teamId: r.team_id || null,
+          todayKey: r.today_key,
+          stamps: r.stamps || [],
+          updatedAt:
+            r.updated_at instanceof Date
+              ? r.updated_at.toISOString()
+              : String(r.updated_at),
+        })),
+      });
+    } catch (err) {
+      console.error('Live status error', err);
+      return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+    }
   }
-});
+);
 
 // GET /api/admin/stamp-edits?year=2026&monthIndex=3 — Edit-Log (Admin)
-app.get('/api/admin/stamp-edits', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const year = Number(req.query.year) || new Date().getFullYear();
-    const monthIndex = Number(req.query.monthIndex ?? new Date().getMonth());
+app.get(
+  '/api/admin/stamp-edits',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const year = Number(req.query.year) || new Date().getFullYear();
+      const monthIndex = Number(req.query.monthIndex ?? new Date().getMonth());
 
-    const result = await db.query(`
+      const result = await db.query(
+        `
       SELECT s.username, s.date_key, s.action, s.old_time, s.new_time,
              s.old_type, s.new_type, s.transmitted_at, u.team_id
       FROM stamp_edits s
       LEFT JOIN users u ON u.username = s.username
       WHERE s.year = $1 AND s.month_index = $2
       ORDER BY s.username ASC, s.transmitted_at DESC
-    `, [year, monthIndex]);
+    `,
+        [year, monthIndex]
+      );
 
-    const byUser = {};
-    result.rows.forEach(r => {
-      if (!byUser[r.username]) {
-        byUser[r.username] = { teamId: r.team_id || null, edits: [] };
-      }
-      byUser[r.username].edits.push({
-        dateKey: r.date_key,
-        action: r.action,
-        oldTime: r.old_time,
-        newTime: r.new_time,
-        oldType: r.old_type,
-        newType: r.new_type,
-        transmittedAt: r.transmitted_at instanceof Date
-          ? r.transmitted_at.toISOString()
-          : String(r.transmitted_at)
+      const byUser = {};
+      result.rows.forEach((r) => {
+        if (!byUser[r.username]) {
+          byUser[r.username] = { teamId: r.team_id || null, edits: [] };
+        }
+        byUser[r.username].edits.push({
+          dateKey: r.date_key,
+          action: r.action,
+          oldTime: r.old_time,
+          newTime: r.new_time,
+          oldType: r.old_type,
+          newType: r.new_type,
+          transmittedAt:
+            r.transmitted_at instanceof Date
+              ? r.transmitted_at.toISOString()
+              : String(r.transmitted_at),
+        });
       });
-    });
 
-    const users = Object.entries(byUser).map(([username, { teamId, edits }]) => ({
-      username,
-      teamId,
-      editCount: edits.length,
-      flagged: edits.length >= 10,
-      edits
-    }));
+      const users = Object.entries(byUser).map(
+        ([username, { teamId, edits }]) => ({
+          username,
+          teamId,
+          editCount: edits.length,
+          flagged: edits.length >= 10,
+          edits,
+        })
+      );
 
-    return res.json({ ok: true, users });
-  } catch (err) {
-    console.error('Stamp edits error', err);
-    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+      return res.json({ ok: true, users });
+    } catch (err) {
+      console.error('Stamp edits error', err);
+      return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+    }
   }
-});
-
-
-
+);
 
 // GET /api/admin/work-schedule/:userId — Modell-History laden
-app.get('/api/admin/work-schedule/:userId', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const result = await db.query(`
+app.get(
+  '/api/admin/work-schedule/:userId',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await db.query(
+        `
       SELECT id, employment_pct, work_days, valid_from
       FROM work_schedules
       WHERE user_id = $1
       ORDER BY valid_from DESC
-    `, [req.params.userId]);
-    return res.json({ ok: true, schedules: result.rows });
-  } catch (err) {
-    console.error('Work schedule load error', err);
-    return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+    `,
+        [req.params.userId]
+      );
+      return res.json({ ok: true, schedules: result.rows });
+    } catch (err) {
+      console.error('Work schedule load error', err);
+      return res.status(500).json({ ok: false, error: 'Fehler beim Laden' });
+    }
   }
-});
+);
 
 // POST /api/admin/work-schedule — Neues Modell hinzufügen
-app.post('/api/admin/work-schedule', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { userId, employmentPct, workDays, validFrom } = req.body;
-    if (!userId || !employmentPct || !workDays || !validFrom) {
-      return res.status(400).json({ ok: false, error: 'Fehlende Felder' });
-    }
+app.post(
+  '/api/admin/work-schedule',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { userId, employmentPct, workDays, validFrom } = req.body;
+      if (!userId || !employmentPct || !workDays || !validFrom) {
+        return res.status(400).json({ ok: false, error: 'Fehlende Felder' });
+      }
 
-    // Username holen
-    const userResult = await db.query(
-      'SELECT username FROM users WHERE id = $1', [userId]
-    );
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ ok: false, error: 'User nicht gefunden' });
-    }
+      // Username holen
+      const userResult = await db.query(
+        'SELECT username FROM users WHERE id = $1',
+        [userId]
+      );
+      if (userResult.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ ok: false, error: 'User nicht gefunden' });
+      }
 
-    await db.query(`
+      await db.query(
+        `
       INSERT INTO work_schedules (user_id, username, employment_pct, work_days, valid_from)
       VALUES ($1, $2, $3, $4, $5)
-    `, [
-      userId,
-      userResult.rows[0].username,
-      Number(employmentPct),
-      JSON.stringify(workDays),
-      validFrom
-    ]);
+    `,
+        [
+          userId,
+          userResult.rows[0].username,
+          Number(employmentPct),
+          JSON.stringify(workDays),
+          validFrom,
+        ]
+      );
 
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Work schedule save error', err);
-    return res.status(500).json({ ok: false, error: 'Fehler beim Speichern' });
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Work schedule save error', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Fehler beim Speichern' });
+    }
   }
-});
+);
 
 // DELETE /api/admin/work-schedule/:id — Eintrag löschen
-app.delete('/api/admin/work-schedule/:id', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await db.query('DELETE FROM work_schedules WHERE id = $1', [req.params.id]);
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Work schedule delete error', err);
-    return res.status(500).json({ ok: false, error: 'Fehler beim Löschen' });
+app.delete(
+  '/api/admin/work-schedule/:id',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      await db.query('DELETE FROM work_schedules WHERE id = $1', [
+        req.params.id,
+      ]);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Work schedule delete error', err);
+      return res.status(500).json({ ok: false, error: 'Fehler beim Löschen' });
+    }
   }
-});
-
-
-
+);
 
 // GET /api/admin/audit-pdf — Präsenz Audit PDF (letzte 5 Jahre, alle Mitarbeiter)
 app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
@@ -3074,71 +3310,96 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
     const users = usersResult.rows;
 
     // Alle Submissions der letzten 5 Jahre laden
-    const subResult = await db.query(`
+    const subResult = await db.query(
+      `
       SELECT username, year, month_index, payload
       FROM month_submissions
       WHERE sent_at >= $1
       ORDER BY username ASC, year ASC, month_index ASC
-    `, [fiveYearsAgo.toISOString()]);
+    `,
+      [fiveYearsAgo.toISOString()]
+    );
 
     // Stamp Edits laden (für "bearbeitet" Markierung)
-    const editsResult = await db.query(`
+    const editsResult = await db.query(
+      `
       SELECT username, date_key FROM stamp_edits
       WHERE transmitted_at >= $1
-    `, [fiveYearsAgo.toISOString()]);
+    `,
+      [fiveYearsAgo.toISOString()]
+    );
 
     const editedDays = new Set(
-      editsResult.rows.map(r => `${r.username}|${r.date_key}`)
+      editsResult.rows.map((r) => `${r.username}|${r.date_key}`)
     );
 
     // Submissions nach User gruppieren
     const byUser = {};
-    users.forEach(u => {
+    users.forEach((u) => {
       byUser[u.username] = { teamId: u.team_id, submissions: [] };
     });
-    subResult.rows.forEach(r => {
+    subResult.rows.forEach((r) => {
       if (byUser[r.username]) {
         byUser[r.username].submissions.push({
           year: r.year,
           monthIndex: r.month_index,
-          payload: r.payload
+          payload: r.payload,
         });
       }
     });
 
     // PDF erstellen
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition',
-      `attachment; filename="Praesenz-Audit_${now.toISOString().slice(0,10)}.pdf"`
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Praesenz-Audit_${now.toISOString().slice(0, 10)}.pdf"`
     );
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50, autoFirstPage: true });
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 50,
+      autoFirstPage: true,
+    });
     doc.pipe(res);
 
-    const TEAM_MAP = Object.fromEntries(
-      TEAMS.map(t => [t.id, t.name])
-    );
+    const TEAM_MAP = Object.fromEntries(TEAMS.map((t) => [t.id, t.name]));
 
     // ── Deckblatt ──
-    doc.fontSize(22).font('Helvetica-Bold').text('Präsenz Audit', { align: 'center' });
+    doc
+      .fontSize(22)
+      .font('Helvetica-Bold')
+      .text('Präsenz Audit', { align: 'center' });
     doc.moveDown(0.5);
-    doc.fontSize(12).font('Helvetica').text(
-      `Zeitraum: ${fiveYearsAgo.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })} – ${now.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}`,
-      { align: 'center' }
-    );
+    doc
+      .fontSize(12)
+      .font('Helvetica')
+      .text(
+        `Zeitraum: ${fiveYearsAgo.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })} – ${now.toLocaleDateString('de-CH', { month: 'long', year: 'numeric' })}`,
+        { align: 'center' }
+      );
     doc.moveDown(0.3);
-    doc.fontSize(10).fillColor('#6B7280').text(
-      `Exportiert am: ${now.toLocaleString('de-CH')} · Norm Aufzüge`,
-      { align: 'center' }
-    );
+    doc
+      .fontSize(10)
+      .fillColor('#6B7280')
+      .text(`Exportiert am: ${now.toLocaleString('de-CH')} · Norm Aufzüge`, {
+        align: 'center',
+      });
     doc.moveDown(2);
 
     // ── Inhaltsverzeichnis ──
-    doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text('Mitarbeiter');
+    doc
+      .fontSize(14)
+      .font('Helvetica-Bold')
+      .fillColor('#1e293b')
+      .text('Mitarbeiter');
     doc.moveDown(0.5);
-    users.forEach(u => {
+    users.forEach((u) => {
       const team = TEAM_MAP[u.team_id] || u.team_id || '–';
-      doc.fontSize(10).font('Helvetica').fillColor('#374151').text(`• ${u.username}  (${team})`);
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .fillColor('#374151')
+        .text(`• ${u.username}  (${team})`);
     });
 
     // ── Pro Mitarbeiter ──
@@ -3147,22 +3408,37 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
       const teamName = TEAM_MAP[teamId] || teamId || '–';
 
       // User Header
-      doc.fontSize(16).font('Helvetica-Bold').fillColor('#1e293b')
+      doc
+        .fontSize(16)
+        .font('Helvetica-Bold')
+        .fillColor('#1e293b')
         .text(username, { underline: false });
-      doc.fontSize(10).font('Helvetica').fillColor('#6B7280')
+      doc
+        .fontSize(10)
+        .font('Helvetica')
+        .fillColor('#6B7280')
         .text(`Team: ${teamName}`);
       doc.moveDown(0.8);
 
       if (submissions.length === 0) {
-        doc.fontSize(10).fillColor('#94a3b8').text('Keine übertragenen Daten im Zeitraum.');
+        doc
+          .fontSize(10)
+          .fillColor('#94a3b8')
+          .text('Keine übertragenen Daten im Zeitraum.');
         return;
       }
 
-      submissions.forEach(sub => {
-        const monthLabel = new Date(sub.year, sub.monthIndex, 1)
-          .toLocaleDateString('de-CH', { month: 'long', year: 'numeric' });
+      submissions.forEach((sub) => {
+        const monthLabel = new Date(
+          sub.year,
+          sub.monthIndex,
+          1
+        ).toLocaleDateString('de-CH', { month: 'long', year: 'numeric' });
 
-        doc.fontSize(11).font('Helvetica-Bold').fillColor('#334155')
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor('#334155')
           .text(monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1));
         doc.moveDown(0.3);
 
@@ -3171,7 +3447,7 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
 
         let hasAnyStamp = false;
 
-        sortedDays.forEach(dateKey => {
+        sortedDays.forEach((dateKey) => {
           const dayData = daysObj[dateKey];
           const stamps = Array.isArray(dayData?.stamps) ? dayData.stamps : [];
           if (stamps.length === 0) return;
@@ -3182,13 +3458,19 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
           // Datum
           const d = new Date(dateKey + 'T00:00:00');
           const dateLabel = d.toLocaleDateString('de-CH', {
-            weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric'
+            weekday: 'short',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
           });
 
           // Netto-Stunden berechnen
-          const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
-          let totalMin = 0, lastIn = null;
-          sorted.forEach(s => {
+          const sorted = [...stamps].sort((a, b) =>
+            a.time.localeCompare(b.time)
+          );
+          let totalMin = 0,
+            lastIn = null;
+          sorted.forEach((s) => {
             const [hh, mm] = s.time.split(':').map(Number);
             const mins = hh * 60 + mm;
             if (s.type === 'in') lastIn = mins;
@@ -3197,25 +3479,35 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
               lastIn = null;
             }
           });
-          const netHours = totalMin > 0
-            ? `${Math.floor(totalMin/60)}h ${totalMin%60 > 0 ? totalMin%60+'m' : ''}`.trim()
-            : '–';
+          const netHours =
+            totalMin > 0
+              ? `${Math.floor(totalMin / 60)}h ${totalMin % 60 > 0 ? (totalMin % 60) + 'm' : ''}`.trim()
+              : '–';
 
           // Stempel-Zeilen
           const stampStr = sorted
-            .map(s => `${s.type === 'in' ? 'Ein' : 'Aus'} ${s.time}`)
+            .map((s) => `${s.type === 'in' ? 'Ein' : 'Aus'} ${s.time}`)
             .join('  ·  ');
 
           // Zeile rendern
           const editMark = isEdited ? '  ✎' : '';
-          doc.fontSize(9).font('Helvetica').fillColor(isEdited ? '#d97706' : '#374151')
-            .text(`${dateLabel}    ${stampStr}    Netto: ${netHours}${editMark}`, {
-              continued: false
-            });
+          doc
+            .fontSize(9)
+            .font('Helvetica')
+            .fillColor(isEdited ? '#d97706' : '#374151')
+            .text(
+              `${dateLabel}    ${stampStr}    Netto: ${netHours}${editMark}`,
+              {
+                continued: false,
+              }
+            );
         });
 
         if (!hasAnyStamp) {
-          doc.fontSize(9).fillColor('#94a3b8').text('Keine Stempel in diesem Monat.');
+          doc
+            .fontSize(9)
+            .fillColor('#94a3b8')
+            .text('Keine Stempel in diesem Monat.');
         }
 
         doc.moveDown(0.8);
@@ -3226,11 +3518,12 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Audit PDF error', err);
     if (!res.headersSent) {
-      res.status(500).json({ ok: false, error: 'PDF konnte nicht erstellt werden' });
+      res
+        .status(500)
+        .json({ ok: false, error: 'PDF konnte nicht erstellt werden' });
     }
   }
 });
-
 
 // ============================================================================
 // Anlagen domain helpers and persistence
@@ -3275,7 +3568,7 @@ async function ensureAnlagenTables() {
     )
   `);
 
-    await db.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS anlagen_index_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       payload JSONB NOT NULL,
@@ -3637,7 +3930,10 @@ function normalizeKomNr(v) {
 function extractAnlagenSnapshotFromPayload(payload, username) {
   // returns: { [komNr]: { totalHours, byOperation, byDate, lastActivity } }
   const snap = {};
-  const days = (payload && payload.days && typeof payload.days === 'object') ? payload.days : {};
+  const days =
+    payload && payload.days && typeof payload.days === 'object'
+      ? payload.days
+      : {};
 
   for (const [dateKey, dayData] of Object.entries(days)) {
     if (!dayData || typeof dayData !== 'object') continue;
@@ -3648,10 +3944,16 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
       const komNr = normalizeKomNr(e?.komNr);
       if (!komNr) continue;
 
-      const hoursObj = (e?.hours && typeof e.hours === 'object') ? e.hours : {};
+      const hoursObj = e?.hours && typeof e.hours === 'object' ? e.hours : {};
       let sumDayKom = 0;
 
-      if (!snap[komNr]) snap[komNr] = { totalHours: 0, byOperation: {}, byDate: {}, lastActivity: null };
+      if (!snap[komNr])
+        snap[komNr] = {
+          totalHours: 0,
+          byOperation: {},
+          byDate: {},
+          lastActivity: null,
+        };
       const rec = snap[komNr];
 
       for (const [opKey, raw] of Object.entries(hoursObj)) {
@@ -3664,12 +3966,15 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
       if (sumDayKom > 0) {
         addNum(rec.byDate, dateKey, sumDayKom);
         rec.totalHours += sumDayKom;
-        if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+        if (!rec.lastActivity || dateKey > rec.lastActivity)
+          rec.lastActivity = dateKey;
       }
     }
 
     // 2) Special entries: split regie vs fehler
-    const specials = Array.isArray(dayData.specialEntries) ? dayData.specialEntries : [];
+    const specials = Array.isArray(dayData.specialEntries)
+      ? dayData.specialEntries
+      : [];
     for (const s of specials) {
       const komNr = normalizeKomNr(s?.komNr);
       if (!komNr) continue;
@@ -3677,17 +3982,24 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
       const h = toNumber(s?.hours);
       if (!(h > 0)) continue;
 
-      if (!snap[komNr]) snap[komNr] = { totalHours: 0, byOperation: {}, byDate: {}, lastActivity: null };
+      if (!snap[komNr])
+        snap[komNr] = {
+          totalHours: 0,
+          byOperation: {},
+          byDate: {},
+          lastActivity: null,
+        };
       const rec = snap[komNr];
 
       const type = String(s?.type || '').toLowerCase();
-      const bucket = (type === 'fehler') ? '_fehler' : '_regie';
+      const bucket = type === 'fehler' ? '_fehler' : '_regie';
 
       addNum(rec.byOperation, bucket, h);
       addNum(rec.byDate, dateKey, h);
 
       rec.totalHours += h;
-      if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+      if (!rec.lastActivity || dateKey > rec.lastActivity)
+        rec.lastActivity = dateKey;
     }
   }
 
@@ -3698,7 +4010,6 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
 
   return snap;
 }
-
 
 function getMaxDateFromKomLedger(komLedger) {
   // komLedger = { byUser: { u: { byDate: { 'YYYY-MM-DD': hours } } } }
@@ -3713,7 +4024,14 @@ function getMaxDateFromKomLedger(komLedger) {
   return max;
 }
 
-function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, sign }) {
+function applySnapshotToIndexAndLedger({
+  index,
+  ledger,
+  teamId,
+  username,
+  snap,
+  sign,
+}) {
   // sign: +1 add, -1 subtract
   if (!index.teams || typeof index.teams !== 'object') index.teams = {};
   if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') {
@@ -3739,7 +4057,7 @@ function applySnapshotToIndexAndLedger({ index, ledger, teamId, username, snap, 
     const gi = teamIndex[komNr];
     const total = Number(rec.totalHours || 0);
 
-    gi.totalHours = round1((Number(gi.totalHours || 0)) + sign * total);
+    gi.totalHours = round1(Number(gi.totalHours || 0) + sign * total);
 
     // byOperation
     for (const [k, v] of Object.entries(rec.byOperation || {})) {
@@ -3793,9 +4111,7 @@ function recomputeLastActivitiesForTeam(index, ledger, teamId, komNrs) {
   }
 }
 
-
 // ---- Anlagen (Kom.-Nr.) global index + archive state ----
-
 
 function deepCloneJson(value) {
   if (value == null) return value;
@@ -3887,13 +4203,22 @@ async function writeAnlagenIndex(data) {
   );
 }
 
-
 function ensureAnlageRec(teamObj, komNr) {
   if (!teamObj[komNr] || typeof teamObj[komNr] !== 'object') {
-    teamObj[komNr] = { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null };
+    teamObj[komNr] = {
+      totalHours: 0,
+      byOperation: {},
+      byUser: {},
+      lastActivity: null,
+    };
   }
-  if (!teamObj[komNr].byOperation || typeof teamObj[komNr].byOperation !== 'object') teamObj[komNr].byOperation = {};
-  if (!teamObj[komNr].byUser || typeof teamObj[komNr].byUser !== 'object') teamObj[komNr].byUser = {};
+  if (
+    !teamObj[komNr].byOperation ||
+    typeof teamObj[komNr].byOperation !== 'object'
+  )
+    teamObj[komNr].byOperation = {};
+  if (!teamObj[komNr].byUser || typeof teamObj[komNr].byUser !== 'object')
+    teamObj[komNr].byUser = {};
   if (!('lastActivity' in teamObj[komNr])) teamObj[komNr].lastActivity = null;
   if (!('totalHours' in teamObj[komNr])) teamObj[komNr].totalHours = 0;
   return teamObj[komNr];
@@ -3905,7 +4230,10 @@ function extractAnlagenFromSubmission(submission, username) {
   const out = new Map();
   if (!submission || typeof submission !== 'object') return out;
 
-  const days = (submission.days && typeof submission.days === 'object') ? submission.days : {};
+  const days =
+    submission.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
 
   for (const [dateKey, dayData] of Object.entries(days)) {
     if (!dayData || typeof dayData !== 'object') continue;
@@ -3916,11 +4244,16 @@ function extractAnlagenFromSubmission(submission, username) {
       const komNr = normalizeKomNr(e?.komNr);
       if (!komNr) continue;
 
-      const hoursObj = (e?.hours && typeof e.hours === 'object') ? e.hours : {};
+      const hoursObj = e?.hours && typeof e.hours === 'object' ? e.hours : {};
       let sum = 0;
 
       if (!out.has(komNr)) {
-        out.set(komNr, { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null });
+        out.set(komNr, {
+          totalHours: 0,
+          byOperation: {},
+          byUser: {},
+          lastActivity: null,
+        });
       }
       const rec = out.get(komNr);
 
@@ -3934,12 +4267,15 @@ function extractAnlagenFromSubmission(submission, username) {
       if (sum > 0) {
         rec.totalHours += sum;
         addNum(rec.byUser, username, sum);
-        if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+        if (!rec.lastActivity || dateKey > rec.lastActivity)
+          rec.lastActivity = dateKey;
       }
     }
 
     // 2) Special entries (only those with komNr count into Anlagen)
-    const specials = Array.isArray(dayData.specialEntries) ? dayData.specialEntries : [];
+    const specials = Array.isArray(dayData.specialEntries)
+      ? dayData.specialEntries
+      : [];
     for (const s of specials) {
       const komNr = normalizeKomNr(s?.komNr);
       if (!komNr) continue;
@@ -3948,7 +4284,12 @@ function extractAnlagenFromSubmission(submission, username) {
       if (!(h > 0)) continue;
 
       if (!out.has(komNr)) {
-        out.set(komNr, { totalHours: 0, byOperation: {}, byUser: {}, lastActivity: null });
+        out.set(komNr, {
+          totalHours: 0,
+          byOperation: {},
+          byUser: {},
+          lastActivity: null,
+        });
       }
       const rec = out.get(komNr);
 
@@ -3957,10 +4298,11 @@ function extractAnlagenFromSubmission(submission, username) {
 
       // split specials into regie/fehler buckets
       const t = String(s?.type || '').toLowerCase();
-      const bucket = (t === 'fehler') ? 'Fehler' : 'Regie'; // default regie
+      const bucket = t === 'fehler' ? 'Fehler' : 'Regie'; // default regie
       addNum(rec.byOperation, bucket, h);
 
-      if (!rec.lastActivity || dateKey > rec.lastActivity) rec.lastActivity = dateKey;
+      if (!rec.lastActivity || dateKey > rec.lastActivity)
+        rec.lastActivity = dateKey;
     }
   }
 
@@ -3971,10 +4313,14 @@ function extractAnlagenFromSubmission(submission, username) {
 // Apply a before/after delta when a month transmission changes anlagen data.
 async function applyAnlagenDelta(teamId, username, newMap, oldMap) {
   const index = await readAnlagenIndex();
-  if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object') index.teams[teamId] = {};
+  if (!index.teams[teamId] || typeof index.teams[teamId] !== 'object')
+    index.teams[teamId] = {};
   const teamObj = index.teams[teamId];
 
-  const allKom = new Set([...(newMap ? newMap.keys() : []), ...(oldMap ? oldMap.keys() : [])]);
+  const allKom = new Set([
+    ...(newMap ? newMap.keys() : []),
+    ...(oldMap ? oldMap.keys() : []),
+  ]);
 
   for (const komNr of allKom) {
     const newRec = newMap && newMap.get(komNr) ? newMap.get(komNr) : null;
@@ -3989,23 +4335,28 @@ async function applyAnlagenDelta(teamId, username, newMap, oldMap) {
     const rec = ensureAnlageRec(teamObj, komNr);
 
     // totals
-    rec.totalHours = round1((Number(rec.totalHours || 0)) + deltaTotal);
+    rec.totalHours = round1(Number(rec.totalHours || 0) + deltaTotal);
 
     // byOperation
     for (const opKey of deltaOps) {
-      const dv = (Number(newRec?.byOperation?.[opKey] || 0)) - (Number(oldRec?.byOperation?.[opKey] || 0));
+      const dv =
+        Number(newRec?.byOperation?.[opKey] || 0) -
+        Number(oldRec?.byOperation?.[opKey] || 0);
       addNum(rec.byOperation, opKey, dv);
     }
     cleanupZeroish(rec.byOperation);
 
     // byUser (only update this user key)
-    const du = (Number(newRec?.byUser?.[username] || 0)) - (Number(oldRec?.byUser?.[username] || 0));
+    const du =
+      Number(newRec?.byUser?.[username] || 0) -
+      Number(oldRec?.byUser?.[username] || 0);
     addNum(rec.byUser, username, du);
     cleanupZeroish(rec.byUser);
 
     // lastActivity: best-effort monotonic update (does not decrease)
     if (newRec?.lastActivity) {
-      if (!rec.lastActivity || newRec.lastActivity > rec.lastActivity) rec.lastActivity = newRec.lastActivity;
+      if (!rec.lastActivity || newRec.lastActivity > rec.lastActivity)
+        rec.lastActivity = newRec.lastActivity;
     }
 
     // if record is effectively empty, remove it
@@ -4021,7 +4372,6 @@ async function applyAnlagenDelta(teamId, username, newMap, oldMap) {
   writeAnlagenIndex(index);
   return index;
 }
-
 
 async function rebuildAnlagenIndex() {
   const index = { version: 1, updatedAt: null, teams: {} };
@@ -4043,14 +4393,16 @@ async function rebuildAnlagenIndex() {
       const sub = row.payload;
       if (!sub) continue;
 
-      const teamId = (sub.teamId || user.teamId || '') || 'unknown';
+      const teamId = sub.teamId || user.teamId || '' || 'unknown';
       if (!index.teams[teamId]) index.teams[teamId] = {};
       const teamObj = index.teams[teamId];
 
       const local = extractAnlagenFromSubmission(sub, user.username);
       for (const [komNr, rec] of local.entries()) {
         const g = ensureAnlageRec(teamObj, komNr);
-        g.totalHours = round1((Number(g.totalHours || 0)) + (Number(rec.totalHours || 0)));
+        g.totalHours = round1(
+          Number(g.totalHours || 0) + Number(rec.totalHours || 0)
+        );
 
         for (const [k, v] of Object.entries(rec.byOperation || {})) {
           addNum(g.byOperation, k, v);
@@ -4060,7 +4412,10 @@ async function rebuildAnlagenIndex() {
           addNum(g.byUser, name, v);
         }
 
-        if (rec.lastActivity && (!g.lastActivity || rec.lastActivity > g.lastActivity)) {
+        if (
+          rec.lastActivity &&
+          (!g.lastActivity || rec.lastActivity > g.lastActivity)
+        ) {
           g.lastActivity = rec.lastActivity;
         }
 
@@ -4079,355 +4434,434 @@ async function rebuildAnlagenIndex() {
 // ============================================================================
 // Anlagen routes
 // ============================================================================
-app.post('/api/admin/anlagen-export-pdf', requireAuth, requireAdmin, exportPdfBody, async (req, res) => {
-  const teamId = String(req.body?.teamId || req.user.teamId || '');
-  const komNr = normalizeKomNr(req.body?.komNr);
+app.post(
+  '/api/admin/anlagen-export-pdf',
+  requireAuth,
+  requireAdmin,
+  exportPdfBody,
+  async (req, res) => {
+    const teamId = String(req.body?.teamId || req.user.teamId || '');
+    const komNr = normalizeKomNr(req.body?.komNr);
 
-  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
-  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
+    if (!teamId)
+      return res.status(400).json({ ok: false, error: 'Missing teamId' });
+    if (!komNr)
+      return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
- 
+    const index = await readAnlagenIndex();
+    const ledger = await readAnlagenLedger();
+    const meta = await readAnlagenArchive();
 
-  const index = await readAnlagenIndex();
-  const ledger = await readAnlagenLedger();
-  const meta = await readAnlagenArchive(); 
+    const teamObj =
+      index.teams &&
+      index.teams[teamId] &&
+      typeof index.teams[teamId] === 'object'
+        ? index.teams[teamId]
+        : {};
 
-  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
-    ? index.teams[teamId]
-    : {};
+    const rec = teamObj[komNr];
+    if (!rec)
+      return res
+        .status(404)
+        .json({ ok: false, error: 'KomNr not found in index' });
 
-  const rec = teamObj[komNr];
-  if (!rec) return res.status(404).json({ ok: false, error: 'KomNr not found in index' });
+    const ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
+    const teamMeta =
+      meta?.[teamId] && typeof meta[teamId] === 'object' ? meta[teamId] : {};
+    const m = teamMeta[komNr] || null;
 
-  const ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
-  const teamMeta = (meta?.[teamId] && typeof meta[teamId] === 'object') ? meta[teamId] : {};
-  const m = teamMeta[komNr] || null;
+    // charts from frontend
+    const donutUrl = req.body?.donutPngDataUrl;
+    const usersUrl = req.body?.usersPngDataUrl;
 
-  // charts from frontend 
-  const donutUrl = req.body?.donutPngDataUrl;
-  const usersUrl = req.body?.usersPngDataUrl;
+    function dataUrlToPngBuffer(url) {
+      if (!url || typeof url !== 'string') return null;
+      if (!url.startsWith('data:image/png;base64,')) return null;
+      const b64 = url.split(',')[1];
+      if (!b64 || b64.length > 8_000_000) return null; // basic size guard
+      return Buffer.from(b64, 'base64');
+    }
 
+    const donutBuf = dataUrlToPngBuffer(donutUrl);
+    const usersBuf = dataUrlToPngBuffer(usersUrl);
 
-  function dataUrlToPngBuffer(url) {
-    if (!url || typeof url !== 'string') return null;
-    if (!url.startsWith('data:image/png;base64,')) return null;
-    const b64 = url.split(',')[1];
-    if (!b64 || b64.length > 8_000_000) return null; // basic size guard
-    return Buffer.from(b64, 'base64');
-  }
+    // Stream PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Anlage_${komNr}.pdf"`
+    );
 
-  const donutBuf = dataUrlToPngBuffer(donutUrl);
-  const usersBuf = dataUrlToPngBuffer(usersUrl);
+    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    doc.pipe(res);
 
-  // Stream PDF
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="Anlage_${komNr}.pdf"`);
+    const now = new Date();
 
-  const doc = new PDFDocument({ size: 'A4', margin: 40 });
-  doc.pipe(res);
-
-  const now = new Date();
-
-  // Title
-  doc.fontSize(18).text(`Anlage ${komNr}`, { align: 'left' });
-  doc.moveDown(0.2);
-  doc.fontSize(10).text(`Team: ${teamId} · Exportiert am: ${now.toLocaleString('de-CH')}`);
-  doc.moveDown(0.6);
-
-  // Archive info
-  if (m?.archived) {
-    doc.fontSize(10).text(`Archiviert: Ja · am ${new Date(m.archivedAt).toLocaleString('de-CH')} · von ${m.archivedBy || '-'}`);
+    // Title
+    doc.fontSize(18).text(`Anlage ${komNr}`, { align: 'left' });
+    doc.moveDown(0.2);
+    doc
+      .fontSize(10)
+      .text(`Team: ${teamId} · Exportiert am: ${now.toLocaleString('de-CH')}`);
     doc.moveDown(0.6);
-  }
 
-  // Summary
-  doc.fontSize(12).text('Zusammenfassung', { underline: true });
-  doc.moveDown(0.3);
-  doc.fontSize(14).text(`Total Stunden: ${(Number(rec.totalHours || 0)).toFixed(1).replace('.', ',')} h`);
-  doc.fontSize(10).text(`Letzte Aktivität: ${rec.lastActivity ? rec.lastActivity : '–'}`);
-  doc.moveDown(0.6);
+    // Archive info
+    if (m?.archived) {
+      doc
+        .fontSize(10)
+        .text(
+          `Archiviert: Ja · am ${new Date(m.archivedAt).toLocaleString('de-CH')} · von ${m.archivedBy || '-'}`
+        );
+      doc.moveDown(0.6);
+    }
 
-  // Charts
+    // Summary
+    doc.fontSize(12).text('Zusammenfassung', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(14).text(
+      `Total Stunden: ${Number(rec.totalHours || 0)
+        .toFixed(1)
+        .replace('.', ',')} h`
+    );
+    doc
+      .fontSize(10)
+      .text(`Letzte Aktivität: ${rec.lastActivity ? rec.lastActivity : '–'}`);
+    doc.moveDown(0.6);
 
-  doc.moveDown(0.3);
+    // Charts
 
-  const startX = doc.x;
-  const yBefore = doc.y;
+    doc.moveDown(0.3);
 
-// --- Charts block (stable layout) ---
-const pageInnerW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-const x = doc.page.margins.left;
+    const startX = doc.x;
+    const yBefore = doc.y;
 
-const colGap = 18;
-const colW = (pageInnerW - colGap) / 2;
+    // --- Charts block (stable layout) ---
+    const pageInnerW =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const x = doc.page.margins.left;
 
+    const colGap = 18;
+    const colW = (pageInnerW - colGap) / 2;
 
-const donutBoxW = Math.floor(colW);
-const donutBoxH = donutBoxW;
+    const donutBoxW = Math.floor(colW);
+    const donutBoxH = donutBoxW;
 
+    const usersBoxW = Math.floor(colW);
+    const usersBoxH = donutBoxH;
 
-const usersBoxW = Math.floor(colW);
-const usersBoxH = donutBoxH;
+    doc.moveDown(0.4);
 
-doc.moveDown(0.4);
+    const chartsTopY = doc.y;
 
-const chartsTopY = doc.y;
+    doc.save();
+    doc.lineWidth(1).strokeColor('#E5E7EB');
+    doc.rect(x, chartsTopY, colW, donutBoxH).stroke();
+    doc.rect(x + colW + colGap, chartsTopY, colW, donutBoxH).stroke();
+    doc.restore();
 
+    // Draw images centered inside their boxes (preserves aspect ratio)
+    if (donutBuf) {
+      doc.image(donutBuf, x, chartsTopY, {
+        fit: [donutBoxW, donutBoxH],
+        align: 'center',
+        valign: 'center',
+      });
+    } else {
+      doc
+        .fontSize(9)
+        .fillColor('#6B7280')
+        .text('Donut Chart nicht vorhanden.', x + 10, chartsTopY + 10, {
+          width: colW - 20,
+        });
+      doc.fillColor('black');
+    }
 
-doc.save();
-doc.lineWidth(1).strokeColor('#E5E7EB');
-doc.rect(x, chartsTopY, colW, donutBoxH).stroke();
-doc.rect(x + colW + colGap, chartsTopY, colW, donutBoxH).stroke();
-doc.restore();
+    if (usersBuf) {
+      doc.image(usersBuf, x + colW + colGap, chartsTopY, {
+        fit: [usersBoxW, usersBoxH],
+        align: 'center',
+        valign: 'center',
+      });
+    } else {
+      doc
+        .fontSize(9)
+        .fillColor('#6B7280')
+        .text(
+          'User Chart nicht vorhanden.',
+          x + colW + colGap + 10,
+          chartsTopY + 10,
+          { width: colW - 20 }
+        );
+      doc.fillColor('black');
+    }
 
-// Draw images centered inside their boxes (preserves aspect ratio)
-if (donutBuf) {
-  doc.image(donutBuf, x, chartsTopY, {
-    fit: [donutBoxW, donutBoxH],
-    align: 'center',
-    valign: 'center',
-  });
-} else {
-  doc.fontSize(9).fillColor('#6B7280').text('Donut Chart nicht vorhanden.', x + 10, chartsTopY + 10, { width: colW - 20 });
-  doc.fillColor('black');
-}
+    // IMPORTANT: push the cursor below the chart block explicitly
+    doc.y = chartsTopY + donutBoxH + 18;
 
-if (usersBuf) {
-  doc.image(usersBuf, x + colW + colGap, chartsTopY, {
-    fit: [usersBoxW, usersBoxH],
-    align: 'center',
-    valign: 'center',
-  });
-} else {
-  doc.fontSize(9).fillColor('#6B7280').text('User Chart nicht vorhanden.', x + colW + colGap + 10, chartsTopY + 10, { width: colW - 20 });
-  doc.fillColor('black');
-}
+    // Operations table (from index.byOperation)
+    doc.fontSize(12).text('Stunden nach Tätigkeit', { underline: true });
+    doc.moveDown(0.3);
 
-// IMPORTANT: push the cursor below the chart block explicitly
-doc.y = chartsTopY + donutBoxH + 18;
+    const ops = Object.entries(rec.byOperation || {})
+      .map(([key, hours]) => ({ key, hours: Number(hours) || 0 }))
+      .filter((x) => x.hours > 0)
+      .sort((a, b) => b.hours - a.hours);
 
+    ops.forEach((o) => {
+      const label = getOperationLabel(o.key);
+      doc
+        .fontSize(10)
+        .text(`${label}: ${o.hours.toFixed(1).replace('.', ',')} h`);
+    });
 
-  // Operations table (from index.byOperation)
-  doc.fontSize(12).text('Stunden nach Tätigkeit', { underline: true });
-  doc.moveDown(0.3);
+    doc.moveDown(0.6);
 
-  const ops = Object.entries(rec.byOperation || {})
-    .map(([key, hours]) => ({ key, hours: Number(hours) || 0 }))
-    .filter((x) => x.hours > 0)
-    .sort((a, b) => b.hours - a.hours);
+    // Users totals (from index.byUser)
+    doc.fontSize(12).text('Stunden nach Mitarbeiter', { underline: true });
+    doc.moveDown(0.3);
 
-  ops.forEach((o) => {
-    const label = getOperationLabel(o.key);
-    doc.fontSize(10).text(`${label}: ${o.hours.toFixed(1).replace('.', ',')} h`);
-  });
+    const users = Object.entries(rec.byUser || {})
+      .map(([u, h]) => ({ u, h: Number(h) || 0 }))
+      .filter((x) => x.h > 0)
+      .sort((a, b) => b.h - a.h);
 
-  doc.moveDown(0.6);
+    users.forEach((u) => {
+      doc.fontSize(10).text(`${u.u}: ${u.h.toFixed(1).replace('.', ',')} h`);
+    });
 
-  // Users totals (from index.byUser)
-  doc.fontSize(12).text('Stunden nach Mitarbeiter', { underline: true });
-  doc.moveDown(0.3);
+    doc.moveDown(0.8);
 
-  const users = Object.entries(rec.byUser || {})
-    .map(([u, h]) => ({ u, h: Number(h) || 0 }))
-    .filter((x) => x.h > 0)
-    .sort((a, b) => b.h - a.h);
+    // Daily ledger appendix (server-side truth)
+    doc.fontSize(12).text('Tagesjournal', { underline: true });
+    doc.moveDown(0.3);
+    doc.fontSize(9).text('Pro Mitarbeiter die Tages-Summen für diese Anlage.');
 
-  users.forEach((u) => {
-    doc.fontSize(10).text(`${u.u}: ${u.h.toFixed(1).replace('.', ',')} h`);
-  });
+    const ledgerByUser = ledgerRec?.byUser || {};
+    const userNames = Object.keys(ledgerByUser).sort((a, b) =>
+      a.localeCompare(b, 'de')
+    );
 
-  doc.moveDown(0.8);
+    for (const uname of userNames) {
+      const byDate = ledgerByUser[uname]?.byDate || {};
+      const dates = Object.keys(byDate).sort(); // ascending
 
-  // Daily ledger appendix (server-side truth)
-  doc.fontSize(12).text('Tagesjournal', { underline: true });
-  doc.moveDown(0.3);
-  doc.fontSize(9).text('Pro Mitarbeiter die Tages-Summen für diese Anlage.');
+      if (dates.length === 0) continue;
 
-  const ledgerByUser = ledgerRec?.byUser || {};
-  const userNames = Object.keys(ledgerByUser).sort((a, b) => a.localeCompare(b, 'de'));
+      // page break guard
+      if (doc.y > 760) doc.addPage();
 
-  for (const uname of userNames) {
-    const byDate = ledgerByUser[uname]?.byDate || {};
-    const dates = Object.keys(byDate).sort(); // ascending
+      doc.moveDown(0.5);
+      doc.fontSize(10).text(uname, { underline: true });
 
-    if (dates.length === 0) continue;
+      for (const dk of dates) {
+        const h = Number(byDate[dk]) || 0;
+        if (!(h > 0)) continue;
+        if (doc.y > 780) doc.addPage();
 
-    // page break guard
-    if (doc.y > 760) doc.addPage();
-
-    doc.moveDown(0.5);
-    doc.fontSize(10).text(uname, { underline: true });
-
-    for (const dk of dates) {
-    const h = Number(byDate[dk]) || 0;
-    if (!(h > 0)) continue;
-    if (doc.y > 780) doc.addPage();
-
-    const dateLabel = formatDateDisplayEU(dk);
-    doc.fontSize(9).text(`${dateLabel}: ${h.toFixed(1).replace('.', ',')} h`);
-  }
-  }
-
-  doc.end();
-});
-
-
-// ---- Admin: Anlagen summary (global) ----
-// GET /api/admin/anlagen-summary?teamId=montage&status=active|archived|all&search=123
-app.get('/api/admin/anlagen-summary', requireAuth, requireAdmin, async (req, res) => {
-  const status = String(req.query.status || 'active'); // default hide archived
-  const teamId = String(req.query.teamId || req.user.teamId || '');
-
-  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
-
-  const search = String(req.query.search || '').trim();
-  const index = await readAnlagenIndex();
-  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
-    ? index.teams[teamId]
-    : {};
-
-  const archive = await readAnlagenArchive();
-  const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
-
-  const list = Object.entries(teamObj).map(([komNr, rec]) => {
-    const m = teamArchive[komNr] || null;
-    const archived = !!(m && m.archived);
-
-    // compute top operation (exclude _special)
-    let topOpKey = null;
-    let topOpHours = 0;
-    for (const [k, v] of Object.entries(rec.byOperation || {})) {
-      const h = Number(v) || 0;
-      if (k === '_special') continue;
-      if (h > topOpHours) {
-        topOpHours = h;
-        topOpKey = k;
+        const dateLabel = formatDateDisplayEU(dk);
+        doc
+          .fontSize(9)
+          .text(`${dateLabel}: ${h.toFixed(1).replace('.', ',')} h`);
       }
     }
 
-    return {
-      komNr,
-      totalHours: round1(rec.totalHours || 0),
-      lastActivity: rec.lastActivity || null,
-      topOperationKey: topOpKey,
-      archived,
-      archivedAt: m?.archivedAt || null,
-      archivedBy: m?.archivedBy || null,
-    };
-  });
+    doc.end();
+  }
+);
 
-  const filtered = list.filter((a) => {
-    if (search && !String(a.komNr).includes(search)) return false;
-    if (status === 'all') return true;
-    if (status === 'archived') return !!a.archived;
-    return !a.archived; // active
-  });
+// ---- Admin: Anlagen summary (global) ----
+// GET /api/admin/anlagen-summary?teamId=montage&status=active|archived|all&search=123
+app.get(
+  '/api/admin/anlagen-summary',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const status = String(req.query.status || 'active'); // default hide archived
+    const teamId = String(req.query.teamId || req.user.teamId || '');
 
-  filtered.sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+    if (!teamId)
+      return res.status(400).json({ ok: false, error: 'Missing teamId' });
 
-  return res.json({
-    ok: true,
-    teamId,
-    updatedAt: index.updatedAt || null,
-    anlagen: filtered,
-  });
-});
+    const search = String(req.query.search || '').trim();
+    const index = await readAnlagenIndex();
+    const teamObj =
+      index.teams &&
+      index.teams[teamId] &&
+      typeof index.teams[teamId] === 'object'
+        ? index.teams[teamId]
+        : {};
+
+    const archive = await readAnlagenArchive();
+    const teamArchive =
+      archive[teamId] && typeof archive[teamId] === 'object'
+        ? archive[teamId]
+        : {};
+
+    const list = Object.entries(teamObj).map(([komNr, rec]) => {
+      const m = teamArchive[komNr] || null;
+      const archived = !!(m && m.archived);
+
+      // compute top operation (exclude _special)
+      let topOpKey = null;
+      let topOpHours = 0;
+      for (const [k, v] of Object.entries(rec.byOperation || {})) {
+        const h = Number(v) || 0;
+        if (k === '_special') continue;
+        if (h > topOpHours) {
+          topOpHours = h;
+          topOpKey = k;
+        }
+      }
+
+      return {
+        komNr,
+        totalHours: round1(rec.totalHours || 0),
+        lastActivity: rec.lastActivity || null,
+        topOperationKey: topOpKey,
+        archived,
+        archivedAt: m?.archivedAt || null,
+        archivedBy: m?.archivedBy || null,
+      };
+    });
+
+    const filtered = list.filter((a) => {
+      if (search && !String(a.komNr).includes(search)) return false;
+      if (status === 'all') return true;
+      if (status === 'archived') return !!a.archived;
+      return !a.archived; // active
+    });
+
+    filtered.sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+
+    return res.json({
+      ok: true,
+      teamId,
+      updatedAt: index.updatedAt || null,
+      anlagen: filtered,
+    });
+  }
+);
 
 // ---- Admin: Anlage detail (global) ----
 // GET /api/admin/anlagen-detail?komNr=12345&teamId=montage
-app.get('/api/admin/anlagen-detail', requireAuth, requireAdmin, async (req, res) => {
-  const teamId = String(req.query.teamId || req.user.teamId || '');
-  const komNr = normalizeKomNr(req.query.komNr);
+app.get(
+  '/api/admin/anlagen-detail',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const teamId = String(req.query.teamId || req.user.teamId || '');
+    const komNr = normalizeKomNr(req.query.komNr);
 
-  if (!teamId) return res.status(400).json({ ok: false, error: 'Missing teamId' });
-  if (!komNr) return res.status(400).json({ ok: false, error: 'Missing komNr' });
+    if (!teamId)
+      return res.status(400).json({ ok: false, error: 'Missing teamId' });
+    if (!komNr)
+      return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
-  const index = await readAnlagenIndex();
-  const teamObj = (index.teams && index.teams[teamId] && typeof index.teams[teamId] === 'object')
-    ? index.teams[teamId]
-    : {};
+    const index = await readAnlagenIndex();
+    const teamObj =
+      index.teams &&
+      index.teams[teamId] &&
+      typeof index.teams[teamId] === 'object'
+        ? index.teams[teamId]
+        : {};
 
-  const rec = teamObj[komNr];
-  if (!rec) {
-    return res.status(404).json({ ok: false, error: 'Anlage not found' });
-  }
+    const rec = teamObj[komNr];
+    if (!rec) {
+      return res.status(404).json({ ok: false, error: 'Anlage not found' });
+    }
 
-  const archive = await readAnlagenArchive();
-  const teamArchive = (archive[teamId] && typeof archive[teamId] === 'object') ? archive[teamId] : {};
-  const m = teamArchive[komNr] || null;
+    const archive = await readAnlagenArchive();
+    const teamArchive =
+      archive[teamId] && typeof archive[teamId] === 'object'
+        ? archive[teamId]
+        : {};
+    const m = teamArchive[komNr] || null;
 
-  const operations = Object.entries(rec.byOperation || {})
-    .map(([key, hours]) => ({ key, hours: round1(hours) }))
-    .sort((a, b) => b.hours - a.hours);
+    const operations = Object.entries(rec.byOperation || {})
+      .map(([key, hours]) => ({ key, hours: round1(hours) }))
+      .sort((a, b) => b.hours - a.hours);
 
-  const users = Object.entries(rec.byUser || {})
-    .map(([username, hours]) => ({ username, hours: round1(hours) }))
-    .sort((a, b) => b.hours - a.hours);
-
-  return res.json({
-    ok: true,
-    teamId,
-    komNr,
-    totalHours: round1(rec.totalHours || 0),
-    lastActivity: rec.lastActivity || null,
-    operations,
-    users,
-    archived: !!(m && m.archived),
-    archivedAt: m?.archivedAt || null,
-    archivedBy: m?.archivedBy || null,
-    updatedAt: index.updatedAt || null,
-  });
-});
-
-// ---- Admin: archive/unarchive Anlage ----
-// POST /api/admin/anlagen-archive
-// body: { teamId, komNr, archived: true|false }
-app.post('/api/admin/anlagen-archive', requireAuth, requireAdmin, async (req, res) => {
-  const teamId = String(req.body?.teamId || req.user.teamId || '');
-  const komNr = normalizeKomNr(req.body?.komNr);
-  const archived = !!req.body?.archived;
-
-  if (!teamId) {
-    return res.status(400).json({ ok: false, error: 'Missing teamId' });
-  }
-
-  if (!komNr) {
-    return res.status(400).json({ ok: false, error: 'Missing komNr' });
-  }
-
-  try {
-    const meta = await setAnlagenArchiveState({
-      teamId,
-      komNr,
-      archived,
-      archivedBy: req.user.username,
-    });
+    const users = Object.entries(rec.byUser || {})
+      .map(([username, hours]) => ({ username, hours: round1(hours) }))
+      .sort((a, b) => b.hours - a.hours);
 
     return res.json({
       ok: true,
       teamId,
       komNr,
-      archived,
-      archivedAt: meta?.archivedAt || null,
-      archivedBy: meta?.archivedBy || null,
+      totalHours: round1(rec.totalHours || 0),
+      lastActivity: rec.lastActivity || null,
+      operations,
+      users,
+      archived: !!(m && m.archived),
+      archivedAt: m?.archivedAt || null,
+      archivedBy: m?.archivedBy || null,
+      updatedAt: index.updatedAt || null,
     });
-  } catch (err) {
-    console.error('Failed to persist anlagen archive state:', err);
-    return res.status(500).json({ ok: false, error: 'Could not persist archive state' });
   }
-});
+);
+
+// ---- Admin: archive/unarchive Anlage ----
+// POST /api/admin/anlagen-archive
+// body: { teamId, komNr, archived: true|false }
+app.post(
+  '/api/admin/anlagen-archive',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const teamId = String(req.body?.teamId || req.user.teamId || '');
+    const komNr = normalizeKomNr(req.body?.komNr);
+    const archived = !!req.body?.archived;
+
+    if (!teamId) {
+      return res.status(400).json({ ok: false, error: 'Missing teamId' });
+    }
+
+    if (!komNr) {
+      return res.status(400).json({ ok: false, error: 'Missing komNr' });
+    }
+
+    try {
+      const meta = await setAnlagenArchiveState({
+        teamId,
+        komNr,
+        archived,
+        archivedBy: req.user.username,
+      });
+
+      return res.json({
+        ok: true,
+        teamId,
+        komNr,
+        archived,
+        archivedAt: meta?.archivedAt || null,
+        archivedBy: meta?.archivedBy || null,
+      });
+    } catch (err) {
+      console.error('Failed to persist anlagen archive state:', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not persist archive state' });
+    }
+  }
+);
 
 // ---- Admin: rebuild Anlagen index  ----
 // POST /api/admin/anlagen-rebuild
-app.post('/api/admin/anlagen-rebuild', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const idx = await rebuildAnlagenIndex();
-    return res.json({ ok: true, updatedAt: idx.updatedAt || null });
-  } catch (e) {
-    console.error('Anlagen rebuild failed:', e);
-    return res.status(500).json({ ok: false, error: 'Rebuild failed' });
+app.post(
+  '/api/admin/anlagen-rebuild',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const idx = await rebuildAnlagenIndex();
+      return res.json({ ok: true, updatedAt: idx.updatedAt || null });
+    } catch (e) {
+      console.error('Anlagen rebuild failed:', e);
+      return res.status(500).json({ ok: false, error: 'Rebuild failed' });
+    }
   }
-});
+);
 
 // ---- Month transmission routes ----
 
@@ -4471,12 +4905,13 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
 
   let allLocks;
   try {
-  allLocks = await readWeekLocksFromDb();
+    allLocks = await readWeekLocksFromDb();
   } catch (e) {
-  console.error('Failed to read week locks from Postgres:', e);
-  return res
-    .status(500)
-    .json({ ok: false, error: 'Lock data unreadable. Please contact admin.' });
+    console.error('Failed to read week locks from Postgres:', e);
+    return res.status(500).json({
+      ok: false,
+      error: 'Lock data unreadable. Please contact admin.',
+    });
   }
 
   try {
@@ -4505,9 +4940,10 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
     }
   } catch (e) {
     console.error('Lock enforcement failed:', e);
-    return res
-      .status(500)
-      .json({ ok: false, error: 'Could not enforce locks. Submission rejected.' });
+    return res.status(500).json({
+      ok: false,
+      error: 'Could not enforce locks. Submission rejected.',
+    });
   }
 
   const monthNumber = payload.monthIndex + 1;
@@ -4551,36 +4987,44 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       .json({ ok: false, error: 'Could not save data on server' });
   }
 
-
   // Stamp Edit-Log aus Payload extrahieren und persistieren
-try {
-  const editLog = Array.isArray(payload.stampEditLog) ? payload.stampEditLog : [];
-  if (editLog.length > 0) {
-    for (const edit of editLog) {
-      await db.query(`
+  try {
+    const editLog = Array.isArray(payload.stampEditLog)
+      ? payload.stampEditLog
+      : [];
+    if (editLog.length > 0) {
+      for (const edit of editLog) {
+        await db.query(
+          `
         INSERT INTO stamp_edits
           (user_id, username, date_key, action, old_time, new_time,
            old_type, new_type, year, month_index)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      `, [
-        req.user.id, req.user.username,
-        edit.dateKey, edit.action,
-        edit.oldTime || null, edit.newTime || null,
-        edit.oldType || null, edit.newType || null,
-        payload.year, payload.monthIndex
-      ]);
+      `,
+          [
+            req.user.id,
+            req.user.username,
+            edit.dateKey,
+            edit.action,
+            edit.oldTime || null,
+            edit.newTime || null,
+            edit.oldType || null,
+            edit.newType || null,
+            payload.year,
+            payload.monthIndex,
+          ]
+        );
+      }
     }
+  } catch (err) {
+    console.error('Failed to save stamp edit log:', err);
+    // nicht fatal — Transmission trotzdem erfolgreich
   }
-} catch (err) {
-  console.error('Failed to save stamp edit log:', err);
-  // nicht fatal — Transmission trotzdem erfolgreich
-}
 
   const strictTeamId = String(req.user.teamId || '');
   const strictUsername = req.user.username;
   const strictYear = payload.year;
   const strictMonthIndex = payload.monthIndex;
-
 
   const anlagenIndexBackup = deepCloneJson(await readAnlagenIndex());
   const anlagenLedgerBackup = deepCloneJson(await readAnlagenLedger());
@@ -4672,16 +5116,19 @@ try {
     }
 
     try {
-  await writeAnlagenSnapshot(
-    strictUsername,
-    strictYear,
-    strictMonthIndex,
-    anlagenMonthSnapshotBackup,
-    strictTeamId || null
-    );
-   } catch (rollbackErr) {
-    console.error('Failed to restore anlagen month snapshot backup:', rollbackErr);
-}
+      await writeAnlagenSnapshot(
+        strictUsername,
+        strictYear,
+        strictMonthIndex,
+        anlagenMonthSnapshotBackup,
+        strictTeamId || null
+      );
+    } catch (rollbackErr) {
+      console.error(
+        'Failed to restore anlagen month snapshot backup:',
+        rollbackErr
+      );
+    }
 
     try {
       await deleteMonthSubmissionById(fileName);
@@ -4713,8 +5160,6 @@ try {
   });
 });
 
-
-
 // List all transmissions for the logged-in user
 app.get('/api/transmissions', requireAuth, async (req, res) => {
   try {
@@ -4726,10 +5171,11 @@ app.get('/api/transmissions', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('Failed to load transmissions:', err);
-    return res.status(500).json({ ok: false, error: 'Could not load transmissions' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not load transmissions' });
   }
 });
-
 
 // ---- Absenzen: user APIs ----
 
@@ -4743,7 +5189,9 @@ app.get('/api/absences', requireAuth, async (req, res) => {
     return res.json({ ok: true, absences });
   } catch (err) {
     console.error('Failed to load my absences', err);
-    return res.status(500).json({ ok: false, error: 'Could not load absences' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not load absences' });
   }
 });
 
@@ -4759,19 +5207,21 @@ app.post('/api/absences', requireAuth, async (req, res) => {
   const daysRaw = req.body?.days;
   const days = daysRaw === '' || daysRaw == null ? null : Number(daysRaw);
 
-    const hoursRaw = req.body?.hours;
-    const hours = hoursRaw === '' || hoursRaw == null ? null : Number(hoursRaw);
+  const hoursRaw = req.body?.hours;
+  const hours = hoursRaw === '' || hoursRaw == null ? null : Number(hoursRaw);
 
-    // Krank = automatisch accepted, kein Admin nötig
-    const isKrank = type === 'krank';
-    const now = new Date().toISOString();
+  // Krank = automatisch accepted, kein Admin nötig
+  const isKrank = type === 'krank';
+  const now = new Date().toISOString();
 
   if (!type) {
     return res.status(400).json({ ok: false, error: 'Missing type' });
   }
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-    return res.status(400).json({ ok: false, error: 'Invalid from/to (YYYY-MM-DD)' });
+    return res
+      .status(400)
+      .json({ ok: false, error: 'Invalid from/to (YYYY-MM-DD)' });
   }
 
   if (days != null && (!Number.isFinite(days) || days < 0)) {
@@ -4796,16 +5246,15 @@ app.post('/api/absences', requireAuth, async (req, res) => {
       days,
       hours,
       comment,
-      
+
       createdAt: new Date().toISOString(),
       createdBy: username,
-      
+
       cancelRequestedAt: null,
       cancelRequestedBy: null,
       status: isKrank ? 'accepted' : 'pending',
       decidedAt: isKrank ? now : null,
       decidedBy: isKrank ? 'system' : null,
-
     });
 
     return res.json({ ok: true, absence });
@@ -4838,7 +5287,9 @@ app.delete('/api/absences/:id', requireAuth, async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('Failed to delete absence', err);
-    return res.status(500).json({ ok: false, error: 'Could not delete absence' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not delete absence' });
   }
 });
 
@@ -4885,10 +5336,14 @@ app.post('/api/absences/:id/cancel', requireAuth, async (req, res) => {
       return res.json({ ok: true, absence: updated });
     }
 
-    return res.status(409).json({ ok: false, error: 'Cannot cancel in this state' });
+    return res
+      .status(409)
+      .json({ ok: false, error: 'Cannot cancel in this state' });
   } catch (err) {
     console.error('Failed to cancel absence', err);
-    return res.status(500).json({ ok: false, error: 'Could not cancel absence' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not cancel absence' });
   }
 });
 
@@ -4907,9 +5362,7 @@ app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
     const all = nested.flat();
 
     const filtered =
-      status === 'all'
-        ? all
-        : all.filter((a) => a && a.status === status);
+      status === 'all' ? all : all.filter((a) => a && a.status === status);
 
     filtered.sort((a, b) =>
       String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
@@ -4918,74 +5371,81 @@ app.get('/api/admin/absences', requireAuth, requireAdmin, async (req, res) => {
     return res.json({ ok: true, absences: filtered });
   } catch (err) {
     console.error('Failed to load admin absences', err);
-    return res.status(500).json({ ok: false, error: 'Could not load absences' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not load absences' });
   }
 });
 // POST /api/admin/absences/decision
 // body: { username, id, status: 'accepted'|'rejected' }
-app.post('/api/admin/absences/decision', requireAuth, requireAdmin, async (req, res) => {
-  const username = String(req.body?.username || '');
-  const id = String(req.body?.id || '');
-  const status = String(req.body?.status || '');
+app.post(
+  '/api/admin/absences/decision',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.body?.username || '');
+    const id = String(req.body?.id || '');
+    const status = String(req.body?.status || '');
 
-  try {
-    const targetUser = await findUserByUsername(username);
+    try {
+      const targetUser = await findUserByUsername(username);
 
-    if (!username || !targetUser) {
-      return res.status(400).json({ ok: false, error: 'Invalid username' });
-    }
+      if (!username || !targetUser) {
+        return res.status(400).json({ ok: false, error: 'Invalid username' });
+      }
 
-    if (!id) {
-      return res.status(400).json({ ok: false, error: 'Missing id' });
-    }
+      if (!id) {
+        return res.status(400).json({ ok: false, error: 'Missing id' });
+      }
 
-    const allowed = new Set(['accepted', 'rejected', 'cancelled']);
-    if (!allowed.has(status)) {
-      return res.status(400).json({ ok: false, error: 'Invalid status' });
-    }
+      const allowed = new Set(['accepted', 'rejected', 'cancelled']);
+      if (!allowed.has(status)) {
+        return res.status(400).json({ ok: false, error: 'Invalid status' });
+      }
 
-    const item = await findAbsenceByUserAndId(username, id);
-    if (!item) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
-    }
+      const item = await findAbsenceByUserAndId(username, id);
+      if (!item) {
+        return res.status(404).json({ ok: false, error: 'Not found' });
+      }
 
-    const previousStatus = item.status;
+      const previousStatus = item.status;
 
-    const updated = await updateAbsenceStatus({
-      username,
-      id,
-      status,
-      decidedAt: new Date().toISOString(),
-      decidedBy: req.user.username,
-      cancelRequestedAt: item.cancelRequestedAt || null,
-      cancelRequestedBy: item.cancelRequestedBy || null,
-    });
-
-    let vacationRestored = 0;
-
-    if (
-      status === 'cancelled' &&
-      (previousStatus === 'accepted' || previousStatus === 'cancel_requested')
-    ) {
-      vacationRestored = await restoreVacationDaysForCancelledAbsence({
+      const updated = await updateAbsenceStatus({
         username,
-        absence: updated,
-        updatedBy: req.user.username,
+        id,
+        status,
+        decidedAt: new Date().toISOString(),
+        decidedBy: req.user.username,
+        cancelRequestedAt: item.cancelRequestedAt || null,
+        cancelRequestedBy: item.cancelRequestedBy || null,
       });
 
-      if (vacationRestored > 0) {
-        console.log(
-          `Restored ${vacationRestored} vacation days for ${username} (absence ${id} cancelled)`
-        );
-      }
-    }
+      let vacationRestored = 0;
 
-    return res.json({ ok: true, absence: updated, vacationRestored });
-  } catch (err) {
-    console.error('Failed to decide absence', err);
-    return res.status(500).json({ ok: false, error: 'Decision failed' });
+      if (
+        status === 'cancelled' &&
+        (previousStatus === 'accepted' || previousStatus === 'cancel_requested')
+      ) {
+        vacationRestored = await restoreVacationDaysForCancelledAbsence({
+          username,
+          absence: updated,
+          updatedBy: req.user.username,
+        });
+
+        if (vacationRestored > 0) {
+          console.log(
+            `Restored ${vacationRestored} vacation days for ${username} (absence ${id} cancelled)`
+          );
+        }
+      }
+
+      return res.json({ ok: true, absence: updated, vacationRestored });
+    } catch (err) {
+      console.error('Failed to decide absence', err);
+      return res.status(500).json({ ok: false, error: 'Decision failed' });
+    }
   }
-});
+);
 // ---- Konten APIs ----
 
 // GET /api/konten/me
@@ -5027,68 +5487,135 @@ app.get('/api/admin/konten', requireAuth, requireAdmin, async (req, res) => {
 
 // POST /api/admin/konten/set
 // body: { username, ueZ1, ueZ2, ueZ3, vacationDays, vacationDaysPerYear }
-app.post('/api/admin/konten/set', requireAuth, requireAdmin, async (req, res) => {
-  const username = String(req.body?.username || '');
+app.post(
+  '/api/admin/konten/set',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.body?.username || '');
 
-  try {
-    const targetUser = await findUserByUsername(username);
+    try {
+      const targetUser = await findUserByUsername(username);
 
-    if (!username || !targetUser) {
-      return res.status(400).json({ ok: false, error: 'Invalid username' });
+      if (!username || !targetUser) {
+        return res.status(400).json({ ok: false, error: 'Invalid username' });
+      }
+
+      const konto = await updateKontenManualValues({
+        username,
+        values: req.body || {},
+        updatedBy: req.user.username,
+      });
+
+      return res.json({ ok: true, konto });
+    } catch (err) {
+      console.error('Failed to save admin konto', err);
+      return res.status(500).json({ ok: false, error: 'Could not save konto' });
     }
-
-    const konto = await updateKontenManualValues({
-      username,
-      values: req.body || {},
-      updatedBy: req.user.username,
-    });
-
-    return res.json({ ok: true, konto });
-  } catch (err) {
-    console.error('Failed to save admin konto', err);
-    return res.status(500).json({ ok: false, error: 'Could not save konto' });
   }
-});
+);
 
-      // ---- Admin: month overview (per user, month-specific) ----
+// ---- Admin: month overview (per user, month-specific) ----
 // ============================================================================
 // Admin month overview and day detail routes
 // ============================================================================
-app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res) => {
-  const year = Number(req.query.year);
-  const monthIndex = Number(req.query.monthIndex);
+app.get(
+  '/api/admin/month-overview',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const year = Number(req.query.year);
+    const monthIndex = Number(req.query.monthIndex);
 
-  let allLocks;
-  try {
-  allLocks = await readWeekLocksFromDb();
-  } catch (e) {
-  return res.status(500).json({ ok: false, error: e.message });
-  }
+    let allLocks;
+    try {
+      allLocks = await readWeekLocksFromDb();
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e.message });
+    }
 
-  if (
-    !Number.isInteger(year) ||
-    !Number.isInteger(monthIndex) ||
-    monthIndex < 0 ||
-    monthIndex > 11
-  ) {
-    return res.status(400).json({ ok: false, error: 'Invalid year or monthIndex' });
-  }
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(monthIndex) ||
+      monthIndex < 0 ||
+      monthIndex > 11
+    ) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Invalid year or monthIndex' });
+    }
 
-  try {
-    const monthLabel = makeMonthLabel(year, monthIndex);
-    const users = await listUsersFromDb();
+    try {
+      const monthLabel = makeMonthLabel(year, monthIndex);
+      const users = await listUsersFromDb();
 
-    const rows = await Promise.all(
-      users.map(async (user) => {
-        const team = TEAMS.find((t) => t.id === user.teamId) || null;
-        const latestOverall = await getLatestTransmissionMeta(user.username);
-        const monthRecord = await getLatestMonthSubmissionRecord(
-          user.username,
-          year,
-          monthIndex
-        );
+      const rows = await Promise.all(
+        users.map(async (user) => {
+          const team = TEAMS.find((t) => t.id === user.teamId) || null;
+          const latestOverall = await getLatestTransmissionMeta(user.username);
+          const monthRecord = await getLatestMonthSubmissionRecord(
+            user.username,
+            year,
+            monthIndex
+          );
 
-        if (!monthRecord || !monthRecord.submission) {
+          if (!monthRecord || !monthRecord.submission) {
+            return {
+              userId: user.id,
+              username: user.username,
+              role: user.role,
+              teamId: user.teamId || null,
+              teamName: team ? team.name : null,
+              lastSentAt: latestOverall ? latestOverall.sentAt : null,
+              month: {
+                year,
+                monthIndex,
+                monthLabel,
+                transmitted: false,
+                sentAt: null,
+                monthTotalHours: null,
+                weeks: [],
+              },
+            };
+          }
+
+          const submission = monthRecord.submission;
+          const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
+          const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
+
+          const storedAbsences = await listUserAbsencesFromDb(user.username);
+
+          const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
+            storedAbsences,
+            monthStartKey,
+            monthEndKey
+          );
+
+          const overview = buildMonthOverviewFromSubmission(
+            submission,
+            year,
+            monthIndex,
+            acceptedAbsenceDays
+          );
+
+          const userLocks =
+            allLocks[user.username] &&
+            typeof allLocks[user.username] === 'object'
+              ? allLocks[user.username]
+              : {};
+
+          const weeksWithLocks = overview.weeks.map((w) => {
+            const wk = weekKey(w.weekYear, w.week);
+            const meta = getLockMeta(userLocks, wk);
+
+            return {
+              ...w,
+              locked: meta.locked,
+              lockedAt: meta.lockedAt,
+              lockedBy: meta.lockedBy,
+            };
+          });
+
           return {
             userId: user.id,
             username: user.username,
@@ -5100,177 +5627,156 @@ app.get('/api/admin/month-overview', requireAuth, requireAdmin, async (req, res)
               year,
               monthIndex,
               monthLabel,
-              transmitted: false,
-              sentAt: null,
-              monthTotalHours: null,
-              weeks: [],
+              transmitted: true,
+              sentAt: monthRecord.meta.sentAt,
+              monthTotalHours: overview.monthTotalHours,
+              weeks: weeksWithLocks,
             },
           };
-        }
+        })
+      );
 
-        const submission = monthRecord.submission;
-        const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
-        const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
-
-        const storedAbsences = await listUserAbsencesFromDb(user.username);
-
-        const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-          storedAbsences,
-          monthStartKey,
-          monthEndKey
-        );
-
-        const overview = buildMonthOverviewFromSubmission(
-          submission,
-          year,
-          monthIndex,
-          acceptedAbsenceDays
-        );
-
-        const userLocks =
-          allLocks[user.username] && typeof allLocks[user.username] === 'object'
-            ? allLocks[user.username]
-            : {};
-
-        const weeksWithLocks = overview.weeks.map((w) => {
-          const wk = weekKey(w.weekYear, w.week);
-          const meta = getLockMeta(userLocks, wk);
-
-          return {
-            ...w,
-            locked: meta.locked,
-            lockedAt: meta.lockedAt,
-            lockedBy: meta.lockedBy,
-          };
-        });
-
-        return {
-          userId: user.id,
-          username: user.username,
-          role: user.role,
-          teamId: user.teamId || null,
-          teamName: team ? team.name : null,
-          lastSentAt: latestOverall ? latestOverall.sentAt : null,
-          month: {
-            year,
-            monthIndex,
-            monthLabel,
-            transmitted: true,
-            sentAt: monthRecord.meta.sentAt,
-            monthTotalHours: overview.monthTotalHours,
-            weeks: weeksWithLocks,
-          },
-        };
-      })
-    );
-
-    return res.json({
-      ok: true,
-      month: { year, monthIndex, monthLabel },
-      users: rows,
-    });
-  } catch (err) {
-    console.error('Failed to build admin month overview', err);
-    return res.status(500).json({ ok: false, error: 'Could not build month overview' });
+      return res.json({
+        ok: true,
+        month: { year, monthIndex, monthLabel },
+        users: rows,
+      });
+    } catch (err) {
+      console.error('Failed to build admin month overview', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not build month overview' });
+    }
   }
-});
-
+);
 
 // ---- Admin: lock/unlock a week ----
 // POST /api/admin/week-lock
 // body: { username, weekYear, week, locked?: boolean }
-app.post('/api/admin/week-lock', requireAuth, requireAdmin, async (req, res) => {
-  const username = String(req.body?.username || '');
-  const weekYear = Number(req.body?.weekYear);
-  const week = Number(req.body?.week);
-  const lockedParam = req.body?.locked;
+app.post(
+  '/api/admin/week-lock',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.body?.username || '');
+    const weekYear = Number(req.body?.weekYear);
+    const week = Number(req.body?.week);
+    const lockedParam = req.body?.locked;
 
-  try {
-    const targetUser = await findUserByUsername(username);
+    try {
+      const targetUser = await findUserByUsername(username);
 
-    if (!username || !targetUser) {
-      return res.status(400).json({ ok: false, error: 'Invalid username' });
-    }
+      if (!username || !targetUser) {
+        return res.status(400).json({ ok: false, error: 'Invalid username' });
+      }
 
-    if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
-      return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
-    }
+      if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
+        return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
+      }
 
-    if (!Number.isInteger(week) || week < 1 || week > 53) {
-      return res.status(400).json({ ok: false, error: 'Invalid week' });
-    }
+      if (!Number.isInteger(week) || week < 1 || week > 53) {
+        return res.status(400).json({ ok: false, error: 'Invalid week' });
+      }
 
-    const userLocks = await readUserWeekLocksFromDb(username);
-    const wk = weekKey(weekYear, week);
-    const currentMeta = getLockMeta(userLocks, wk);
-    const nextLocked =
-      typeof lockedParam === 'boolean' ? lockedParam : !currentMeta.locked;
+      const userLocks = await readUserWeekLocksFromDb(username);
+      const wk = weekKey(weekYear, week);
+      const currentMeta = getLockMeta(userLocks, wk);
+      const nextLocked =
+        typeof lockedParam === 'boolean' ? lockedParam : !currentMeta.locked;
 
-    let finalMeta = null;
+      let finalMeta = null;
 
-    if (nextLocked) {
-      finalMeta = await setWeekLockState({
-        userId: targetUser.id,
-        username: targetUser.username,
+      if (nextLocked) {
+        finalMeta = await setWeekLockState({
+          userId: targetUser.id,
+          username: targetUser.username,
+          weekYear,
+          week,
+          lockedBy: req.user.username,
+        });
+      } else {
+        await clearWeekLockState({
+          userId: targetUser.id,
+          weekYear,
+          week,
+        });
+      }
+
+      return res.json({
+        ok: true,
+        username,
         weekYear,
         week,
-        lockedBy: req.user.username,
+        weekKey: wk,
+        locked: nextLocked,
+        lockedAt: finalMeta?.lockedAt || null,
+        lockedBy: finalMeta?.lockedBy || null,
       });
-    } else {
-      await clearWeekLockState({
-        userId: targetUser.id,
-        weekYear,
-        week,
-      });
+    } catch (err) {
+      console.error('Failed to update week lock', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not update lock state' });
     }
-
-    return res.json({
-      ok: true,
-      username,
-      weekYear,
-      week,
-      weekKey: wk,
-      locked: nextLocked,
-      lockedAt: finalMeta?.lockedAt || null,
-      lockedBy: finalMeta?.lockedBy || null,
-    });
-  } catch (err) {
-    console.error('Failed to update week lock', err);
-    return res.status(500).json({ ok: false, error: 'Could not update lock state' });
   }
-});
+);
 
-// GET /api/week-locks/me...... für user panel 
+// GET /api/week-locks/me...... für user panel
 app.get('/api/week-locks/me', requireAuth, async (req, res) => {
   try {
     const locks = await readUserWeekLocksFromDb(req.user.username);
     return res.json({ ok: true, locks });
   } catch (err) {
     console.error('Failed to load week locks', err);
-    return res.status(500).json({ ok: false, error: 'Could not load week locks' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Could not load week locks' });
   }
 });
-
 
 // POST /api/draft/sync — Client speichert Draft
 app.post('/api/draft/sync', requireAuth, async (req, res) => {
   try {
-    const { data } = req.body;
+    const { data, basedOn } = req.body;
     if (!data || typeof data !== 'object') {
       return res.status(400).json({ ok: false, error: 'Kein data-Objekt' });
     }
 
-    await db.query(`
+    // Conflict-Check: wenn ein anderes Gerät inzwischen neuere Daten geschrieben hat
+    if (basedOn) {
+      const current = await db.query(
+        'SELECT updated_at FROM user_drafts WHERE user_id = $1',
+        [req.user.id]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({ ok: false, conflict: true });
+      }
+
+      if (current.rows.length > 0) {
+        const serverTime = new Date(current.rows[0].updated_at).getTime();
+        const clientBase = new Date(basedOn).getTime();
+        if (serverTime > clientBase) {
+          return res.status(409).json({ ok: false, conflict: true });
+        }
+      }
+    }
+
+    await db.query(
+      `
       INSERT INTO user_drafts (user_id, username, data, updated_at)
       VALUES ($1, $2, $3, NOW())
       ON CONFLICT (user_id) DO UPDATE
         SET data = $3, updated_at = NOW()
-    `, [req.user.id, req.user.username, JSON.stringify(data)]);
+    `,
+      [req.user.id, req.user.username, JSON.stringify(data)]
+    );
 
     return res.json({ ok: true });
   } catch (err) {
     console.error('Draft sync error', err);
-    return res.status(500).json({ ok: false, error: 'Draft konnte nicht gespeichert werden' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Draft konnte nicht gespeichert werden' });
   }
 });
 
@@ -5290,190 +5796,227 @@ app.get('/api/draft/load', requireAuth, async (req, res) => {
     return res.json({
       ok: true,
       draft: row.data,
-      updatedAt: row.updated_at instanceof Date
-        ? row.updated_at.toISOString()
-        : String(row.updated_at)
+      updatedAt:
+        row.updated_at instanceof Date
+          ? row.updated_at.toISOString()
+          : String(row.updated_at),
     });
   } catch (err) {
     console.error('Draft load error', err);
-    return res.status(500).json({ ok: false, error: 'Draft konnte nicht geladen werden' });
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Draft konnte nicht geladen werden' });
   }
 });
-
 
 // ---- Admin: day details (fetch on demand) ----
 // GET /api/admin/day-detail?username=demo&year=2025&monthIndex=11&date=2025-12-01
 // Detailed admin inspection for a single transmitted day.
-app.get('/api/admin/day-detail', requireAuth, requireAdmin, async (req, res) => {
-  const username = String(req.query.username || '');
-  const year = Number(req.query.year);
-  const monthIndex = Number(req.query.monthIndex);
-  const dateKey = String(req.query.date || '').slice(0, 10);
+app.get(
+  '/api/admin/day-detail',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.query.username || '');
+    const year = Number(req.query.year);
+    const monthIndex = Number(req.query.monthIndex);
+    const dateKey = String(req.query.date || '').slice(0, 10);
 
-  if (
-    !username ||
-    !Number.isInteger(year) ||
-    !Number.isInteger(monthIndex) ||
-    monthIndex < 0 ||
-    monthIndex > 11
-  ) {
-    return res
-      .status(400)
-      .json({ ok: false, error: 'Invalid username/year/monthIndex' });
-  }
-
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-    return res.status(400).json({ ok: false, error: 'Invalid date (expected YYYY-MM-DD)' });
-  }
-
-  try {
-    const user = await findUserByUsername(username);
-    if (!user) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
+    if (
+      !username ||
+      !Number.isInteger(year) ||
+      !Number.isInteger(monthIndex) ||
+      monthIndex < 0 ||
+      monthIndex > 11
+    ) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Invalid username/year/monthIndex' });
     }
 
-    const monthRecord = await getLatestMonthSubmissionRecord(username, year, monthIndex);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Invalid date (expected YYYY-MM-DD)' });
+    }
 
-    if (!monthRecord || !monthRecord.submission) {
+    try {
+      const user = await findUserByUsername(username);
+      if (!user) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+
+      const monthRecord = await getLatestMonthSubmissionRecord(
+        username,
+        year,
+        monthIndex
+      );
+
+      if (!monthRecord || !monthRecord.submission) {
+        return res.json({
+          ok: true,
+          username,
+          dateKey,
+          transmitted: false,
+          error: null,
+        });
+      }
+
+      const submission = monthRecord.submission;
+      const dayData =
+        submission.days && submission.days[dateKey]
+          ? submission.days[dateKey]
+          : null;
+
+      const storedAbsences = await listUserAbsencesFromDb(username);
+      const acceptedAbsence = findAcceptedAbsenceForDate(
+        storedAbsences.length ? storedAbsences : submission.absences,
+        dateKey
+      );
+
+      const pikettEntries = Array.isArray(submission.pikett)
+        ? submission.pikett.filter((p) => p && p.date === dateKey)
+        : [];
+
+      const pikettHours = pikettEntries.reduce(
+        (sum, p) => sum + toNumber(p.hours),
+        0
+      );
+      const stamps = Array.isArray(dayData?.stamps) ? dayData.stamps : [];
+      const stampHours = computeNetWorkingHoursFromStamps(stamps);
+
+      const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
+      const specialEntries = Array.isArray(dayData?.specialEntries)
+        ? dayData.specialEntries
+        : [];
+      const flags =
+        dayData && dayData.flags && typeof dayData.flags === 'object'
+          ? dayData.flags
+          : {};
+
+      const mealAllowance =
+        dayData &&
+        dayData.mealAllowance &&
+        typeof dayData.mealAllowance === 'object'
+          ? dayData.mealAllowance
+          : { 1: false, 2: false, 3: false };
+
+      let komHours = 0;
+      komEntries.forEach((e) => {
+        if (!e || !e.hours || typeof e.hours !== 'object') return;
+        Object.values(e.hours).forEach((v) => {
+          komHours += toNumber(v);
+        });
+      });
+
+      let specialHours = 0;
+      specialEntries.forEach((s) => {
+        specialHours += toNumber(s?.hours);
+      });
+
+      const dayHoursObj =
+        dayData && dayData.dayHours && typeof dayData.dayHours === 'object'
+          ? dayData.dayHours
+          : {};
+
+      const schulung = toNumber(dayHoursObj.schulung);
+      const sitzungKurs = toNumber(dayHoursObj.sitzungKurs);
+      const arztKrank = toNumber(dayHoursObj.arztKrank);
+
+      const dayHoursTotal = schulung + sitzungKurs + arztKrank;
+      const nonPikettTotal = komHours + specialHours + dayHoursTotal;
+      const totalHours =
+        (stamps.length > 0 ? stampHours : nonPikettTotal) + pikettHours;
+
+      const ferien = !!flags.ferien;
+      let status = 'missing';
+      if (ferien) status = 'ferien';
+      else if (acceptedAbsence) status = 'absence';
+      else if (totalHours > 0) status = 'ok';
+
       return res.json({
         ok: true,
         username,
+        transmitted: true,
+        month: {
+          year,
+          monthIndex,
+          monthLabel: submission.monthLabel || makeMonthLabel(year, monthIndex),
+          sentAt: monthRecord.meta.sentAt,
+        },
         dateKey,
-        transmitted: false,
-        error: null,
+        status,
+        flags,
+        mealAllowance,
+        acceptedAbsence: acceptedAbsence
+          ? {
+              type: acceptedAbsence.type || '',
+              from: acceptedAbsence.from,
+              to: acceptedAbsence.to,
+              comment: acceptedAbsence.comment || '',
+            }
+          : null,
+        totals: {
+          komHours: Math.round(komHours * 10) / 10,
+          specialHours: Math.round(specialHours * 10) / 10,
+          dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
+          pikettHours: Math.round(pikettHours * 10) / 10,
+          totalHours: Math.round((nonPikettTotal + pikettHours) * 10) / 10,
+        },
+        breakdown: {
+          dayHours: { schulung, sitzungKurs, arztKrank },
+        },
+        entries: komEntries,
+        specialEntries,
+        pikettEntries,
+        stamps,
+        stampHours: Math.round(stampHours * 10) / 10,
       });
+    } catch (err) {
+      console.error('Failed to build admin day detail', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not load day detail' });
     }
-
-    const submission = monthRecord.submission;
-    const dayData = submission.days && submission.days[dateKey] ? submission.days[dateKey] : null;
-
-    const storedAbsences = await listUserAbsencesFromDb(username);
-    const acceptedAbsence = findAcceptedAbsenceForDate(
-      storedAbsences.length ? storedAbsences : submission.absences,
-      dateKey
-    );
-
-    const pikettEntries = Array.isArray(submission.pikett)
-      ? submission.pikett.filter((p) => p && p.date === dateKey)
-      : [];
-
-    const pikettHours = pikettEntries.reduce((sum, p) => sum + toNumber(p.hours), 0);
-    const stamps = Array.isArray(dayData?.stamps) ? dayData.stamps : [];
-    const stampHours = computeNetWorkingHoursFromStamps(stamps);
-
-    const komEntries = Array.isArray(dayData?.entries) ? dayData.entries : [];
-    const specialEntries = Array.isArray(dayData?.specialEntries) ? dayData.specialEntries : [];
-    const flags =
-      dayData && dayData.flags && typeof dayData.flags === 'object'
-        ? dayData.flags
-        : {};
-
-    const mealAllowance =
-      dayData && dayData.mealAllowance && typeof dayData.mealAllowance === 'object'
-        ? dayData.mealAllowance
-        : { '1': false, '2': false, '3': false };
-
-    let komHours = 0;
-    komEntries.forEach((e) => {
-      if (!e || !e.hours || typeof e.hours !== 'object') return;
-      Object.values(e.hours).forEach((v) => {
-        komHours += toNumber(v);
-      });
-    });
-
-    let specialHours = 0;
-    specialEntries.forEach((s) => {
-      specialHours += toNumber(s?.hours);
-    });
-
-    const dayHoursObj =
-      dayData && dayData.dayHours && typeof dayData.dayHours === 'object'
-        ? dayData.dayHours
-        : {};
-
-    const schulung = toNumber(dayHoursObj.schulung);
-    const sitzungKurs = toNumber(dayHoursObj.sitzungKurs);
-    const arztKrank = toNumber(dayHoursObj.arztKrank);
-
-    const dayHoursTotal = schulung + sitzungKurs + arztKrank;
-    const nonPikettTotal = komHours + specialHours + dayHoursTotal;
-    const totalHours = (stamps.length > 0 ? stampHours : nonPikettTotal) + pikettHours;
-
-    const ferien = !!flags.ferien;
-    let status = 'missing';
-    if (ferien) status = 'ferien';
-    else if (acceptedAbsence) status = 'absence';
-    else if (totalHours > 0) status = 'ok';
-
-    return res.json({
-      ok: true,
-      username,
-      transmitted: true,
-      month: {
-        year,
-        monthIndex,
-        monthLabel: submission.monthLabel || makeMonthLabel(year, monthIndex),
-        sentAt: monthRecord.meta.sentAt,
-      },
-      dateKey,
-      status,
-      flags,
-      mealAllowance,
-      acceptedAbsence: acceptedAbsence
-        ? {
-            type: acceptedAbsence.type || '',
-            from: acceptedAbsence.from,
-            to: acceptedAbsence.to,
-            comment: acceptedAbsence.comment || '',
-          }
-        : null,
-      totals: {
-       komHours: Math.round(komHours * 10) / 10,
-        specialHours: Math.round(specialHours * 10) / 10,
-        dayHoursTotal: Math.round(dayHoursTotal * 10) / 10,
-        pikettHours: Math.round(pikettHours * 10) / 10,
-        totalHours: Math.round((nonPikettTotal + pikettHours) * 10) / 10, 
-      },
-      breakdown: {
-        dayHours: { schulung, sitzungKurs, arztKrank },
-      },
-      entries: komEntries,
-      specialEntries,
-      pikettEntries,
-      stamps,
-      stampHours: Math.round(stampHours * 10) / 10,
-    });
-  } catch (err) {
-    console.error('Failed to build admin day detail', err);
-    return res.status(500).json({ ok: false, error: 'Could not load day detail' });
   }
-});
+);
 
 // ============================================================================
 // Payroll helpers and routes
 // ============================================================================
-app.get('/api/admin/payroll-users', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const teamId = String(req.user.teamId || '');
-    const users = await listUsersFromDb({ role: 'user', teamId: teamId || null });
+app.get(
+  '/api/admin/payroll-users',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const teamId = String(req.user.teamId || '');
+      const users = await listUsersFromDb({
+        role: 'user',
+        teamId: teamId || null,
+      });
 
-    return res.json({
-      ok: true,
-      users: users.map((u) => ({
-        id: u.id,
-        username: u.username,
-        displayName: u.username,
-      })),
-    });
-  } catch (err) {
-    console.error('Failed to load payroll users', err);
-    return res.status(500).json({ ok: false, error: 'Could not load payroll users' });
+      return res.json({
+        ok: true,
+        users: users.map((u) => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.username,
+        })),
+      });
+    } catch (err) {
+      console.error('Failed to load payroll users', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not load payroll users' });
+    }
   }
-});
-
+);
 
 function getPayrollAbsenceTypeLabel(type) {
-  const key = String(type || '').trim().toLowerCase();
+  const key = String(type || '')
+    .trim()
+    .toLowerCase();
 
   const map = {
     ferien: 'Ferien',
@@ -5484,7 +6027,10 @@ function getPayrollAbsenceTypeLabel(type) {
     sonstiges: 'Sonstiges',
   };
 
-  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Abwesenheit');
+  return (
+    map[key] ||
+    (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Abwesenheit')
+  );
 }
 
 function isWeekdayDateKey(dateKey) {
@@ -5530,14 +6076,14 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const auditRowMap = new Map();
 
   const totals = {
-  praesenzStunden: 0,
-  morgenessenCount: 0,
-  mittagessenCount: 0,
-  abendessenCount: 0,
-  schmutzzulageCount: 0,
-  nebenauslagenCount: 0,
-  pikettHours: 0,
-  ueZ3Hours: 0,
+    praesenzStunden: 0,
+    morgenessenCount: 0,
+    mittagessenCount: 0,
+    abendessenCount: 0,
+    schmutzzulageCount: 0,
+    nebenauslagenCount: 0,
+    pikettHours: 0,
+    ueZ3Hours: 0,
   };
 
   const overtime = {
@@ -5611,20 +6157,24 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
 
       // Präsenzstunden aus Stamps
       if (Array.isArray(dayData.stamps) && dayData.stamps.length > 0) {
-        row.praesenzStunden += num(computeNetWorkingHoursFromStamps(dayData.stamps));
+        row.praesenzStunden += num(
+          computeNetWorkingHoursFromStamps(dayData.stamps)
+        );
       }
 
       const meal = dayData.mealAllowance || {};
-        if (meal['1']) row.morgenessen = true;
-        if (meal['2']) row.mittagessen = true;
-        if (meal['3']) row.abendessen = true;
+      if (meal['1']) row.morgenessen = true;
+      if (meal['2']) row.mittagessen = true;
+      if (meal['3']) row.abendessen = true;
 
-        const flags = dayData.flags || {};
-        if (flags.schmutzzulage) row.schmutzzulage = true;
-        if (flags.nebenauslagen) row.nebenauslagen = true;
+      const flags = dayData.flags || {};
+      if (flags.schmutzzulage) row.schmutzzulage = true;
+      if (flags.nebenauslagen) row.nebenauslagen = true;
     }
 
-    const pikettList = Array.isArray(submission?.pikett) ? submission.pikett : [];
+    const pikettList = Array.isArray(submission?.pikett)
+      ? submission.pikett
+      : [];
     for (const entry of pikettList) {
       const dateKey = String(entry?.date || '').slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
@@ -5637,7 +6187,9 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       else row.pikettHours += h;
     }
 
-    const absences = Array.isArray(submission?.absences) ? submission.absences : [];
+    const absences = Array.isArray(submission?.absences)
+      ? submission.absences
+      : [];
     for (const abs of absences) {
       const id =
         abs && abs.id
@@ -5656,11 +6208,19 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   }
 
   for (const abs of absencesById.values()) {
-    const type = String(abs?.type || '').trim().toLowerCase();
-    const status = String(abs?.status || '').trim().toLowerCase();
+    const type = String(abs?.type || '')
+      .trim()
+      .toLowerCase();
+    const status = String(abs?.status || '')
+      .trim()
+      .toLowerCase();
 
     if (type === 'ferien' && status === 'accepted') {
-      totals.ferienDays += computeAbsenceDaysInPeriod(abs, periodStart, periodEnd);
+      totals.ferienDays += computeAbsenceDaysInPeriod(
+        abs,
+        periodStart,
+        periodEnd
+      );
     }
 
     if (status !== 'accepted') continue;
@@ -5705,9 +6265,12 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     periodStart > selectedYearStart ? periodStart : selectedYearStart;
 
   const dayBeforeVorarbeitPeriodStart = new Date(vorarbeitPeriodStart);
-  dayBeforeVorarbeitPeriodStart.setDate(dayBeforeVorarbeitPeriodStart.getDate() - 1);
+  dayBeforeVorarbeitPeriodStart.setDate(
+    dayBeforeVorarbeitPeriodStart.getDate() - 1
+  );
 
-  const hasPriorVorarbeitWindow = dayBeforeVorarbeitPeriodStart >= selectedYearStart;
+  const hasPriorVorarbeitWindow =
+    dayBeforeVorarbeitPeriodStart >= selectedYearStart;
   const priorVorarbeitEndKey = hasPriorVorarbeitWindow
     ? formatDateKey(dayBeforeVorarbeitPeriodStart)
     : null;
@@ -5729,7 +6292,6 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       toKey,
       user.id
     );
-
 
     ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
 
@@ -5787,9 +6349,9 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
-
-    // Absenzen direkt aus DB laden
-    const dbAbsResult = await db.query(`
+  // Absenzen direkt aus DB laden
+  const dbAbsResult = await db.query(
+    `
       SELECT type, from_date, to_date, days, hours
       FROM absences
       WHERE username = $1
@@ -5797,19 +6359,25 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
         AND to_date >= $2
         AND from_date <= $3
       ORDER BY from_date ASC
-    `, [user.username, fromKey, toKey]);
+    `,
+    [user.username, fromKey, toKey]
+  );
 
-    const absencesByType = {};
-    for (const row of dbAbsResult.rows) {
-      const type = String(row.type || '').toLowerCase();
-      if (!absencesByType[type]) absencesByType[type] = { days: 0, hours: 0 };
-      const days = computeAbsenceDaysInPeriod(
-        { from: row.from_date, to: row.to_date, days: row.days },
-        periodStart, periodEnd
+  const absencesByType = {};
+  for (const row of dbAbsResult.rows) {
+    const type = String(row.type || '').toLowerCase();
+    if (!absencesByType[type]) absencesByType[type] = { days: 0, hours: 0 };
+    const days = computeAbsenceDaysInPeriod(
+      { from: row.from_date, to: row.to_date, days: row.days },
+      periodStart,
+      periodEnd
+    );
+    absencesByType[type].days = round1(absencesByType[type].days + days);
+    if (row.hours)
+      absencesByType[type].hours = round1(
+        absencesByType[type].hours + toNumber(row.hours)
       );
-      absencesByType[type].days = round1(absencesByType[type].days + days);
-      if (row.hours) absencesByType[type].hours = round1(absencesByType[type].hours + toNumber(row.hours));
-    }
+  }
 
   return {
     username: user.username,
@@ -5820,7 +6388,7 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       missingMonths,
     },
     totals,
-    absencesByType, 
+    absencesByType,
     overtime: {
       ueZ1Raw: overtime.ueZ1Raw,
       vorarbeitApplied: vorarbeitAppliedInPeriod,
@@ -5838,148 +6406,188 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   };
 }
 
-app.get('/api/admin/payroll-period', requireAuth, requireAdmin, async (req, res) => {
-  const fromRaw = String(req.query?.from || '').slice(0, 10);
-  const toRaw = String(req.query?.to || '').slice(0, 10);
+app.get(
+  '/api/admin/payroll-period',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const fromRaw = String(req.query?.from || '').slice(0, 10);
+    const toRaw = String(req.query?.to || '').slice(0, 10);
 
-  const fromDate = parseIsoDateOnly(fromRaw);
-  const toDate = parseIsoDateOnly(toRaw);
+    const fromDate = parseIsoDateOnly(fromRaw);
+    const toDate = parseIsoDateOnly(toRaw);
 
-  if (!fromDate || !toDate) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
-    });
-  }
-
-  const periodStart = fromDate <= toDate ? fromDate : toDate;
-  const periodEnd = fromDate <= toDate ? toDate : fromDate;
-  const fromKey = formatDateKey(periodStart);
-  const toKey = formatDateKey(periodEnd);
-  const teamId = String(req.user.teamId || '');
-
-  try {
-    const users = await listUsersFromDb({ role: 'user', teamId: teamId || null });
-    const rows = await Promise.all(
-      users.map((user) => buildPayrollPeriodDataForUser(user, periodStart, periodEnd))
-    );
-
-    const summary = {
-      usersCount: rows.length,
-      completeUsers: rows.filter((r) => r.coverage.missingMonths.length === 0).length,
-      incompleteUsers: rows.filter((r) => r.coverage.missingMonths.length > 0).length,
-    };
-
-    return res.json({
-      ok: true,
-      period: {
-        from: fromKey,
-        to: toKey,
-      },
-      summary,
-      rows,
-    });
-  } catch (err) {
-    console.error('Failed to build payroll period', err);
-    return res.status(500).json({ ok: false, error: 'Could not build payroll period' });
-  }
-});
-
-
-app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, res) => {
-  const username = String(req.query?.username || '').trim();
-  const fromRaw = String(req.query?.from || '').slice(0, 10);
-  const toRaw = String(req.query?.to || '').slice(0, 10);
-
-  if (!username) {
-    return res.status(400).json({ ok: false, error: 'Benutzername fehlt.' });
-  }
-
-  const fromDate = parseIsoDateOnly(fromRaw);
-  const toDate = parseIsoDateOnly(toRaw);
-
-  if (!fromDate || !toDate) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
-    });
-  }
-
-  const periodStart = fromDate <= toDate ? fromDate : toDate;
-  const periodEnd = fromDate <= toDate ? toDate : fromDate;
-  const teamId = String(req.user.teamId || '');
-
-  try {
-    const targetUser = await findUserByUsername(username);
-
-    if (!targetUser || targetUser.role !== 'user' || (teamId && targetUser.teamId !== teamId)) {
-      return res.status(404).json({
+    if (!fromDate || !toDate) {
+      return res.status(400).json({
         ok: false,
-        error: 'Mitarbeiter wurde nicht gefunden.',
+        error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
       });
     }
 
-    const row = await buildPayrollPeriodDataForUser(targetUser, periodStart, periodEnd);
+    const periodStart = fromDate <= toDate ? fromDate : toDate;
+    const periodEnd = fromDate <= toDate ? toDate : fromDate;
+    const fromKey = formatDateKey(periodStart);
+    const toKey = formatDateKey(periodEnd);
+    const teamId = String(req.user.teamId || '');
 
-    const fmtHours = (v) => `${(Number(v) || 0).toFixed(1).replace('.', ',')} h`;
-    const fmtSignedHours = (v) => {
-      const n = Number(v) || 0;
-      const abs = Math.abs(n).toFixed(1).replace('.', ',');
-      if (n > 0) return `+${abs} h`;
-      if (n < 0) return `-${abs} h`;
-      return '0,0 h';
-    };
-    const fmtDays = (v) => `${String(Number(v) || 0).replace('.', ',')} Tage`;
-    const fmtCount = (v) => String(Math.round(Number(v) || 0));
+    try {
+      const users = await listUsersFromDb({
+        role: 'user',
+        teamId: teamId || null,
+      });
+      const rows = await Promise.all(
+        users.map((user) =>
+          buildPayrollPeriodDataForUser(user, periodStart, periodEnd)
+        )
+      );
 
-    const safeUser = String(targetUser.username).replace(/[^a-zA-Z0-9_-]+/g, '_');
-    const filename = `Lohnabrechnung_${safeUser}_${formatDateKey(periodStart)}_${formatDateKey(periodEnd)}.pdf`;
+      const summary = {
+        usersCount: rows.length,
+        completeUsers: rows.filter((r) => r.coverage.missingMonths.length === 0)
+          .length,
+        incompleteUsers: rows.filter((r) => r.coverage.missingMonths.length > 0)
+          .length,
+      };
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.json({
+        ok: true,
+        period: {
+          from: fromKey,
+          to: toKey,
+        },
+        summary,
+        rows,
+      });
+    } catch (err) {
+      console.error('Failed to build payroll period', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not build payroll period' });
+    }
+  }
+);
 
-    const doc = new PDFDocument({
-      margin: 42,
-      size: 'A4',
-      info: {
-        Title: `Lohnabrechnung ${targetUser.username} ${formatDateKey(periodStart)}-${formatDateKey(periodEnd)}`,
-        Author: 'Hours App',
-      },
-    });
+app.get(
+  '/api/admin/payroll-export-pdf',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.query?.username || '').trim();
+    const fromRaw = String(req.query?.from || '').slice(0, 10);
+    const toRaw = String(req.query?.to || '').slice(0, 10);
 
-    doc.pipe(res);
+    if (!username) {
+      return res.status(400).json({ ok: false, error: 'Benutzername fehlt.' });
+    }
 
-    function ensurePdfSpace(height = 24) {
-      if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
-        doc.addPage();
+    const fromDate = parseIsoDateOnly(fromRaw);
+    const toDate = parseIsoDateOnly(toRaw);
+
+    if (!fromDate || !toDate) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Ungültiger Zeitraum. Bitte "von" und "bis" korrekt angeben.',
+      });
+    }
+
+    const periodStart = fromDate <= toDate ? fromDate : toDate;
+    const periodEnd = fromDate <= toDate ? toDate : fromDate;
+    const teamId = String(req.user.teamId || '');
+
+    try {
+      const targetUser = await findUserByUsername(username);
+
+      if (
+        !targetUser ||
+        targetUser.role !== 'user' ||
+        (teamId && targetUser.teamId !== teamId)
+      ) {
+        return res.status(404).json({
+          ok: false,
+          error: 'Mitarbeiter wurde nicht gefunden.',
+        });
       }
-    }
 
-    function sectionTitle(text) {
-      ensurePdfSpace(28);
-      doc.moveDown(0.5);
-      doc.font('Helvetica-Bold').fontSize(11).text(text);
-      doc.moveDown(0.25);
-    }
+      const row = await buildPayrollPeriodDataForUser(
+        targetUser,
+        periodStart,
+        periodEnd
+      );
 
-    function writeMetricLines(items) {
-      items.forEach(([label, value]) => {
-        ensurePdfSpace(16);
-        doc.font('Helvetica-Bold').fontSize(9).text(`${label}: `, { continued: true });
-        doc.font('Helvetica').fontSize(9).text(value);
+      const fmtHours = (v) =>
+        `${(Number(v) || 0).toFixed(1).replace('.', ',')} h`;
+      const fmtSignedHours = (v) => {
+        const n = Number(v) || 0;
+        const abs = Math.abs(n).toFixed(1).replace('.', ',');
+        if (n > 0) return `+${abs} h`;
+        if (n < 0) return `-${abs} h`;
+        return '0,0 h';
+      };
+      const fmtDays = (v) => `${String(Number(v) || 0).replace('.', ',')} Tage`;
+      const fmtCount = (v) => String(Math.round(Number(v) || 0));
+
+      const safeUser = String(targetUser.username).replace(
+        /[^a-zA-Z0-9_-]+/g,
+        '_'
+      );
+      const filename = `Lohnabrechnung_${safeUser}_${formatDateKey(periodStart)}_${formatDateKey(periodEnd)}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
+
+      const doc = new PDFDocument({
+        margin: 42,
+        size: 'A4',
+        info: {
+          Title: `Lohnabrechnung ${targetUser.username} ${formatDateKey(periodStart)}-${formatDateKey(periodEnd)}`,
+          Author: 'Hours App',
+        },
       });
-    }
 
-    doc.font('Helvetica-Bold').fontSize(16).text('Lohnabrechnung – Audit Export');
-    doc.moveDown(0.4);
+      doc.pipe(res);
 
-    doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
-    doc.text(`Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`);
-    doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
-    doc.text(`Exportiert von: ${req.user.username}`);
-    doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
+      function ensurePdfSpace(height = 24) {
+        if (doc.y + height > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+        }
+      }
 
-    sectionTitle('Lohndaten im Zeitraum');
+      function sectionTitle(text) {
+        ensurePdfSpace(28);
+        doc.moveDown(0.5);
+        doc.font('Helvetica-Bold').fontSize(11).text(text);
+        doc.moveDown(0.25);
+      }
+
+      function writeMetricLines(items) {
+        items.forEach(([label, value]) => {
+          ensurePdfSpace(16);
+          doc
+            .font('Helvetica-Bold')
+            .fontSize(9)
+            .text(`${label}: `, { continued: true });
+          doc.font('Helvetica').fontSize(9).text(value);
+        });
+      }
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(16)
+        .text('Lohnabrechnung – Audit Export');
+      doc.moveDown(0.4);
+
+      doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
+      doc.text(
+        `Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`
+      );
+      doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
+      doc.text(`Exportiert von: ${req.user.username}`);
+      doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
+
+      sectionTitle('Lohndaten im Zeitraum');
       writeMetricLines([
         ['Präsenz', fmtHours(row.totals.praesenzStunden)],
         ['Pikett', fmtHours(row.totals.pikettHours)],
@@ -5995,125 +6603,148 @@ app.get('/api/admin/payroll-export-pdf', requireAuth, requireAdmin, async (req, 
       if (row.absencesByType && Object.keys(row.absencesByType).length > 0) {
         sectionTitle('Absenzen im Zeitraum');
         const TYPE_LABELS = {
-          ferien: 'Ferien', krank: 'Krank / Arztbesuch', unfall: 'Unfall',
-          militaer: 'Militär', mutterschaft: 'Mutterschaft',
-          vaterschaft: 'Vaterschaftsurlaub', bezahlteabwesenheit: 'Bezahlte Abwesenheit',
-          sonstiges: 'Sonstiges'
+          ferien: 'Ferien',
+          krank: 'Krank / Arztbesuch',
+          unfall: 'Unfall',
+          militaer: 'Militär',
+          mutterschaft: 'Mutterschaft',
+          vaterschaft: 'Vaterschaftsurlaub',
+          bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+          sonstiges: 'Sonstiges',
         };
         const absLines = Object.entries(row.absencesByType)
           .filter(([, data]) => data.days > 0 || data.hours > 0)
           .map(([type, data]) => [
             TYPE_LABELS[type] || type,
-            data.hours > 0 ? `${data.days}d / ${data.hours}h` : `${data.days}d`
+            data.hours > 0 ? `${data.days}d / ${data.hours}h` : `${data.days}d`,
           ]);
         if (absLines.length > 0) writeMetricLines(absLines);
       }
 
-    sectionTitle('Überzeit in dieser Lohnperiode');
-    writeMetricLines([
-      ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
-      ['Vorarbeit angerechnet', fmtSignedHours(row.overtime.vorarbeitApplied)],
-      ['ÜZ1 nach Vorarbeit', fmtSignedHours(row.overtime.ueZ1AfterVorarbeit)],
-      ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
-      ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
-    ]);
+      sectionTitle('Überzeit in dieser Lohnperiode');
+      writeMetricLines([
+        ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
+        [
+          'Vorarbeit angerechnet',
+          fmtSignedHours(row.overtime.vorarbeitApplied),
+        ],
+        ['ÜZ1 nach Vorarbeit', fmtSignedHours(row.overtime.ueZ1AfterVorarbeit)],
+        ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
+        ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
+      ]);
 
-    sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
-    writeMetricLines([
-      [
-        'Stand per Periodenende',
-        `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`,
-      ],
-      ['Änderung im Zeitraum', fmtSignedHours(row.vorarbeit.changeInPeriod)],
-    ]);
+      sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
+      writeMetricLines([
+        [
+          'Stand per Periodenende',
+          `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`,
+        ],
+        ['Änderung im Zeitraum', fmtSignedHours(row.vorarbeit.changeInPeriod)],
+      ]);
 
-    sectionTitle('Berücksichtigte Übertragungen');
-    writeMetricLines([
-      ['Monate berücksichtigt', (row.coverage.transmittedMonths || []).join(', ') || '–'],
-      ['Monate fehlend', (row.coverage.missingMonths || []).join(', ') || '–'],
-    ]);
+      sectionTitle('Berücksichtigte Übertragungen');
+      writeMetricLines([
+        [
+          'Monate berücksichtigt',
+          (row.coverage.transmittedMonths || []).join(', ') || '–',
+        ],
+        [
+          'Monate fehlend',
+          (row.coverage.missingMonths || []).join(', ') || '–',
+        ],
+      ]);
 
-    sectionTitle('Tagesdetails');
-    if (!row.auditRows.length) {
-      doc.font('Helvetica').fontSize(9).text('Keine relevanten Einträge im ausgewählten Zeitraum.');
-    } else {
-      row.auditRows.forEach((entry) => {
-        ensurePdfSpace(42);
+      sectionTitle('Tagesdetails');
+      if (!row.auditRows.length) {
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .text('Keine relevanten Einträge im ausgewählten Zeitraum.');
+      } else {
+        row.auditRows.forEach((entry) => {
+          ensurePdfSpace(42);
 
-        doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+          doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
 
-        doc.font('Helvetica').fontSize(8.5).text(
-          `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
-        );
+          doc
+            .font('Helvetica')
+            .fontSize(8.5)
+            .text(
+              `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
+            );
 
-        doc.text(
-          `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
-        );
+          doc.text(
+            `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
+          );
 
-        doc.text(
-          `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
-        );
+          doc.text(
+            `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
+          );
 
-        doc.text(
-          `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
-        );
+          doc.text(
+            `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
+          );
 
-        if (entry.absencesText) {
-          doc.text(`Abwesenheiten / Bemerkungen: ${entry.absencesText}`);
-        }
+          if (entry.absencesText) {
+            doc.text(`Abwesenheiten / Bemerkungen: ${entry.absencesText}`);
+          }
 
-        doc.moveDown(0.35);
-      });
+          doc.moveDown(0.35);
+        });
+      }
+
+      doc.end();
+    } catch (err) {
+      console.error('Failed to export payroll PDF', err);
+      return res.status(500).json({ ok: false, error: 'PDF export failed' });
     }
-
-    doc.end();
-  } catch (err) {
-    console.error('Failed to export payroll PDF', err);
-    return res.status(500).json({ ok: false, error: 'PDF export failed' });
   }
-});
-
-
-
-
+);
 
 // ============================================================================
 // Admin transmission summary route
 // ============================================================================
 // Only accessible for admins
-app.get('/api/admin/transmissions-summary', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const users = await listUsersFromDb();
+app.get(
+  '/api/admin/transmissions-summary',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const users = await listUsersFromDb();
 
-    const summaries = await Promise.all(
-      users.map(async (user) => {
-        const transmissions = await listUserTransmissions(user.username);
-        const latest = transmissions[0] || null;
-        const team = TEAMS.find((t) => t.id === user.teamId) || null;
+      const summaries = await Promise.all(
+        users.map(async (user) => {
+          const transmissions = await listUserTransmissions(user.username);
+          const latest = transmissions[0] || null;
+          const team = TEAMS.find((t) => t.id === user.teamId) || null;
 
-        return {
-          userId: user.id,
-          username: user.username,
-          role: user.role,
-          teamId: user.teamId || null,
-          teamName: team ? team.name : null,
-          transmissionsCount: transmissions.length,
-          lastSentAt: latest ? latest.sentAt : null,
-          lastMonthLabel: latest ? latest.monthLabel || null : null,
-          lastTotals: latest ? latest.totals || null : null,
-        };
-      })
-    );
+          return {
+            userId: user.id,
+            username: user.username,
+            role: user.role,
+            teamId: user.teamId || null,
+            teamName: team ? team.name : null,
+            transmissionsCount: transmissions.length,
+            lastSentAt: latest ? latest.sentAt : null,
+            lastMonthLabel: latest ? latest.monthLabel || null : null,
+            lastTotals: latest ? latest.totals || null : null,
+          };
+        })
+      );
 
-    return res.json({
-      ok: true,
-      users: summaries,
-    });
-  } catch (err) {
-    console.error('Failed to build transmissions summary', err);
-    return res.status(500).json({ ok: false, error: 'Could not load summary' });
+      return res.json({
+        ok: true,
+        users: summaries,
+      });
+    } catch (err) {
+      console.error('Failed to build transmissions summary', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not load summary' });
+    }
   }
-});
+);
 
 // ============================================================================
 // Admin user management routes
@@ -6140,7 +6771,9 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   const { username, password, role, teamId, email } = req.body || {};
 
   if (!username || !password || !role) {
-    return res.status(400).json({ ok: false, error: 'Missing required fields' });
+    return res
+      .status(400)
+      .json({ ok: false, error: 'Missing required fields' });
   }
 
   if (!['user', 'admin'].includes(role)) {
@@ -6154,16 +6787,21 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
     );
 
     if (existing.rows.length > 0) {
-      return res.status(409).json({ ok: false, error: 'Username already exists' });
+      return res
+        .status(409)
+        .json({ ok: false, error: 'Username already exists' });
     }
 
     const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
     const id = `u-${crypto.randomBytes(8).toString('hex')}`;
 
-    await db.query(`
+    await db.query(
+      `
       INSERT INTO users (id, username, password_hash, role, team_id, email, active)
       VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-    `, [id, username, passwordHash, role, teamId || null, email || null]);
+    `,
+      [id, username, passwordHash, role, teamId || null, email || null]
+    );
 
     const user = await findUserById(id);
     return res.json({ ok: true, user });
@@ -6174,12 +6812,17 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // PATCH /api/admin/users/:id
-app.patch('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { email, role, teamId } = req.body || {};
+app.patch(
+  '/api/admin/users/:id',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+    const { email, role, teamId } = req.body || {};
 
-  try {
-    const result = await db.query(`
+    try {
+      const result = await db.query(
+        `
       UPDATE users
       SET
         email = COALESCE($2, email),
@@ -6188,79 +6831,119 @@ app.patch('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) =>
         updated_at = NOW()
       WHERE id = $1
       RETURNING id, username, role, team_id, active, email
-    `, [id, email || null, role || null, teamId || null]);
+    `,
+        [id, email || null, role || null, teamId || null]
+      );
 
-    if (!result.rows[0]) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
+      if (!result.rows[0]) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+
+      return res.json({ ok: true, user: mapDbUser(result.rows[0]) });
+    } catch (err) {
+      console.error('Failed to update user', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not update user' });
     }
-
-    return res.json({ ok: true, user: mapDbUser(result.rows[0]) });
-  } catch (err) {
-    console.error('Failed to update user', err);
-    return res.status(500).json({ ok: false, error: 'Could not update user' });
   }
-});
+);
 
 // POST /api/admin/users/:id/reset-password
-app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = req.params;
-  const { password } = req.body || {};
+app.post(
+  '/api/admin/users/:id/reset-password',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
+    const { password } = req.body || {};
 
-  if (!password || password.length < 6) {
-    return res.status(400).json({ ok: false, error: 'Password must be at least 6 characters' });
-  }
+    if (!password || password.length < 6) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Password must be at least 6 characters' });
+    }
 
-  try {
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    try {
+      const passwordHash = await argon2.hash(password, {
+        type: argon2.argon2id,
+      });
 
-    const result = await db.query(`
+      const result = await db.query(
+        `
       UPDATE users
       SET password_hash = $2, updated_at = NOW()
       WHERE id = $1
       RETURNING id
-    `, [id, passwordHash]);
+    `,
+        [id, passwordHash]
+      );
 
-    if (!result.rows[0]) {
-      return res.status(404).json({ ok: false, error: 'User not found' });
+      if (!result.rows[0]) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to reset password', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not reset password' });
     }
-
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Failed to reset password', err);
-    return res.status(500).json({ ok: false, error: 'Could not reset password' });
   }
-});
+);
 
 // POST /api/admin/users/:id/deactivate
-app.post('/api/admin/users/:id/deactivate', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = req.params;
+app.post(
+  '/api/admin/users/:id/deactivate',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
 
-  if (id === req.user.id) {
-    return res.status(400).json({ ok: false, error: 'Cannot deactivate your own account' });
-  }
+    if (id === req.user.id) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Cannot deactivate your own account' });
+    }
 
-  try {
-    await db.query(`UPDATE users SET active = FALSE, updated_at = NOW() WHERE id = $1`, [id]);
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Failed to deactivate user', err);
-    return res.status(500).json({ ok: false, error: 'Could not deactivate user' });
+    try {
+      await db.query(
+        `UPDATE users SET active = FALSE, updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to deactivate user', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not deactivate user' });
+    }
   }
-});
+);
 
 // POST /api/admin/users/:id/activate
-app.post('/api/admin/users/:id/activate', requireAuth, requireAdmin, async (req, res) => {
-  const { id } = req.params;
+app.post(
+  '/api/admin/users/:id/activate',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const { id } = req.params;
 
-  try {
-    await db.query(`UPDATE users SET active = TRUE, updated_at = NOW() WHERE id = $1`, [id]);
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('Failed to activate user', err);
-    return res.status(500).json({ ok: false, error: 'Could not activate user' });
+    try {
+      await db.query(
+        `UPDATE users SET active = TRUE, updated_at = NOW() WHERE id = $1`,
+        [id]
+      );
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Failed to activate user', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not activate user' });
+    }
   }
-});
-
+);
 
 // ============================================================================
 // Server startup
@@ -6272,40 +6955,44 @@ async function startServer() {
   await ensureKontenTables();
   await ensureAbsencesTable();
   await ensureWeekLocksTable();
-  await ensureDraftsTable(); 
+  await ensureDraftsTable();
   await ensureLiveStampsTable();
   await ensureStampEditsTable();
   await ensureWorkSchedulesTable();
   await ensureAnlagenTables();
   await seedInitialUsers();
-  
 
   app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
   });
 }
 
-
 // Auto-Transmit täglich um 02:00 Uhr
-cron.schedule('0 2 * * *', async () => {
-  console.log('[AutoTransmit] Starte tägliche Auto-Übertragung...');
-  try {
-    const users = await listUsersFromDb({ role: 'user' });
-    for (const user of users) {
-      try {
-        await autoTransmitForUser(user);
-      } catch (err) {
-        console.error(`[AutoTransmit] Fehler bei ${user.username}:`, err.message);
+cron.schedule(
+  '0 2 * * *',
+  async () => {
+    console.log('[AutoTransmit] Starte tägliche Auto-Übertragung...');
+    try {
+      const users = await listUsersFromDb({ role: 'user' });
+      for (const user of users) {
+        try {
+          await autoTransmitForUser(user);
+        } catch (err) {
+          console.error(
+            `[AutoTransmit] Fehler bei ${user.username}:`,
+            err.message
+          );
+        }
       }
+      console.log('[AutoTransmit] Abgeschlossen.');
+    } catch (err) {
+      console.error('[AutoTransmit] Kritischer Fehler:', err);
     }
-    console.log('[AutoTransmit] Abgeschlossen.');
-  } catch (err) {
-    console.error('[AutoTransmit] Kritischer Fehler:', err);
+  },
+  {
+    timezone: 'Europe/Zurich',
   }
-}, {
-  timezone: 'Europe/Zurich'
-});
-
+);
 
 startServer().catch((err) => {
   console.error('Server startup failed', err);
