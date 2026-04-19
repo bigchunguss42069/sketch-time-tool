@@ -112,6 +112,7 @@ const modalEmail = document.getElementById('modalEmail');
 const modalPassword = document.getElementById('modalPassword');
 const modalRole = document.getElementById('modalRole');
 const modalTeam = document.getElementById('modalTeam');
+const modalEmploymentStart = document.getElementById('modalEmploymentStart');
 
 /**
  * Dashboard / yearly overtime and Vorarbeit cards
@@ -793,7 +794,9 @@ async function syncDraftToServer() {
       return;
     }
 
-    localStorage.setItem(STORAGE_KEY + '_savedAt', savedAt);
+    const syncData = await res.json().catch(() => null);
+const serverSavedAt = syncData?.updatedAt || savedAt;
+localStorage.setItem(STORAGE_KEY + '_savedAt', serverSavedAt);
   } catch (err) {
     console.error('Draft sync failed', err);
   }
@@ -7445,6 +7448,7 @@ function openNewUserModal() {
   modalRole.value = 'user';
   populateTeamDropdown();
   modalTeam.value = 'montage';
+  if (modalEmploymentStart) modalEmploymentStart.value = '';
   modalUsername.disabled = false;
   modalPassword.placeholder = 'Passwort';
   adminUserModalError.classList.add('hidden');
@@ -7462,6 +7466,7 @@ function openEditUserModal(userId) {
   modalRole.value = user.role || 'user';
   populateTeamDropdown();
   modalTeam.value = user.teamId || 'montage';
+  if (modalEmploymentStart) modalEmploymentStart.value = user.employmentStart || '';
   modalUsername.disabled = true;
   modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
   adminUserModalError.classList.add('hidden');
@@ -7501,7 +7506,8 @@ async function saveUserModal() {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
     } else {
-      const body = { email, role, teamId };
+      const employmentStart = modalEmploymentStart?.value || null;
+      const body = { email, role, teamId, employmentStart };
       if (password) body.password = password;
 
       const patchRes = await authFetch(`/api/admin/users/${editingUserId}`, {
@@ -8228,10 +8234,11 @@ function reloadAllDataForCurrentUser() {
     _draftLoadComplete = true;
 
     // Polling: alle 30s Server-Stand abholen (Multi-Device Sync)
-    setInterval(async () => {
-      if (_draftLoadComplete) await loadDraftFromServer();
-    }, 30_000);
-
+    if (!import.meta.env.DEV) {
+      setInterval(async () => {
+        if (_draftLoadComplete) await loadDraftFromServer();
+      }, 30_000);
+    }
     renderWeekInfo();
     updateDayTitleWithDate();
     applyFlagsForCurrentDay();

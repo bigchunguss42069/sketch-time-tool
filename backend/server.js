@@ -193,6 +193,7 @@ function mapDbUser(row) {
     teamId: row.team_id || null,
     active: row.active,
     email: row.email || null,
+    employmentStart: row.employment_start ? String(row.employment_start).slice(0, 10) : null,
   };
 }
 
@@ -212,9 +213,8 @@ async function ensureUsersTable() {
     )
   `);
 
-  await db.query(`
-  ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT
-`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_start DATE`);
 }
 
 async function ensureMonthSubmissionsTable() {
@@ -780,7 +780,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue; // Wochenende überspringen
 
-    const { soll, employmentPct } = await getDailySoll(
+   const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
       acceptedAbsenceDays
@@ -1963,6 +1963,17 @@ function isCompanyBridgeDay(dateKey) {
 async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
   const weekday = new Date(dateKey + 'T00:00:00').getDay();
   if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
+
+  const userRow = await db.query('SELECT employment_start FROM users WHERE id = $1', [userId]);
+  const empStart = userRow.rows[0]?.employment_start;
+  const empStartKey = empStart ? String(empStart instanceof Date ? empStart.toLocaleDateString('sv') : empStart).slice(0, 10) : null;
+  if (empStartKey && empStartKey > dateKey) {
+    return { soll: 0, employmentPct: 100 };
+  }
+
+  const today = formatDateKey(new Date());
+  if (dateKey > today) return { soll: 0, employmentPct: 100 };
+
   if (isBernHolidayKey(dateKey)) return { soll: 0, employmentPct: 100 };
   if (isCompanyBridgeDay(dateKey)) return { soll: 0, employmentPct: 100 };
 
@@ -2002,6 +2013,7 @@ async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
     }
   }
 
+  
   return { soll: baseSoll, employmentPct };
 }
 
@@ -2094,6 +2106,8 @@ async function updateKontenFromSubmission({
   if (!db) {
     throw new Error('DATABASE_URL is not configured');
   }
+
+  
 
   const client = await db.connect();
 
@@ -2221,6 +2235,29 @@ async function updateKontenFromSubmission({
         nextKonto.updatedAt, // ← $12
       ]
     );
+    
+     await client.query(`
+      UPDATE konten SET
+        ue_z1 = $2,
+        ue_z2 = $3,
+        ue_z3 = $4,
+        vorarbeit_balance = $5,
+        vacation_days = $6,
+        credited_years = $7,
+        updated_at = $8,
+        updated_by = $9
+      WHERE user_id = $1
+    `, [
+      ensured.userId,
+      nextKonto.ueZ1,
+      nextKonto.ueZ2,
+      nextKonto.ueZ3,
+      nextKonto.vorarbeitBalance,
+      nextKonto.vacationDays,
+      JSON.stringify(nextKonto.creditedYears),
+      nextKonto.updatedAt,
+      nextKonto.updatedBy,
+    ]);
 
     await client.query('COMMIT');
     return nextKonto;
@@ -5101,7 +5138,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       updatedBy: strictUsername,
     });
   } catch (e) {
-    console.error('Strict transmission side-effect failed:', e);
+    console.error('Strict transmission side-effect failed:', e.message, e.stack);
 
     try {
       await writeAnlagenIndex(anlagenIndexBackup);
@@ -5769,7 +5806,12 @@ app.post('/api/draft/sync', requireAuth, async (req, res) => {
       [req.user.id, req.user.username, JSON.stringify(data)]
     );
 
-    return res.json({ ok: true });
+    const saved = await db.query(
+  'SELECT updated_at FROM user_drafts WHERE user_id = $1',
+  [req.user.id]
+);
+const updatedAt = saved.rows[0]?.updated_at;
+return res.json({ ok: true, updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : String(updatedAt) });
   } catch (err) {
     console.error('Draft sync error', err);
     return res
@@ -6816,7 +6858,7 @@ app.patch(
   requireAdmin,
   async (req, res) => {
     const { id } = req.params;
-    const { email, role, teamId } = req.body || {};
+    const { email, role, teamId, employmentStart } = req.body || {};
 
     try {
       const result = await db.query(
@@ -6826,11 +6868,12 @@ app.patch(
         email = COALESCE($2, email),
         role = COALESCE($3, role),
         team_id = COALESCE($4, team_id),
+        employment_start = COALESCE($5, employment_start),
         updated_at = NOW()
-      WHERE id = $1
-      RETURNING id, username, role, team_id, active, email
+        WHERE id = $1
+        RETURNING id, username, role, team_id, active, email, employment_start
     `,
-        [id, email || null, role || null, teamId || null]
+        [id, email || null, role || null, teamId || null, employmentStart || null ]
       );
 
       if (!result.rows[0]) {
