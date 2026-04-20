@@ -795,8 +795,8 @@ async function syncDraftToServer() {
     }
 
     const syncData = await res.json().catch(() => null);
-const serverSavedAt = syncData?.updatedAt || savedAt;
-localStorage.setItem(STORAGE_KEY + '_savedAt', serverSavedAt);
+    const serverSavedAt = syncData?.updatedAt || savedAt;
+    localStorage.setItem(STORAGE_KEY + '_savedAt', serverSavedAt);
   } catch (err) {
     console.error('Draft sync failed', err);
   }
@@ -1558,7 +1558,15 @@ if (absenceSaveBtn) {
       const res = await authFetch('/api/absences', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: localId, type, from, to, days, comment }),
+        body: JSON.stringify({
+          id: localId,
+          type,
+          from,
+          to,
+          days,
+          hours,
+          comment,
+        }),
       });
 
       const data = await res.json();
@@ -1569,7 +1577,6 @@ if (absenceSaveBtn) {
       // Reset form
       absenceFromEl.value = '';
       absenceToEl.value = '';
-      absenceDaysEl.value = '';
       absenceCommentEl.value = '';
 
       await syncMyAbsencesFromServer();
@@ -2887,15 +2894,12 @@ function renderAdminKontenGrid(rows) {
     const rawUeZ1 = toNum(konto?.ueZ1, 0);
 
     // Backend already maintains this field per user for Vorarbeit logic:
-    const posByYear = konto?.ueZ1PositiveByYear || {};
-    const positiveThisYear = Math.max(
-      0,
-      toNum(posByYear[String(selectedYear)], 0)
+    // vorarbeitBalance wird direkt beim Transmit korrekt berechnet und gespeichert
+    const vorarbeitFilled = Math.min(
+      vorarbeitRequired,
+      Math.max(0, toNum(konto?.vorarbeitBalance, 0))
     );
-
-    // Same rule as your user-year card: consume yearly positive hours into Vorarbeit first
-    const vorarbeitFilled = Math.min(vorarbeitRequired, positiveThisYear);
-    const ueZ1AfterVorarbeit = rawUeZ1 - vorarbeitFilled;
+    const ueZ1AfterVorarbeit = rawUeZ1; // konto.ueZ1 ist bereits netto — Vorarbeit wurde beim Transmit nie darin eingerechnet
 
     const card = document.createElement('div');
     card.className = 'admin-konto-card';
@@ -7466,7 +7470,8 @@ function openEditUserModal(userId) {
   modalRole.value = user.role || 'user';
   populateTeamDropdown();
   modalTeam.value = user.teamId || 'montage';
-  if (modalEmploymentStart) modalEmploymentStart.value = user.employmentStart || '';
+  if (modalEmploymentStart)
+    modalEmploymentStart.value = user.employmentStart || '';
   modalUsername.disabled = true;
   modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
   adminUserModalError.classList.add('hidden');

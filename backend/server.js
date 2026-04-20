@@ -771,6 +771,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
     monthEndKey
   );
 
+  const cachedEmpStartKey = await fetchEmpStartKey(userId);
   let sum = 0;
 
   // Alle Werktage des Monats durchgehen — nicht nur die mit Einträgen
@@ -787,7 +788,8 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
     const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
-      acceptedAbsenceDays
+      acceptedAbsenceDays,
+      cachedEmpStartKey
     );
     if (soll === 0) continue;
 
@@ -796,11 +798,19 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     const isFerien = !!dayData?.flags?.ferien;
 
+    const absHoursForDay =
+      typeof acceptedAbsenceDays.get(dateKey) === 'number'
+        ? acceptedAbsenceDays.get(dateKey)
+        : 0;
+    const baseSoll = soll + absHoursForDay;
+
     let diff = 0;
     if (isFerien) {
       diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else if (dayTotal > baseSoll) {
+      diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal - soll; // kann negativ sein — das ist gewollt
+      diff = dayTotal + absHoursForDay - baseSoll;
     }
 
     sum += diff;
@@ -829,6 +839,7 @@ async function computeMonthUeZ1AndVorarbeit(
     monthEndKey
   );
 
+  const cachedEmpStartKey = await fetchEmpStartKey(userId);
   let ueZ1 = 0;
   let vorarbeit = vorarbeitBalanceIn;
 
@@ -845,7 +856,8 @@ async function computeMonthUeZ1AndVorarbeit(
     const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
-      acceptedAbsenceDays
+      acceptedAbsenceDays,
+      cachedEmpStartKey
     );
     if (soll === 0) continue;
 
@@ -853,11 +865,19 @@ async function computeMonthUeZ1AndVorarbeit(
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
     const isFerien = !!dayData?.flags?.ferien;
 
+    const absHoursForDay =
+      typeof acceptedAbsenceDays.get(dateKey) === 'number'
+        ? acceptedAbsenceDays.get(dateKey)
+        : 0;
+    const baseSoll = soll + absHoursForDay;
+
     let diff = 0;
     if (isFerien) {
       diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else if (dayTotal > baseSoll) {
+      diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal - soll;
+      diff = dayTotal + absHoursForDay - baseSoll;
     }
 
     if (diff <= 0) {
@@ -901,6 +921,7 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
     monthEndKey
   );
 
+  const cachedEmpStartKey = await fetchEmpStartKey(userId);
   let positiveSum = 0;
 
   const cursor = new Date(year, monthIndex, 1);
@@ -916,7 +937,8 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
     const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
-      acceptedAbsenceDays
+      acceptedAbsenceDays,
+      cachedEmpStartKey
     );
     if (soll === 0) continue;
 
@@ -924,11 +946,19 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
     const isFerien = !!dayData?.flags?.ferien;
 
+    const absHoursForDay =
+      typeof acceptedAbsenceDays.get(dateKey) === 'number'
+        ? acceptedAbsenceDays.get(dateKey)
+        : 0;
+    const baseSoll = soll + absHoursForDay;
+
     let diff = 0;
     if (isFerien) {
       diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else if (dayTotal > baseSoll) {
+      diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal - soll;
+      diff = dayTotal + absHoursForDay - baseSoll;
     }
 
     if (diff > 0) positiveSum += diff;
@@ -957,6 +987,7 @@ async function computePayrollPeriodOvertimeFromSubmission(
       ? submission.days
       : {};
 
+  const cachedEmpStartKey = await fetchEmpStartKey(userId);
   let ueZ1Raw = 0;
   let ueZ1Positive = 0;
   let ueZ2 = 0;
@@ -983,7 +1014,8 @@ async function computePayrollPeriodOvertimeFromSubmission(
     const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
-      acceptedAbsenceDays
+      acceptedAbsenceDays,
+      cachedEmpStartKey
     );
     if (soll === 0) continue;
 
@@ -991,11 +1023,19 @@ async function computePayrollPeriodOvertimeFromSubmission(
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
     const isFerien = !!dayData?.flags?.ferien;
 
+    const absHoursForDay =
+      typeof acceptedAbsenceDays.get(dateKey) === 'number'
+        ? acceptedAbsenceDays.get(dateKey)
+        : 0;
+    const baseSoll = soll + absHoursForDay;
+
     let diff = 0;
     if (isFerien) {
       diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else if (dayTotal > baseSoll) {
+      diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal - soll;
+      diff = dayTotal + absHoursForDay - baseSoll;
     }
 
     ueZ1Raw += diff;
@@ -1964,22 +2004,48 @@ function isCompanyBridgeDay(dateKey) {
   return !!(set && set.has(dateKey));
 }
 
-// Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
-// Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
-async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
-  const weekday = new Date(dateKey + 'T00:00:00').getDay();
-  if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
-
-  const userRow = await db.query(
+async function fetchEmpStartKey(userId) {
+  const row = await db.query(
     'SELECT employment_start FROM users WHERE id = $1',
     [userId]
   );
-  const empStart = userRow.rows[0]?.employment_start;
-  const empStartKey = empStart
+  const empStart = row.rows[0]?.employment_start;
+  return empStart
     ? String(
         empStart instanceof Date ? empStart.toLocaleDateString('sv') : empStart
       ).slice(0, 10)
     : null;
+}
+
+// Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
+// Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
+async function getDailySoll(
+  userId,
+  dateKey,
+  acceptedAbsenceHoursMap,
+  cachedEmpStartKey = undefined
+) {
+  const weekday = new Date(dateKey + 'T00:00:00').getDay();
+  if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
+
+  let empStartKey;
+  if (cachedEmpStartKey !== undefined) {
+    empStartKey = cachedEmpStartKey;
+  } else {
+    const userRow = await db.query(
+      'SELECT employment_start FROM users WHERE id = $1',
+      [userId]
+    );
+    const empStart = userRow.rows[0]?.employment_start;
+    empStartKey = empStart
+      ? String(
+          empStart instanceof Date
+            ? empStart.toLocaleDateString('sv')
+            : empStart
+        ).slice(0, 10)
+      : null;
+  }
+
   if (empStartKey && empStartKey > dateKey) {
     return { soll: 0, employmentPct: 100 };
   }
