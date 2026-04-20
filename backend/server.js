@@ -193,7 +193,9 @@ function mapDbUser(row) {
     teamId: row.team_id || null,
     active: row.active,
     email: row.email || null,
-    employmentStart: row.employment_start ? String(row.employment_start).slice(0, 10) : null,
+    employmentStart: row.employment_start
+      ? String(row.employment_start).slice(0, 10)
+      : null,
   };
 }
 
@@ -214,7 +216,9 @@ async function ensureUsersTable() {
   `);
 
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
-  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_start DATE`);
+  await db.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_start DATE`
+  );
 }
 
 async function ensureMonthSubmissionsTable() {
@@ -780,7 +784,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     if (weekday === 0 || weekday === 6) continue; // Wochenende überspringen
 
-   const { soll, employmentPct } = await getDailySoll(
+    const { soll, employmentPct } = await getDailySoll(
       userId,
       dateKey,
       acceptedAbsenceDays
@@ -789,6 +793,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
 
     const dayData = daysObj[dateKey] || null;
     const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+
     const isFerien = !!dayData?.flags?.ferien;
 
     let diff = 0;
@@ -815,6 +820,7 @@ async function computeMonthUeZ1AndVorarbeit(
   const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
   const daysObj =
     payload?.days && typeof payload.days === 'object' ? payload.days : {};
+
   const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
   const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
   const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
@@ -1964,15 +1970,22 @@ async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
   const weekday = new Date(dateKey + 'T00:00:00').getDay();
   if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
 
-  const userRow = await db.query('SELECT employment_start FROM users WHERE id = $1', [userId]);
+  const userRow = await db.query(
+    'SELECT employment_start FROM users WHERE id = $1',
+    [userId]
+  );
   const empStart = userRow.rows[0]?.employment_start;
-  const empStartKey = empStart ? String(empStart instanceof Date ? empStart.toLocaleDateString('sv') : empStart).slice(0, 10) : null;
+  const empStartKey = empStart
+    ? String(
+        empStart instanceof Date ? empStart.toLocaleDateString('sv') : empStart
+      ).slice(0, 10)
+    : null;
   if (empStartKey && empStartKey > dateKey) {
     return { soll: 0, employmentPct: 100 };
   }
 
   const today = formatDateKey(new Date());
-  if (dateKey > today) return { soll: 0, employmentPct: 100 };
+  if (dateKey >= today) return { soll: 0, employmentPct: 100 };
 
   if (isBernHolidayKey(dateKey)) return { soll: 0, employmentPct: 100 };
   if (isCompanyBridgeDay(dateKey)) return { soll: 0, employmentPct: 100 };
@@ -2013,7 +2026,6 @@ async function getDailySoll(userId, dateKey, acceptedAbsenceHoursMap) {
     }
   }
 
-  
   return { soll: baseSoll, employmentPct };
 }
 
@@ -2107,8 +2119,6 @@ async function updateKontenFromSubmission({
     throw new Error('DATABASE_URL is not configured');
   }
 
-  
-
   const client = await db.connect();
 
   try {
@@ -2156,7 +2166,22 @@ async function updateKontenFromSubmission({
       updatedBy: updatedBy || username,
     };
 
-    let vorarbeitBalance = r1(Number(nextKonto.vorarbeitBalance) || 0);
+    // Vorarbeit-Startwert = Stand vor diesem Monat (aus vorherigem Snapshot)
+    // NICHT aus aktuellem Konto, da der Konto-Stand bereits diesen Monat enthält
+    const prevMonthSnap = await client.query(
+      `
+      SELECT vorarbeit_balance FROM konten_snapshots
+      WHERE user_id = $1 AND year = $2
+        AND month_index < $3
+      ORDER BY year DESC, month_index DESC LIMIT 1
+    `,
+      [ensured.userId, year, monthIndex]
+    );
+
+    let vorarbeitBalance =
+      prevMonthSnap.rows.length > 0
+        ? r1(Number(prevMonthSnap.rows[0].vorarbeit_balance) || 0)
+        : 0;
 
     if (!nextKonto.creditedYears[yearStr]) {
       nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
@@ -2235,8 +2260,9 @@ async function updateKontenFromSubmission({
         nextKonto.updatedAt, // ← $12
       ]
     );
-    
-     await client.query(`
+
+    await client.query(
+      `
       UPDATE konten SET
         ue_z1 = $2,
         ue_z2 = $3,
@@ -2247,17 +2273,19 @@ async function updateKontenFromSubmission({
         updated_at = $8,
         updated_by = $9
       WHERE user_id = $1
-    `, [
-      ensured.userId,
-      nextKonto.ueZ1,
-      nextKonto.ueZ2,
-      nextKonto.ueZ3,
-      nextKonto.vorarbeitBalance,
-      nextKonto.vacationDays,
-      JSON.stringify(nextKonto.creditedYears),
-      nextKonto.updatedAt,
-      nextKonto.updatedBy,
-    ]);
+    `,
+      [
+        ensured.userId,
+        nextKonto.ueZ1,
+        nextKonto.ueZ2,
+        nextKonto.ueZ3,
+        nextKonto.vorarbeitBalance,
+        nextKonto.vacationDays,
+        JSON.stringify(nextKonto.creditedYears),
+        nextKonto.updatedAt,
+        nextKonto.updatedBy,
+      ]
+    );
 
     await client.query('COMMIT');
     return nextKonto;
@@ -5138,7 +5166,11 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       updatedBy: strictUsername,
     });
   } catch (e) {
-    console.error('Strict transmission side-effect failed:', e.message, e.stack);
+    console.error(
+      'Strict transmission side-effect failed:',
+      e.message,
+      e.stack
+    );
 
     try {
       await writeAnlagenIndex(anlagenIndexBackup);
@@ -5807,11 +5839,15 @@ app.post('/api/draft/sync', requireAuth, async (req, res) => {
     );
 
     const saved = await db.query(
-  'SELECT updated_at FROM user_drafts WHERE user_id = $1',
-  [req.user.id]
-);
-const updatedAt = saved.rows[0]?.updated_at;
-return res.json({ ok: true, updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : String(updatedAt) });
+      'SELECT updated_at FROM user_drafts WHERE user_id = $1',
+      [req.user.id]
+    );
+    const updatedAt = saved.rows[0]?.updated_at;
+    return res.json({
+      ok: true,
+      updatedAt:
+        updatedAt instanceof Date ? updatedAt.toISOString() : String(updatedAt),
+    });
   } catch (err) {
     console.error('Draft sync error', err);
     return res
@@ -6873,7 +6909,13 @@ app.patch(
         WHERE id = $1
         RETURNING id, username, role, team_id, active, email, employment_start
     `,
-        [id, email || null, role || null, teamId || null, employmentStart || null ]
+        [
+          id,
+          email || null,
+          role || null,
+          teamId || null,
+          employmentStart || null,
+        ]
       );
 
       if (!result.rows[0]) {
