@@ -5330,18 +5330,19 @@ body.in-admin-view #view-admin {
   background: #e67e22;
 }
 
-
 .dino-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
 }
 
-.dino-modal.hidden { display: none; }
+.dino-modal.hidden {
+  display: none;
+}
 
 .dino-modal-box {
   background: var(--panel);
@@ -5376,7 +5377,9 @@ body.in-admin-view #view-admin {
   border-radius: 6px;
 }
 
-.dino-modal-close:hover { background: var(--panel-soft); }
+.dino-modal-close:hover {
+  background: var(--panel-soft);
+}
 
 #dinoCanvas {
   border-radius: 10px;
@@ -5388,4 +5391,39 @@ body.in-admin-view #view-admin {
   font-size: 11px;
   color: var(--muted);
   text-align: center;
+}
+
+.dino-highscores {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 18px;
+}
+
+.dino-score-entry {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.dino-score-rank {
+  font-weight: 700;
+}
+.dino-score-rank.gold {
+  color: #f59e0b;
+}
+.dino-score-rank.silver {
+  color: #9ca3af;
+}
+.dino-score-rank.bronze {
+  color: #b45309;
+}
+.dino-score-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.dino-score-val {
+  color: var(--muted);
 }

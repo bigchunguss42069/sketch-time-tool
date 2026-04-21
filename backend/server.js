@@ -241,6 +241,16 @@ async function ensureUsersTable() {
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_start DATE`
   );
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS dino_scores (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      score INT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_year INT`);
   await db.query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_non_smoker BOOLEAN NOT NULL DEFAULT FALSE`
@@ -7258,6 +7268,40 @@ app.post(
     }
   }
 );
+
+// POST /api/dino-score
+app.post('/api/dino-score', requireAuth, async (req, res) => {
+  const score = Math.round(Number(req.body?.score) || 0);
+  if (score <= 0) return res.json({ ok: true });
+  try {
+    await db.query(
+      `INSERT INTO dino_scores (user_id, username, score)
+       VALUES ($1, $2, $3)`,
+      [req.user.id, req.user.username, score]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false });
+  }
+});
+
+// GET /api/dino-scores/top
+app.get('/api/dino-scores/top', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT DISTINCT ON (username) username, score, created_at
+      FROM dino_scores
+      ORDER BY username, score DESC
+    `);
+    const top3 = result.rows
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((r) => ({ username: r.username, score: r.score }));
+    return res.json({ ok: true, scores: top3 });
+  } catch (err) {
+    return res.status(500).json({ ok: false, scores: [] });
+  }
+});
 
 // ============================================================================
 // Server startup
