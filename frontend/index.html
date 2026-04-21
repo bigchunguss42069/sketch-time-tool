@@ -1244,7 +1244,6 @@
                   >
                 </div>
 
-                <div class="dashboard-metric-separator"></div>
 
                 <div class="absence-section">
                   <h4 class="absence-section-title">
@@ -1334,7 +1333,7 @@
                     </div>
                   </form>
 
-                  <div class="dashboard-metric-separator"></div>
+                
 
                   <div class="absence-list-wrapper">
                     <h4 class="absence-section-title">
@@ -1659,6 +1658,26 @@
                       <span>Eintrittsdatum</span>
                       <input id="modalEmploymentStart" type="date" class="admin-user-modal-input" />
                     </label>
+                    <details class="admin-user-modal-details">
+                      <summary class="admin-user-modal-summary">Ferienanspruch</summary>
+                      <div class="admin-user-modal-extras">
+                        <label class="admin-user-modal-label">
+                          Geburtsjahr
+                          <input id="modalBirthYear" type="number" min="1940" max="2010" step="1" class="admin-user-modal-input" placeholder="z.B. 1985" />
+                        </label>
+                        <label class="admin-user-modal-label admin-user-modal-checkbox-label">
+                          <input id="modalIsNonSmoker" type="checkbox" />
+                          Nichtraucher (+1 Tag)
+                        </label>
+                        <label class="admin-user-modal-label admin-user-modal-checkbox-label">
+                          <input id="modalIsKader" type="checkbox" />
+                          Kader (+5 Tage)
+                        </label>
+                        <div id="modalVacPreview" class="admin-user-modal-vac-preview">
+                          Ferien/Jahr: – Tage
+                        </div>
+                      </div>
+                    </details>
 
                       <!-- Nach dem Team-Select, vor adminUserModalError -->
                       <div class="admin-user-modal-schedule">

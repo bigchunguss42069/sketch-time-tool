@@ -14,6 +14,7 @@ const exportPdfBody = express.json({ limit: '10mb' });
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cron = require('node-cron');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -194,9 +195,29 @@ function mapDbUser(row) {
     active: row.active,
     email: row.email || null,
     employmentStart: row.employment_start
-      ? String(row.employment_start).slice(0, 10)
+      ? String(
+          row.employment_start instanceof Date
+            ? row.employment_start.toLocaleDateString('sv')
+            : row.employment_start
+        ).slice(0, 10)
       : null,
+    birthYear: row.birth_year ? Number(row.birth_year) : null,
+    isNonSmoker: !!row.is_non_smoker,
+    isKader: !!row.is_kader,
   };
+}
+
+function computeVacationDaysPerYear(birthYear, isNonSmoker, isKader) {
+  let base = 20;
+  if (birthYear) {
+    const age = new Date().getFullYear() - Number(birthYear);
+    if (age <= 20) base = 25;
+    else if (age >= 50) base = 25;
+    else base = 20;
+  }
+  if (isNonSmoker) base += 1;
+  if (isKader) base += 5;
+  return base;
 }
 
 async function ensureUsersTable() {
@@ -218,6 +239,14 @@ async function ensureUsersTable() {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT`);
   await db.query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS employment_start DATE`
+  );
+
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_year INT`);
+  await db.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_non_smoker BOOLEAN NOT NULL DEFAULT FALSE`
+  );
+  await db.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_kader BOOLEAN NOT NULL DEFAULT FALSE`
   );
 }
 
@@ -292,7 +321,7 @@ async function listUsersFromDb({ role = null, teamId = null } = {}) {
 
   const params = [];
   let sql = `
-    SELECT id, username, role, team_id, active
+   SELECT id, username, role, team_id, active, email, employment_start
     FROM users
     WHERE active = TRUE
   `;
@@ -1115,7 +1144,9 @@ function buildMonthOverviewFromSubmission(
         ? computeNetWorkingHoursFromStamps(dayData.stamps)
         : null;
 
-    monthTotalHours += totalHours;
+    const hoursForTotal =
+      stampHours !== null ? stampHours + pikett : totalHours;
+    monthTotalHours += hoursForTotal;
 
     const hasAcceptedAbsence = acceptedAbsenceDays.has(dateKey);
 
@@ -1671,6 +1702,30 @@ async function ensureKontenTables() {
     ALTER TABLE konten_snapshots
     ADD COLUMN IF NOT EXISTS vorarbeit_balance DOUBLE PRECISION NOT NULL DEFAULT 0
 `);
+
+  await db.query(
+    `ALTER TABLE konten ADD COLUMN IF NOT EXISTS ue_z1_correction DOUBLE PRECISION NOT NULL DEFAULT 0`
+  );
+  await db.query(
+    `ALTER TABLE konten ADD COLUMN IF NOT EXISTS ue_z2_correction DOUBLE PRECISION NOT NULL DEFAULT 0`
+  );
+  await db.query(
+    `ALTER TABLE konten ADD COLUMN IF NOT EXISTS ue_z3_correction DOUBLE PRECISION NOT NULL DEFAULT 0`
+  );
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS konto_adjustments (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      admin_username TEXT NOT NULL,
+      field TEXT NOT NULL,
+      old_value DOUBLE PRECISION,
+      new_value DOUBLE PRECISION,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 }
 
 function normalizeKontenObject(value) {
@@ -1688,6 +1743,9 @@ function mapKontenRow(row, fallback = {}) {
     ueZ2: Number(row?.ue_z2) || 0,
     ueZ3: Number(row?.ue_z3) || 0,
     vorarbeitBalance: Number(row?.vorarbeit_balance) || 0,
+    ueZ1Correction: Number(row?.ue_z1_correction) || 0,
+    ueZ2Correction: Number(row?.ue_z2_correction) || 0,
+    ueZ3Correction: Number(row?.ue_z3_correction) || 0,
     ueZ1PositiveByYear: normalizeKontenObject(row?.ue_z1_positive_by_year),
     vacationDays: Number(row?.vacation_days) || 0,
     vacationDaysPerYear: Number(row?.vacation_days_per_year) || 21,
@@ -1834,7 +1892,10 @@ async function persistKontenUserRecord({
       credited_years = $10::jsonb,
       updated_at = $11,
       updated_by = $12,
-      vorarbeit_balance = $13
+      vorarbeit_balance = $13,
+      ue_z1_correction = $14,
+      ue_z2_correction = $15,
+      ue_z3_correction = $16
     WHERE user_id = $1
   `,
     [
@@ -1850,7 +1911,10 @@ async function persistKontenUserRecord({
       JSON.stringify(konto.creditedYears || {}),
       konto.updatedAt || null,
       konto.updatedBy || null,
-      Number(konto.vorarbeitBalance) || 0, // ← NEU $13
+      Number(konto.vorarbeitBalance) || 0,
+      Number(konto.ueZ1Correction) || 0,
+      Number(konto.ueZ2Correction) || 0,
+      Number(konto.ueZ3Correction) || 0,
     ]
   );
 }
@@ -1905,19 +1969,40 @@ async function updateKontenManualValues({ username, values, updatedBy }) {
       updatedBy: updatedBy || username,
     };
 
-    const fields = [
-      ['ueZ1', 'ueZ1'],
-      ['ueZ2', 'ueZ2'],
-      ['ueZ3', 'ueZ3'],
-      ['vacationDays', 'vacationDays'],
-      ['vacationDaysPerYear', 'vacationDaysPerYear'],
+    // Korrekturen: Delta addieren (kumulativ)
+    const correctionFields = [
+      'ueZ1Correction',
+      'ueZ2Correction',
+      'ueZ3Correction',
     ];
+    // Absolute Felder: direkt setzen
+    const absoluteFields = ['vacationDays', 'vacationDaysPerYear'];
 
-    for (const [incomingKey, stateKey] of fields) {
-      if (values[incomingKey] == null) continue;
-      const n = Number(values[incomingKey]);
-      if (Number.isFinite(n)) {
-        next[stateKey] = n;
+    const auditEntries = [];
+
+    for (const field of correctionFields) {
+      if (values[field] == null) continue;
+      const delta = Number(values[field]);
+      if (!Number.isFinite(delta) || delta === 0) continue;
+      const oldVal = Number(ensured.konto[field]) || 0;
+      const newVal = Math.round((oldVal + delta) * 10) / 10;
+      auditEntries.push({ field, oldValue: oldVal, newValue: newVal, delta });
+      next[field] = newVal;
+    }
+
+    for (const field of absoluteFields) {
+      if (values[field] == null) continue;
+      const n = Number(values[field]);
+      if (!Number.isFinite(n)) continue;
+      const oldVal = Number(ensured.konto[field]) || 0;
+      if (oldVal !== n) {
+        auditEntries.push({
+          field,
+          oldValue: oldVal,
+          newValue: n,
+          delta: null,
+        });
+        next[field] = n;
       }
     }
 
@@ -1928,6 +2013,23 @@ async function updateKontenManualValues({ username, values, updatedBy }) {
       teamId: ensured.teamId,
       konto: next,
     });
+
+    for (const entry of auditEntries) {
+      await client.query(
+        `INSERT INTO konto_adjustments
+          (user_id, username, admin_username, field, old_value, new_value, reason)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          ensured.userId,
+          ensured.username,
+          values.updatedBy || 'admin',
+          entry.field,
+          entry.oldValue,
+          entry.newValue,
+          values.reason || null,
+        ]
+      );
+    }
 
     await client.query('COMMIT');
     return next;
@@ -3116,13 +3218,29 @@ async function autoTransmitForUser(user) {
     return d.getFullYear() === year && d.getMonth() === monthIndex;
   });
 
+  // Absenzen aus DB laden
+  const absenceResult = await db.query(
+    `SELECT * FROM absences WHERE user_id = $1`,
+    [user.id]
+  );
+  const userAbsences = absenceResult.rows.map((row) => ({
+    id: row.id,
+    type: row.type,
+    from: String(row.from_date).slice(0, 10),
+    to: String(row.to_date).slice(0, 10),
+    days: row.days,
+    hours: row.hours == null ? null : Number(row.hours),
+    status: row.status,
+    comment: row.comment || '',
+  }));
+
   const payload = {
     year,
     monthIndex,
     monthLabel: makeMonthLabel(year, monthIndex),
     days: monthDays,
     pikett: monthPikett,
-    absences: [],
+    absences: userAbsences,
     stampEditLog: [],
   };
 
@@ -3872,11 +3990,8 @@ function buildAnlagenArchiveObject(rows) {
   const out = {};
 
   for (const row of rows || []) {
-    const teamId = row.team_id;
     const komNr = row.kom_nr;
-
-    if (!out[teamId]) out[teamId] = {};
-    out[teamId][komNr] = mapAnlagenArchiveRow(row);
+    out[komNr] = mapAnlagenArchiveRow(row);
   }
 
   return out;
@@ -3900,36 +4015,23 @@ async function setAnlagenArchiveState({ teamId, komNr, archived, archivedBy }) {
   }
 
   if (archived) {
+    // Zuerst alle alten Einträge für diese KomNr löschen (teamId egal)
+    await db.query(`DELETE FROM anlagen_archive WHERE kom_nr = $1`, [komNr]);
+
     const result = await db.query(
       `
-        INSERT INTO anlagen_archive (
-          team_id,
-          kom_nr,
-          archived_at,
-          archived_by
-        )
+        INSERT INTO anlagen_archive (team_id, kom_nr, archived_at, archived_by)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (team_id, kom_nr)
-        DO UPDATE SET
-          archived_at = EXCLUDED.archived_at,
-          archived_by = EXCLUDED.archived_by
         RETURNING team_id, kom_nr, archived_at, archived_by
       `,
-      [teamId, komNr, new Date().toISOString(), archivedBy || null]
+      [teamId || 'global', komNr, new Date().toISOString(), archivedBy || null]
     );
 
     return mapAnlagenArchiveRow(result.rows[0] || null);
   }
 
-  await db.query(
-    `
-      DELETE FROM anlagen_archive
-      WHERE team_id = $1
-        AND kom_nr = $2
-    `,
-    [teamId, komNr]
-  );
-
+  // De-archivieren: alle Einträge für diese KomNr löschen
+  await db.query(`DELETE FROM anlagen_archive WHERE kom_nr = $1`, [komNr]);
   return null;
 }
 
@@ -4808,28 +4910,25 @@ app.get(
   requireAdmin,
   async (req, res) => {
     const status = String(req.query.status || 'active'); // default hide archived
-    const teamId = String(req.query.teamId || req.user.teamId || '');
-
-    if (!teamId)
-      return res.status(400).json({ ok: false, error: 'Missing teamId' });
+    const teamId = String(req.query.teamId || '');
 
     const search = String(req.query.search || '').trim();
     const index = await readAnlagenIndex();
-    const teamObj =
-      index.teams &&
-      index.teams[teamId] &&
-      typeof index.teams[teamId] === 'object'
-        ? index.teams[teamId]
-        : {};
+    // Kein teamId Filter → alle Teams zusammenführen
+    let teamObj = {};
+    if (teamId && index.teams?.[teamId]) {
+      teamObj = index.teams[teamId];
+    } else if (!teamId) {
+      Object.values(index.teams || {}).forEach((t) => {
+        if (typeof t === 'object') Object.assign(teamObj, t);
+      });
+    }
 
     const archive = await readAnlagenArchive();
-    const teamArchive =
-      archive[teamId] && typeof archive[teamId] === 'object'
-        ? archive[teamId]
-        : {};
 
+    // Alle Teams zusammenführen wenn kein teamId Filter
     const list = Object.entries(teamObj).map(([komNr, rec]) => {
-      const m = teamArchive[komNr] || null;
+      const m = archive[komNr] || null;
       const archived = !!(m && m.archived);
 
       // compute top operation (exclude _special)
@@ -4880,33 +4979,36 @@ app.get(
   requireAuth,
   requireAdmin,
   async (req, res) => {
-    const teamId = String(req.query.teamId || req.user.teamId || '');
+    const teamIdParam = String(req.query.teamId || '');
     const komNr = normalizeKomNr(req.query.komNr);
 
-    if (!teamId)
-      return res.status(400).json({ ok: false, error: 'Missing teamId' });
     if (!komNr)
       return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
     const index = await readAnlagenIndex();
-    const teamObj =
-      index.teams &&
-      index.teams[teamId] &&
-      typeof index.teams[teamId] === 'object'
-        ? index.teams[teamId]
-        : {};
 
-    const rec = teamObj[komNr];
+    // teamId optional — wenn nicht angegeben, alle Teams durchsuchen
+    let teamId = teamIdParam;
+    let rec = null;
+    if (teamId) {
+      const teamObj = index.teams?.[teamId] || {};
+      rec = teamObj[komNr] || null;
+    } else {
+      for (const [tid, teamObj] of Object.entries(index.teams || {})) {
+        if (teamObj[komNr]) {
+          teamId = tid;
+          rec = teamObj[komNr];
+          break;
+        }
+      }
+    }
+
     if (!rec) {
       return res.status(404).json({ ok: false, error: 'Anlage not found' });
     }
 
     const archive = await readAnlagenArchive();
-    const teamArchive =
-      archive[teamId] && typeof archive[teamId] === 'object'
-        ? archive[teamId]
-        : {};
-    const m = teamArchive[komNr] || null;
+    const m = archive[komNr] || null;
 
     const operations = Object.entries(rec.byOperation || {})
       .map(([key, hours]) => ({ key, hours: round1(hours) }))
@@ -4940,16 +5042,28 @@ app.post(
   requireAuth,
   requireAdmin,
   async (req, res) => {
-    const teamId = String(req.body?.teamId || req.user.teamId || '');
+    const teamIdParam = String(req.body?.teamId || '');
     const komNr = normalizeKomNr(req.body?.komNr);
     const archived = !!req.body?.archived;
 
-    if (!teamId) {
-      return res.status(400).json({ ok: false, error: 'Missing teamId' });
-    }
-
     if (!komNr) {
       return res.status(400).json({ ok: false, error: 'Missing komNr' });
+    }
+
+    // teamId optional — aus Index herleiten wenn nicht angegeben
+    let teamId = teamIdParam;
+    if (!teamId) {
+      const index = await readAnlagenIndex();
+      for (const [tid, teamObj] of Object.entries(index.teams || {})) {
+        if (teamObj[komNr]) {
+          teamId = tid;
+          break;
+        }
+      }
+    }
+
+    if (!teamId) {
+      return res.status(400).json({ ok: false, error: 'KomNr not found' });
     }
 
     try {
@@ -4959,7 +5073,6 @@ app.post(
         archived,
         archivedBy: req.user.username,
       });
-
       return res.json({
         ok: true,
         teamId,
@@ -5411,7 +5524,8 @@ app.delete('/api/absences/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Not found' });
     }
 
-    if (item.status !== 'pending') {
+    const isKrank = item.type === 'krank';
+    if (item.status !== 'pending' && !(isKrank && item.status === 'accepted')) {
       return res.status(409).json({
         ok: false,
         error: 'Only pending absences can be cancelled',
@@ -5640,7 +5754,7 @@ app.post(
 
       const konto = await updateKontenManualValues({
         username,
-        values: req.body || {},
+        values: { ...req.body, updatedBy: req.user.username },
         updatedBy: req.user.username,
       });
 
@@ -5648,6 +5762,32 @@ app.post(
     } catch (err) {
       console.error('Failed to save admin konto', err);
       return res.status(500).json({ ok: false, error: 'Could not save konto' });
+    }
+  }
+);
+
+// GET /api/admin/konten/adjustments/:username
+app.get(
+  '/api/admin/konten/adjustments/:username',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const username = String(req.params.username || '');
+    try {
+      const result = await db.query(
+        `SELECT field, old_value, new_value, admin_username, reason, created_at
+       FROM konto_adjustments
+       WHERE username = $1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+        [username]
+      );
+      return res.json({ ok: true, adjustments: result.rows });
+    } catch (err) {
+      console.error('Failed to load konto adjustments', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Could not load adjustments' });
     }
   }
 );
@@ -6095,6 +6235,7 @@ app.get(
               type: acceptedAbsence.type || '',
               from: acceptedAbsence.from,
               to: acceptedAbsence.to,
+              hours: acceptedAbsence.hours ?? null,
               comment: acceptedAbsence.comment || '',
             }
           : null,
@@ -6896,7 +7037,7 @@ app.get(
 app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT id, username, role, team_id, active, email, created_at
+      SELECT id, username, role, team_id, active, email, employment_start, created_at
       FROM users
       ORDER BY username ASC
     `);
@@ -6960,7 +7101,15 @@ app.patch(
   requireAdmin,
   async (req, res) => {
     const { id } = req.params;
-    const { email, role, teamId, employmentStart } = req.body || {};
+    const {
+      email,
+      role,
+      teamId,
+      employmentStart,
+      birthYear,
+      isNonSmoker,
+      isKader,
+    } = req.body || {};
 
     try {
       const result = await db.query(
@@ -6971,9 +7120,13 @@ app.patch(
         role = COALESCE($3, role),
         team_id = COALESCE($4, team_id),
         employment_start = COALESCE($5, employment_start),
+        birth_year = COALESCE($6, birth_year),
+        is_non_smoker = COALESCE($7, is_non_smoker),
+        is_kader = COALESCE($8, is_kader),
         updated_at = NOW()
         WHERE id = $1
-        RETURNING id, username, role, team_id, active, email, employment_start
+        RETURNING id, username, role, team_id, active, email, employment_start,
+                  birth_year, is_non_smoker, is_kader
     `,
         [
           id,
@@ -6981,6 +7134,9 @@ app.patch(
           role || null,
           teamId || null,
           employmentStart || null,
+          birthYear ? Number(birthYear) : null,
+          isNonSmoker != null ? !!isNonSmoker : null,
+          isKader != null ? !!isKader : null,
         ]
       );
 
@@ -6988,7 +7144,19 @@ app.patch(
         return res.status(404).json({ ok: false, error: 'User not found' });
       }
 
-      return res.json({ ok: true, user: mapDbUser(result.rows[0]) });
+      // Ferientage automatisch aktualisieren
+      const updated = mapDbUser(result.rows[0]);
+      const newVacDays = computeVacationDaysPerYear(
+        updated.birthYear,
+        updated.isNonSmoker,
+        updated.isKader
+      );
+      await db.query(
+        `UPDATE konten SET vacation_days_per_year = $1 WHERE user_id = $2`,
+        [newVacDays, id]
+      );
+
+      return res.json({ ok: true, user: updated });
     } catch (err) {
       console.error('Failed to update user', err);
       return res
@@ -7042,7 +7210,7 @@ app.post(
   }
 );
 
-// POST /api/admin/users/:id/deactivate
+// POST /api/admin/users/:id/deactivate — löscht User und alle Daten
 app.post(
   '/api/admin/users/:id/deactivate',
   requireAuth,
@@ -7053,20 +7221,17 @@ app.post(
     if (id === req.user.id) {
       return res
         .status(400)
-        .json({ ok: false, error: 'Cannot deactivate your own account' });
+        .json({ ok: false, error: 'Eigenen Account kann man nicht löschen' });
     }
 
     try {
-      await db.query(
-        `UPDATE users SET active = FALSE, updated_at = NOW() WHERE id = $1`,
-        [id]
-      );
+      await db.query(`DELETE FROM users WHERE id = $1`, [id]);
       return res.json({ ok: true });
     } catch (err) {
-      console.error('Failed to deactivate user', err);
+      console.error('Failed to delete user', err);
       return res
         .status(500)
-        .json({ ok: false, error: 'Could not deactivate user' });
+        .json({ ok: false, error: 'Could not delete user' });
     }
   }
 );
@@ -7115,6 +7280,132 @@ async function startServer() {
     console.log(`Server listening on port ${PORT}`);
   });
 }
+
+app.post('/api/test-stamp-alert-public', async (req, res) => {
+  try {
+    await checkAndSendStampAlerts();
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ============================================================================
+// Email-Warnung: nicht ausgestempelt um 18:00
+// ============================================================================
+
+function createMailTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'mail.infomaniak.com',
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: false,
+    family: 4, // IPv4 erzwingen
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+}
+
+const ALERT_TEAMS = {
+  montage: (process.env.ALERT_EMAIL_MONTAGE || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  service: (process.env.ALERT_EMAIL_SERVICE || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+};
+
+async function checkAndSendStampAlerts() {
+  const todayKey = formatDateKey(new Date());
+
+  // Alle live_stamps von heute laden
+  const result = await db.query(
+    `
+    SELECT l.username, l.stamps, l.today_key, u.team_id
+    FROM live_stamps l
+    LEFT JOIN users u ON u.username = l.username
+    WHERE l.today_key = $1
+  `,
+    [todayKey]
+  );
+
+  // Nur Teams mit konfigurierten Adressen
+  const alertTeams = Object.keys(ALERT_TEAMS).filter(
+    (t) => ALERT_TEAMS[t].length > 0
+  );
+  if (alertTeams.length === 0) return;
+
+  // Pro Team: User sammeln die noch eingestempelt sind
+  const alertsByTeam = {};
+
+  for (const row of result.rows) {
+    const teamId = row.team_id || '';
+    if (!alertTeams.includes(teamId)) continue;
+
+    const stamps = Array.isArray(row.stamps) ? row.stamps : [];
+    if (stamps.length === 0) continue;
+
+    // Letzter Stempel = 'in' → noch eingestempelt
+    const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+    const lastStamp = sorted[sorted.length - 1];
+    if (lastStamp.type !== 'in') continue;
+
+    if (!alertsByTeam[teamId]) alertsByTeam[teamId] = [];
+    alertsByTeam[teamId].push({
+      username: row.username,
+      lastTime: lastStamp.time,
+    });
+  }
+
+  if (Object.keys(alertsByTeam).length === 0) {
+    console.log('[StampAlert] Alle ausgestempelt — keine Meldung nötig.');
+    return;
+  }
+
+  const transporter = createMailTransporter();
+
+  for (const [teamId, users] of Object.entries(alertsByTeam)) {
+    const recipients = ALERT_TEAMS[teamId];
+    if (!recipients.length) continue;
+
+    const teamLabel = teamId.charAt(0).toUpperCase() + teamId.slice(1);
+    const userList = users
+      .map((u) => `• ${u.username} — eingestempelt seit ${u.lastTime} Uhr`)
+      .join('\n');
+
+    const text = `Guten Abend\n\nFolgende Mitarbeiter des Teams ${teamLabel} sind um 18:00 Uhr noch eingestempelt:\n\n${userList}\n\nBitte prüfen.\n\nFreundliche Grüsse\nNorm Aufzüge AG`;
+
+    try {
+      await transporter.sendMail({
+        from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
+        to: recipients.join(', '),
+        subject: `⚠️ Nicht ausgestempelt – Team ${teamLabel} – ${todayKey}`,
+        text,
+      });
+      console.log(
+        `[StampAlert] Email gesendet für Team ${teamId} an ${recipients.join(', ')}`
+      );
+    } catch (err) {
+      console.error(`[StampAlert] Email-Fehler Team ${teamId}:`, err.message);
+    }
+  }
+}
+
+cron.schedule(
+  '0 18 * * 1-5',
+  async () => {
+    console.log('[StampAlert] Prüfe nicht ausgestempelte Mitarbeiter...');
+    try {
+      await checkAndSendStampAlerts();
+    } catch (err) {
+      console.error('[StampAlert] Fehler:', err);
+    }
+  },
+  { timezone: 'Europe/Zurich' }
+);
 
 // Auto-Transmit täglich um 02:00 Uhr
 cron.schedule(

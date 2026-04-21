@@ -639,8 +639,8 @@ async function loadAdminPayroll() {
     }
 
     const rows = Array.isArray(data.rows) ? data.rows : [];
-    const filteredRows = adminActiveTeamFilter
-      ? rows.filter((r) => r.teamId === adminActiveTeamFilter)
+    const filteredRows = adminActiveTeamFilterPayroll
+      ? rows.filter((r) => r.teamId === adminActiveTeamFilterPayroll)
       : rows;
     const summary = data.summary || {};
 
@@ -925,7 +925,7 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
       : {};
 
   Object.entries(daysObj).forEach(([dateKey, dayData]) => {
-    dayStore[dateKey] = dayData;
+    dayStore[dateKey] = { ...dayData, stampEditLog: [] };
   });
 
   saveToStorage();
@@ -1921,6 +1921,26 @@ document.addEventListener('click', async (event) => {
   const target = event.target;
   if (!target || !target.classList) return;
 
+  if (target.classList.contains('absence-delete-direct-btn')) {
+    const item = target.closest('.absence-item');
+    if (!item) return;
+    const id = item.dataset.absenceId;
+    if (!id) return;
+    try {
+      const res = await authFetch(`/api/absences/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok)
+        throw new Error(data.error || 'Löschen nicht möglich');
+      await syncMyAbsencesFromServer();
+    } catch (e) {
+      console.error(e);
+      showToast(e.message || 'Fehler beim Löschen');
+    }
+    return;
+  }
+
   if (target.classList.contains('absence-cancel-btn')) {
     const item = target.closest('.absence-item');
     if (!item) return;
@@ -2332,7 +2352,14 @@ function buildAdminDayDrawer(data) {
   // Absence
   const abs = data?.acceptedAbsence || null;
   if (abs) {
-    const absText = `Absenz: ${abs.type || 'Absenz'} (${String(abs.from).slice(0, 10)} – ${String(abs.to).slice(0, 10)})`;
+    const absTypeLabel =
+      abs.type === 'krank'
+        ? 'Krank/Arzt'
+        : abs.type === 'ferien'
+          ? 'Ferien'
+          : abs.type || 'Absenz';
+    const hoursLabel = abs.hours != null ? ` · ${abs.hours}h` : '';
+    const absText = `${absTypeLabel}${hoursLabel}`;
     chipsRow.appendChild(chip(absText, 'chip-absence'));
   }
 
@@ -2509,12 +2536,11 @@ function buildAdminDayDrawer(data) {
     }
   }
 
-  wrap.appendChild(addSection('Präsenz', presenzBody));
-
   // -------- assemble --------
   wrap.appendChild(header);
   wrap.appendChild(chipsRow);
   wrap.appendChild(totalsGrid);
+  wrap.appendChild(addSection('Präsenz', presenzBody));
   wrap.appendChild(addSection('Kommissionen', komBody));
   wrap.appendChild(addSection('Spezialbuchungen', specialBody));
   wrap.appendChild(addSection('Pikett', pikettBody));
@@ -2724,8 +2750,10 @@ async function loadAdminPersonnel() {
       throw new Error(kontData.error || 'Konten konnten nicht geladen werden');
 
     let absences = Array.isArray(absData.absences) ? absData.absences : [];
-    if (adminActiveTeamFilter) {
-      absences = absences.filter((a) => a.teamId === adminActiveTeamFilter);
+    if (adminActiveTeamFilterAbsences) {
+      absences = absences.filter(
+        (a) => a.teamId === adminActiveTeamFilterAbsences
+      );
     }
     if (search) {
       absences = absences.filter((a) => {
@@ -2738,8 +2766,8 @@ async function loadAdminPersonnel() {
     renderAdminAbsenceList(absences);
     const kontenUsers = Array.isArray(kontData.users) ? kontData.users : [];
     renderAdminKontenGrid(
-      adminActiveTeamFilter
-        ? kontenUsers.filter((u) => u.teamId === adminActiveTeamFilter)
+      adminActiveTeamFilterAbsences
+        ? kontenUsers.filter((u) => u.teamId === adminActiveTeamFilterAbsences)
         : kontenUsers
     );
   } catch (e) {
@@ -2904,6 +2932,16 @@ function renderAdminKontenGrid(rows) {
     const card = document.createElement('div');
     card.className = 'admin-konto-card';
 
+    const ueZ1Corr = toNum(konto?.ueZ1Correction, 0);
+    const ueZ2Corr = toNum(konto?.ueZ2Correction, 0);
+    const ueZ3Corr = toNum(konto?.ueZ3Correction, 0);
+    const ueZ1Display = formatHoursSigned(rawUeZ1 + ueZ1Corr);
+    const ueZ2Display = formatHoursSigned(toNum(konto?.ueZ2, 0) + ueZ2Corr);
+    const ueZ3Display = formatHoursSigned(toNum(konto?.ueZ3, 0) + ueZ3Corr);
+    const vacBalance = toNum(konto?.vacationDays, 0);
+    const vacPerYear = toNum(konto?.vacationDaysPerYear, 21);
+    const vorarbeitBalance = toNum(konto?.vorarbeitBalance, 0);
+
     card.innerHTML = `
       <div class="admin-konto-header">
         <div class="admin-konto-user">${escapeHtml(username)}</div>
@@ -2911,39 +2949,118 @@ function renderAdminKontenGrid(rows) {
 
       <div class="admin-konto-metrics">
         <div class="admin-konto-metric-row">
-          <div class="admin-konto-metric-label">ÜZ1 (nach Vorarbeit, ${selectedYear})</div>
-          <div class="admin-konto-metric-value">${formatHoursSigned(ueZ1AfterVorarbeit)}</div>
+          <div class="admin-konto-metric-label">ÜZ1 Saldo</div>
+          <div class="admin-konto-metric-value">${ueZ1Display}</div>
+        </div>
+        <div class="admin-konto-metric-row">
+          <div class="admin-konto-metric-label">ÜZ2 Saldo</div>
+          <div class="admin-konto-metric-value">${ueZ2Display}</div>
+        </div>
+        <div class="admin-konto-metric-row">
+          <div class="admin-konto-metric-label">ÜZ3 Saldo</div>
+          <div class="admin-konto-metric-value">${ueZ3Display}</div>
         </div>
         <div class="admin-konto-metric-row">
           <div class="admin-konto-metric-label">Vorarbeit (${selectedYear})</div>
-          <div class="admin-konto-metric-value">${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}</div>
+          <div class="admin-konto-metric-value">${formatHours(vorarbeitBalance)} / ${formatHours(vorarbeitRequired)}</div>
+        </div>
+        <div class="admin-konto-metric-row">
+          <div class="admin-konto-metric-label">Ferien-Guthaben</div>
+          <div class="admin-konto-metric-value">${formatDays(vacBalance)} / ${formatDays(vacPerYear)} Tage</div>
         </div>
       </div>
 
+      <div class="admin-konto-divider"></div>
+
+      <div class="admin-konto-edit-title">Bearbeitung</div>
+
       <div class="admin-konto-grid">
-        <label>ÜZ1 (roh)
-          <input class="admin-konto-input" data-field="ueZ1" type="number" step="0.1" value="${rawUeZ1}">
+        <label>ÜZ1 Anpassung
+          <input class="admin-konto-input" data-field="ueZ1Correction" type="number" step="0.1" value="0" placeholder="z.B. -10.0">
         </label>
-        <label>ÜZ2
-          <input class="admin-konto-input" data-field="ueZ2" type="number" step="0.1" value="${toNum(konto?.ueZ2, 0)}">
+        <label>ÜZ2 Anpassung
+          <input class="admin-konto-input" data-field="ueZ2Correction" type="number" step="0.1" value="0" placeholder="z.B. -5.0">
         </label>
-        <label>ÜZ3
-          <input class="admin-konto-input" data-field="ueZ3" type="number" step="0.1" value="${toNum(konto?.ueZ3, 0)}">
+        <label>ÜZ3 Anpassung
+          <input class="admin-konto-input" data-field="ueZ3Correction" type="number" step="0.1" value="0" placeholder="z.B. -2.0">
         </label>
-        <label>Ferien
-          <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${toNum(konto?.vacationDays, 0)}">
+        <label>Ferien-Guthaben
+          <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${vacBalance}">
         </label>
         <label>Ferien/Jahr
-          <input class="admin-konto-input" data-field="vacationDaysPerYear" type="number" step="1" value="${toNum(konto?.vacationDaysPerYear, 21)}">
+          <input class="admin-konto-input" data-field="vacationDaysPerYear" type="number" step="1" value="${vacPerYear}">
         </label>
       </div>
+
+      <label class="admin-konto-reason-label">Grund (optional)
+        <input class="admin-konto-reason" type="text" placeholder="z.B. ÜZ-Auszahlung Januar 2026">
+      </label>
 
       <div class="admin-konto-actions">
         <button type="button" class="admin-konto-save" data-username="${username}">Speichern</button>
       </div>
+
+      <details class="admin-konto-history">
+        <summary class="admin-konto-history-summary" data-username="${username}">Verlauf</summary>
+        <div class="admin-konto-history-body" data-history-username="${username}">
+          <div class="admin-konto-history-loading">Wird geladen…</div>
+        </div>
+      </details>
     `;
 
     adminKontenGridEl.appendChild(card);
+    card
+      .querySelector('.admin-konto-history')
+      ?.addEventListener('toggle', async (e) => {
+        if (!e.target.open) return;
+        const body = card.querySelector('.admin-konto-history-body');
+        if (!body || body.dataset.loaded) return;
+        body.dataset.loaded = 'true';
+        try {
+          const res = await authFetch(
+            `/api/admin/konten/adjustments/${encodeURIComponent(username)}`
+          );
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error);
+          body.innerHTML = '';
+          if (!data.adjustments.length) {
+            body.innerHTML =
+              '<div class="admin-konto-history-empty">Keine Änderungen.</div>';
+            return;
+          }
+          const fieldLabels = {
+            ueZ1Correction: 'ÜZ1 Anpassung',
+            ueZ2Correction: 'ÜZ2 Anpassung',
+            ueZ3Correction: 'ÜZ3 Anpassung',
+            vacationDays: 'Ferien-Guthaben',
+            vacationDaysPerYear: 'Ferien/Jahr',
+          };
+          data.adjustments.forEach((a) => {
+            const row = document.createElement('div');
+            row.className = 'admin-konto-history-row';
+            const date = new Date(a.created_at).toLocaleString('de-CH', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const label = fieldLabels[a.field] || a.field;
+            const delta = a.new_value - a.old_value;
+            const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1);
+            row.innerHTML = `
+            <div class="admin-konto-history-date">${date}</div>
+            <div class="admin-konto-history-field">${label}</div>
+            <div class="admin-konto-history-delta ${delta >= 0 ? 'positive' : 'negative'}">${deltaStr}</div>
+            <div class="admin-konto-history-who">${escapeHtml(a.admin_username)}</div>
+            ${a.reason ? `<div class="admin-konto-history-reason">${escapeHtml(a.reason)}</div>` : ''}
+          `;
+            body.appendChild(row);
+          });
+        } catch (err) {
+          body.innerHTML = `<div class="admin-konto-history-empty">Fehler: ${err.message}</div>`;
+        }
+      });
   });
 }
 
@@ -3204,8 +3321,13 @@ function renderAbsenceListForCurrentYear() {
     if (st === 'accepted') {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'absence-cancel-btn';
-      btn.textContent = 'Storno anfragen';
+      if (req.type === 'krank') {
+        btn.className = 'absence-delete-direct-btn';
+        btn.textContent = 'Löschen';
+      } else {
+        btn.className = 'absence-cancel-btn';
+        btn.textContent = 'Storno anfragen';
+      }
       statusRow.appendChild(btn);
     }
 
@@ -3486,11 +3608,18 @@ async function updateOvertimeYearCard() {
 
     const cfgSelected = getYearConfig(selectedYear) || {};
     const vorarbeitRequired = Number(cfgSelected.vorarbeitRequired) || 0;
-    const vacationDaysPerYear = Number(cfgSelected.vacationDaysPerYear) || 21;
+    // vacationDaysPerYear kommt vom Server-Konto, nicht aus der lokalen Config
+    const vacationDaysPerYear =
+      Number(konto.vacationDaysPerYear) ||
+      Number(cfgSelected.vacationDaysPerYear) ||
+      21;
 
-    const officialUeZ1Raw = Number(konto.ueZ1) || 0;
-    const officialUeZ2 = Number(konto.ueZ2) || 0;
-    const officialUeZ3 = Number(konto.ueZ3) || 0;
+    const officialUeZ1Raw =
+      (Number(konto.ueZ1) || 0) + (Number(konto.ueZ1Correction) || 0);
+    const officialUeZ2 =
+      (Number(konto.ueZ2) || 0) + (Number(konto.ueZ2Correction) || 0);
+    const officialUeZ3 =
+      (Number(konto.ueZ3) || 0) + (Number(konto.ueZ3Correction) || 0);
     const officialVacationDays = Number(konto.vacationDays) || 0;
 
     const vorarbeitFilled = Number(konto.vorarbeitBalance) || 0;
@@ -4456,6 +4585,8 @@ document.addEventListener('click', async (event) => {
       const field = inp.dataset.field;
       body[field] = Number(inp.value);
     });
+    const reasonEl = card.querySelector('.admin-konto-reason');
+    if (reasonEl) body.reason = reasonEl.value.trim() || null;
 
     try {
       const res = await authFetch('/api/admin/konten/set', {
@@ -4530,30 +4661,24 @@ const adminTeamFilterPayrollEl = document.getElementById(
   'adminTeamFilterPayroll'
 );
 let adminActiveTeamFilter = '';
-
-function onTeamFilterChange(value) {
-  adminActiveTeamFilter = value;
-  if (adminTeamFilterEl) adminTeamFilterEl.value = value;
-  if (adminTeamFilterAbsencesEl) adminTeamFilterAbsencesEl.value = value;
-  if (adminTeamFilterPayrollEl) adminTeamFilterPayrollEl.value = value;
-  loadAdminSummary();
-  loadAdminPersonnel();
-  loadAdminPayroll();
-}
+let adminActiveTeamFilterAbsences = '';
+let adminActiveTeamFilterPayroll = '';
 
 if (adminTeamFilterEl)
-  adminTeamFilterEl.addEventListener('change', (e) =>
-    onTeamFilterChange(e.target.value)
-  );
+  adminTeamFilterEl.addEventListener('change', (e) => {
+    adminActiveTeamFilter = e.target.value;
+    loadAdminSummary();
+  });
 if (adminTeamFilterAbsencesEl)
-  adminTeamFilterAbsencesEl.addEventListener('change', (e) =>
-    onTeamFilterChange(e.target.value)
-  );
+  adminTeamFilterAbsencesEl.addEventListener('change', (e) => {
+    adminActiveTeamFilterAbsences = e.target.value;
+    loadAdminPersonnel();
+  });
 if (adminTeamFilterPayrollEl)
-  adminTeamFilterPayrollEl.addEventListener('change', (e) =>
-    onTeamFilterChange(e.target.value)
-  );
-
+  adminTeamFilterPayrollEl.addEventListener('change', (e) => {
+    adminActiveTeamFilterPayroll = e.target.value;
+    loadAdminPayroll();
+  });
 /**
  * Current-day total calculation
  */
@@ -4839,8 +4964,11 @@ function loadAdminAnlagenSummary({ force } = {}) {
 
   adminAnlagenList.innerHTML = `<div class="admin-day-drawer-loading">Lade Anlagen …</div>`;
 
+  const anlagenTeamParam = adminActiveTeamFilter
+    ? `&teamId=${encodeURIComponent(adminActiveTeamFilter)}`
+    : '';
   authFetch(
-    `/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}`
+    `/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}${anlagenTeamParam}`
   )
     .then((res) => res.json())
     .then((data) => {
@@ -5842,18 +5970,6 @@ function loadAdminSummary() {
         } else {
           totalText.textContent = 'Total: –';
         }
-
-        const badge = document.createElement('span');
-        if (u.month && u.month.transmitted) {
-          badge.className = 'admin-month-badge transmitted';
-          badge.textContent = 'Monat übertragen';
-        } else {
-          badge.className = 'admin-month-badge not-transmitted';
-          badge.textContent = 'Nicht übertragen';
-        }
-
-        monthRight.appendChild(totalText);
-        monthRight.appendChild(badge);
 
         monthRow.appendChild(monthLeft);
         monthRow.appendChild(monthRight);
@@ -7325,7 +7441,7 @@ async function loadWorkScheduleForModal(userId) {
         .join(' · ');
 
       const info = document.createElement('div');
-      info.innerHTML = `<strong>${s.valid_from.slice(0, 10)}</strong> · ab ${s.valid_from.slice(0, 10)}<br>
+      info.innerHTML = `<strong>Ab ${s.valid_from.slice(0, 10)}</strong><br>
         <span style="font-size:11px;color:#64748b;">${daysStr}</span>`;
 
       const delBtn = document.createElement('button');
@@ -7346,6 +7462,22 @@ async function loadWorkScheduleForModal(userId) {
   } catch (err) {
     listEl.innerHTML = `<span style="font-size:12px;color:#ef4444;">Fehler: ${err.message}</span>`;
   }
+}
+
+// Pensum-Input → Tagessoll automatisch anpassen
+const modalEmploymentPctEl = document.getElementById('modalEmploymentPct');
+if (modalEmploymentPctEl) {
+  modalEmploymentPctEl.addEventListener('input', () => {
+    const pct = Number(modalEmploymentPctEl.value);
+    if (!pct || pct < 10 || pct > 100) return;
+    const dailyHours = Math.round(((8 * pct) / 100) * 10) / 10; // auf 0.1 runden
+    ['schedMon', 'schedTue', 'schedWed', 'schedThu', 'schedFri'].forEach(
+      (id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = dailyHours;
+      }
+    );
+  });
 }
 
 // Work Schedule — neues Modell speichern
@@ -7412,11 +7544,7 @@ function renderAdminUsers(users) {
       <div class="admin-user-item-actions">
         <button class="admin-user-btn" data-action="edit" data-id="${u.id}">Bearbeiten</button>
         <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
-        ${
-          u.active !== false
-            ? `<button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}">Deaktivieren</button>`
-            : `<button class="admin-user-btn" data-action="activate" data-id="${u.id}">Aktivieren</button>`
-        }
+        ${`<button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}" data-username="${u.username}">Löschen</button>`}
       </div>
     </div>
   `
@@ -7430,8 +7558,16 @@ function renderAdminUsers(users) {
       const username = btn.dataset.username;
       if (action === 'edit') openEditUserModal(id);
       else if (action === 'password') await resetUserPassword(id, username);
-      else if (action === 'deactivate') await toggleUserActive(id, false);
-      else if (action === 'activate') await toggleUserActive(id, true);
+      else if (action === 'deactivate') {
+        const username = btn.dataset.username;
+        if (
+          !confirm(
+            `${username} und alle Daten wirklich löschen? Dies kann nicht rückgängig gemacht werden.`
+          )
+        )
+          return;
+        await toggleUserActive(id, false);
+      }
     });
   });
 }
@@ -7453,11 +7589,44 @@ function openNewUserModal() {
   populateTeamDropdown();
   modalTeam.value = 'montage';
   if (modalEmploymentStart) modalEmploymentStart.value = '';
+  if (document.getElementById('modalBirthYear'))
+    document.getElementById('modalBirthYear').value = '';
+  if (document.getElementById('modalIsNonSmoker'))
+    document.getElementById('modalIsNonSmoker').checked = false;
+  if (document.getElementById('modalIsKader'))
+    document.getElementById('modalIsKader').checked = false;
+  updateVacPreview();
   modalUsername.disabled = false;
   modalPassword.placeholder = 'Passwort';
   adminUserModalError.classList.add('hidden');
   adminUserModal.classList.remove('hidden');
 }
+
+function updateVacPreview() {
+  const preview = document.getElementById('modalVacPreview');
+  if (!preview) return;
+  const birthYear = Number(document.getElementById('modalBirthYear')?.value);
+  const isNonSmoker = document.getElementById('modalIsNonSmoker')?.checked;
+  const isKader = document.getElementById('modalIsKader')?.checked;
+
+  let base = 20;
+  if (birthYear) {
+    const age = new Date().getFullYear() - birthYear;
+    if (age <= 20 || age >= 50) base = 25;
+  }
+  if (isNonSmoker) base += 1;
+  if (isKader) base += 5;
+
+  preview.textContent = birthYear
+    ? `Ferien/Jahr: ${base} Tage`
+    : 'Ferien/Jahr: Geburtsjahr eingeben';
+}
+
+// Event Listeners für Live-Preview
+['modalBirthYear', 'modalIsNonSmoker', 'modalIsKader'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('input', updateVacPreview);
+  document.getElementById(id)?.addEventListener('change', updateVacPreview);
+});
 
 function openEditUserModal(userId) {
   const user = allUsers.find((u) => u.id === userId);
@@ -7472,6 +7641,13 @@ function openEditUserModal(userId) {
   modalTeam.value = user.teamId || 'montage';
   if (modalEmploymentStart)
     modalEmploymentStart.value = user.employmentStart || '';
+  if (document.getElementById('modalBirthYear'))
+    document.getElementById('modalBirthYear').value = user.birthYear || '';
+  if (document.getElementById('modalIsNonSmoker'))
+    document.getElementById('modalIsNonSmoker').checked = !!user.isNonSmoker;
+  if (document.getElementById('modalIsKader'))
+    document.getElementById('modalIsKader').checked = !!user.isKader;
+  updateVacPreview();
   modalUsername.disabled = true;
   modalPassword.placeholder = 'Leer lassen um nicht zu ändern';
   adminUserModalError.classList.add('hidden');
@@ -7512,7 +7688,20 @@ async function saveUserModal() {
       if (!data.ok) throw new Error(data.error);
     } else {
       const employmentStart = modalEmploymentStart?.value || null;
-      const body = { email, role, teamId, employmentStart };
+      const birthYear =
+        document.getElementById('modalBirthYear')?.value || null;
+      const isNonSmoker =
+        document.getElementById('modalIsNonSmoker')?.checked ?? false;
+      const isKader = document.getElementById('modalIsKader')?.checked ?? false;
+      const body = {
+        email,
+        role,
+        teamId,
+        employmentStart,
+        birthYear,
+        isNonSmoker,
+        isKader,
+      };
       if (password) body.password = password;
 
       const patchRes = await authFetch(`/api/admin/users/${editingUserId}`, {
@@ -7539,6 +7728,7 @@ async function saveUserModal() {
 
     closeUserModal();
     await loadAdminUsers();
+    await loadAdminPersonnel();
   } catch (err) {
     adminUserModalError.textContent = err.message;
     adminUserModalError.classList.remove('hidden');
@@ -7724,6 +7914,8 @@ function renderStampLog(dateKey, logEl, editMode) {
               a.time.localeCompare(b.time)
             );
             const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
+            const oldTime = dayData.stamps[realIdx]?.time;
+            const oldType = dayData.stamps[realIdx]?.type;
             if (realIdx !== -1) {
               dayData.stamps[realIdx].time = newTime;
               dayData.stamps[realIdx].type = type;
@@ -7731,10 +7923,12 @@ function renderStampLog(dateKey, logEl, editMode) {
             logStampEdit(
               dateKey,
               'edited',
-              { time: stamp.time, type: stamp.type },
+              { time: oldTime, type: oldType },
               { time: newTime, type }
             );
             saveToStorage();
+            if (dateKey === getTodayKey())
+              sendLiveStamp(dateKey, dayData.stamps);
             if (editMode) renderStampEditSection(dateKey);
             else renderStampCard();
           },
@@ -7750,10 +7944,11 @@ function renderStampLog(dateKey, logEl, editMode) {
         );
         const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
         if (realIdx !== -1) {
-          logStampEdit(dateKey, 'deleted', sortedOriginal[idx], null); // ← NEU
+          logStampEdit(dateKey, 'deleted', sortedOriginal[idx], null);
           dayData.stamps.splice(realIdx, 1);
         }
         saveToStorage();
+        if (dateKey === getTodayKey()) sendLiveStamp(dateKey, dayData.stamps);
         if (editMode) renderStampEditSection(dateKey);
         else renderStampCard();
       });
@@ -7966,6 +8161,50 @@ if (stampEditDate) {
   });
 }
 
+// 🔒 Dev-Shortcut: 5s Long-Press → Tagesstempel 07:00/12:00/12:30/16:30
+if (stampEditAddBtn) {
+  let devPressTimer = null;
+
+  stampEditAddBtn.addEventListener('pointerdown', () => {
+    devPressTimer = setTimeout(() => {
+      devPressTimer = null;
+      const dateKey = stampEditDate?.value;
+      if (!dateKey) return;
+      if (isDateLocked(dateKey)) return;
+      if (dateKey > getTodayKey()) return;
+
+      const dayData = getOrCreateDayData(dateKey);
+      const autoStamps = [
+        { type: 'in', time: '07:00' },
+        { type: 'out', time: '12:00' },
+        { type: 'in', time: '12:30' },
+        { type: 'out', time: '16:30' },
+      ];
+      autoStamps.forEach((s) => {
+        dayData.stamps.push(s);
+        logStampEdit(dateKey, 'added', null, s);
+      });
+      saveToStorage();
+      renderStampEditSection(dateKey);
+      showToast('Dev: Tagesstempel eingefügt', 'success');
+    }, 5000);
+  });
+
+  stampEditAddBtn.addEventListener('pointerup', () => {
+    if (devPressTimer) {
+      clearTimeout(devPressTimer);
+      devPressTimer = null;
+    }
+  });
+
+  stampEditAddBtn.addEventListener('pointerleave', () => {
+    if (devPressTimer) {
+      clearTimeout(devPressTimer);
+      devPressTimer = null;
+    }
+  });
+}
+
 // Edit Section — Stempel hinzufügen
 if (stampEditAddBtn) {
   stampEditAddBtn.addEventListener('click', () => {
@@ -8152,6 +8391,8 @@ adminInnerTabButtons.forEach((btn) => {
       loadAdminUsers();
     } else if (target === 'praesenz') {
       loadAdminPraesenz();
+    } else if (target === 'personnel') {
+      loadAdminPersonnel();
     }
   });
 });

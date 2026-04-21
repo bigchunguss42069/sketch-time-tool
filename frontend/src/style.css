@@ -2041,6 +2041,25 @@ body {
   cursor: not-allowed;
 }
 
+.absence-delete-direct-btn {
+  background: #ff000074;
+  border: 1px solid #ef4444;
+  color: #fff;
+  border-radius: 15px;
+  padding: 2px 16px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.absence-delete-direct-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
 /* ============================================================
    Week Rows (Overview)
    ============================================================ */
@@ -3243,9 +3262,15 @@ body.in-admin-view #view-admin {
 
 #adminSummaryContainer {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 18px;
   align-items: start;
+}
+
+@media (max-width: 900px) {
+  #adminSummaryContainer {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Admin toolbar */
@@ -3743,6 +3768,13 @@ body.in-admin-view #view-admin {
   opacity: 0.7;
 }
 
+.admin-day-chip.chip-absence {
+  background: rgba(251, 146, 60, 0.15);
+  border-color: rgba(251, 146, 60, 0.4);
+  color: #ea580c;
+  font-weight: 600;
+}
+
 .admin-day-totals {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4035,6 +4067,51 @@ body.in-admin-view #view-admin {
   font-size: 13px;
 }
 
+.admin-user-modal-details {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.admin-user-modal-summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+  list-style: none;
+  padding: 2px 0;
+}
+
+.admin-user-modal-summary:hover {
+  color: var(--text);
+}
+
+.admin-user-modal-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-user-modal-checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.admin-user-modal-vac-preview {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 0;
+}
+
+.admin-user-modal-body {
+  overflow-y: auto;
+  max-height: 80vh;
+}
+
 /* Admin payroll */
 .admin-payroll-toolbar {
   display: flex;
@@ -4207,7 +4284,8 @@ body.in-admin-view #view-admin {
   outline: none;
 }
 .admin-personnel-status,
-.admin-personnel-refresh {
+.admin-personnel-refresh,
+.admin-team-filter-select {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -4274,6 +4352,39 @@ body.in-admin-view #view-admin {
   font-size: 13px;
   background: var(--panel-soft);
   color: var(--text);
+}
+
+.admin-konto-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 0;
+}
+
+.admin-konto-edit-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.admin-konto-reason-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.admin-konto-reason {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 13px;
 }
 
 .admin-absence-cancel-approve {
@@ -4375,6 +4486,87 @@ body.in-admin-view #view-admin {
 .admin-konto-metric-value {
   font-weight: 600;
   color: var(--text);
+}
+
+.admin-konto-history {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.admin-konto-history-summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  list-style: none;
+  padding: 2px 0;
+  text-align: center;
+}
+
+.admin-konto-history-summary:hover {
+  color: var(--text);
+}
+
+.admin-konto-history-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-konto-history-loading,
+.admin-konto-history-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.admin-konto-history-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 6px 10px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  align-items: center;
+}
+
+.admin-konto-history-date {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.admin-konto-history-field {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.admin-konto-history-delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-konto-history-delta.positive {
+  color: #16a34a;
+}
+.admin-konto-history-delta.negative {
+  color: #ef4444;
+}
+
+.admin-konto-history-who {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-konto-history-reason {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
 }
 
 /* Admin Day Drawer — Präsenz / Stamps */
@@ -5136,17 +5328,4 @@ body.in-admin-view #view-admin {
 }
 .toast.toast--warning {
   background: #e67e22;
-}
-
-.admin-team-filter-bar {
-  margin-bottom: 1rem;
-}
-
-.admin-team-filter-select {
-  padding: 0.4rem 0.75rem;
-  border-radius: 6px;
-  border: 1px solid var(--border, #e2e8f0);
-  background: var(--surface, #fff);
-  font-size: 0.875rem;
-  cursor: pointer;
 }
