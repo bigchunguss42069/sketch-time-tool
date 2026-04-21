@@ -7281,15 +7281,6 @@ async function startServer() {
   });
 }
 
-app.post('/api/test-stamp-alert-public', async (req, res) => {
-  try {
-    await checkAndSendStampAlerts();
-    return res.json({ ok: true });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 // ============================================================================
 // Email-Warnung: nicht ausgestempelt um 18:00
 // ============================================================================

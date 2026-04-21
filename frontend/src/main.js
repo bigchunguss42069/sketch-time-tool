@@ -154,6 +154,9 @@ const loginErrorEl = document.getElementById('loginError');
 const loginSubmitBtn = document.getElementById('loginSubmitBtn');
 const loginLoader = document.getElementById('loginLoader');
 const userDisplayEl = document.getElementById('userDisplay');
+const dinoModal = document.getElementById('dinoModal');
+const dinoCanvas = document.getElementById('dinoCanvas');
+const dinoModalClose = document.getElementById('dinoModalClose');
 const logoutBtn = document.getElementById('logoutBtn');
 let _floorInterval = null;
 
@@ -8462,6 +8465,199 @@ async function loadDraftFromServer() {
     console.error('Draft load failed', err);
   }
 }
+
+// ============================================================================
+// 🦕 Dino Easter Egg
+// ============================================================================
+(function () {
+  if (!userDisplayEl || !dinoModal || !dinoCanvas) return;
+
+  let dinoClickCount = 0;
+  let dinoClickTimer = null;
+
+  userDisplayEl.addEventListener('click', () => {
+    dinoClickCount++;
+    clearTimeout(dinoClickTimer);
+    dinoClickTimer = setTimeout(() => {
+      dinoClickCount = 0;
+    }, 600);
+
+    if (dinoClickCount >= 3) {
+      dinoClickCount = 0;
+      dinoModal.classList.remove('hidden');
+      startDino();
+    }
+  });
+  dinoModalClose?.addEventListener('click', stopDino);
+
+  dinoModal?.addEventListener('click', (e) => {
+    if (e.target === dinoModal) stopDino();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') stopDino();
+  });
+
+  let animFrame = null;
+  let gameRunning = false;
+
+  const ctx = dinoCanvas.getContext('2d');
+  const W = dinoCanvas.width;
+  const H = dinoCanvas.height;
+  const GROUND = H - 30;
+
+  let dino, obstacles, score, speed, frameCount, gameOver;
+
+  function resetGame() {
+    dino = { x: 60, y: GROUND, w: 30, h: 40, vy: 0, onGround: true };
+    obstacles = [];
+    score = 0;
+    speed = 4;
+    frameCount = 0;
+    gameOver = false;
+  }
+
+  function jump() {
+    if (dino.onGround) {
+      dino.vy = -13;
+      dino.onGround = false;
+    }
+  }
+
+  function startDino() {
+    resetGame();
+    gameRunning = true;
+
+    const onKey = (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        jump();
+      }
+    };
+    const onTap = () => jump();
+
+    document.addEventListener('keydown', onKey);
+    dinoCanvas.addEventListener('click', onTap);
+
+    function loop() {
+      if (!gameRunning) return;
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Ground
+      ctx.fillStyle =
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--border')
+          .trim() || '#e2e8f0';
+      ctx.fillRect(0, GROUND + dino.h, W, 2);
+
+      // Dino
+      dino.vy += 0.7;
+      dino.y += dino.vy;
+      if (dino.y >= GROUND) {
+        dino.y = GROUND;
+        dino.vy = 0;
+        dino.onGround = true;
+      }
+
+      const textColor =
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--text')
+          .trim() || '#1a1a1a';
+      ctx.fillStyle = textColor;
+      // Body
+      ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
+      // Eye
+      ctx.fillStyle =
+        getComputedStyle(document.documentElement)
+          .getPropertyValue('--panel')
+          .trim() || '#fff';
+      ctx.fillRect(dino.x + 20, dino.y + 6, 6, 6);
+      ctx.fillStyle = textColor;
+      ctx.fillRect(dino.x + 23, dino.y + 8, 3, 3);
+
+      // Obstacles
+      frameCount++;
+      speed = 4 + Math.floor(score / 500) * 0.5;
+      if (frameCount % Math.max(60, 90 - Math.floor(score / 200)) === 0) {
+        const h = 30 + Math.random() * 25;
+        obstacles.push({ x: W, w: 18, h });
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.x -= speed;
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(o.x, GROUND + dino.h - o.h, o.w, o.h);
+
+        // Kollision
+        if (
+          dino.x + 4 < o.x + o.w &&
+          dino.x + dino.w - 4 > o.x &&
+          dino.y + 4 < GROUND + dino.h &&
+          dino.y + dino.h > GROUND + dino.h - o.h
+        ) {
+          gameOver = true;
+        }
+
+        if (o.x + o.w < 0) {
+          obstacles.splice(i, 1);
+          score += 10;
+        }
+      }
+
+      // Score
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`${score}`, W - 60, 24);
+
+      if (gameOver) {
+        ctx.fillStyle = textColor;
+        ctx.font = 'bold 18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('GAME OVER', W / 2, H / 2 - 10);
+        ctx.font = '13px monospace';
+        ctx.fillText('Klicken oder ↑ zum Neustart', W / 2, H / 2 + 14);
+        ctx.textAlign = 'left';
+
+        const restart = () => {
+          resetGame();
+          dinoCanvas.removeEventListener('click', restart);
+          document.removeEventListener('keydown', restartKey);
+        };
+        const restartKey = (e) => {
+          if (e.code === 'Space' || e.code === 'ArrowUp') {
+            e.preventDefault();
+            resetGame();
+            document.removeEventListener('keydown', restartKey);
+            dinoCanvas.removeEventListener('click', restart);
+          }
+        };
+        dinoCanvas.addEventListener('click', restart);
+        document.addEventListener('keydown', restartKey);
+        animFrame = requestAnimationFrame(loop);
+        return;
+      }
+
+      animFrame = requestAnimationFrame(loop);
+    }
+
+    animFrame = requestAnimationFrame(loop);
+
+    dinoCanvas._cleanup = () => {
+      document.removeEventListener('keydown', onKey);
+      dinoCanvas.removeEventListener('click', onTap);
+    };
+  }
+
+  function stopDino() {
+    gameRunning = false;
+    if (animFrame) cancelAnimationFrame(animFrame);
+    if (dinoCanvas._cleanup) dinoCanvas._cleanup();
+    dinoModal.classList.add('hidden');
+    ctx.clearRect(0, 0, W, H);
+  }
+})();
 
 /**
  * Reload all per-user draft stores after login/logout/session restoration and refresh the visible UI.
