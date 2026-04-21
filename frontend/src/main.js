@@ -8465,6 +8465,7 @@ async function loadDraftFromServer() {
     console.error('Draft load failed', err);
   }
 }
+
 // ============================================================================
 // 🦕 Dino Easter Egg
 // ============================================================================
@@ -8497,11 +8498,27 @@ async function loadDraftFromServer() {
 
   let animFrame = null;
   let gameRunning = false;
-  const ctx = dinoCanvas.getContext('2d');
-  const W = dinoCanvas.width;
-  const H = dinoCanvas.height;
-  const GROUND = H - 30;
+  let W, H, GROUND;
   let dino, obstacles, score, speed, frameCount, gameOver;
+
+  function initCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const logicalW = dinoCanvas.parentElement.clientWidth - 32 || 560;
+    const logicalH = 200;
+    W = logicalW;
+    H = logicalH;
+    GROUND = H - 30;
+    dinoCanvas.width = logicalW * dpr;
+    dinoCanvas.height = logicalH * dpr;
+    dinoCanvas.style.width = logicalW + 'px';
+    dinoCanvas.style.height = logicalH + 'px';
+    const ctx = dinoCanvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+  }
+
+  function getCtx() {
+    return dinoCanvas.getContext('2d');
+  }
 
   function resetGame() {
     dino = { x: 60, y: GROUND, w: 30, h: 40, vy: 0, onGround: true };
@@ -8526,7 +8543,6 @@ async function loadDraftFromServer() {
         jump();
       }
     } else {
-      // click/tap
       if (gameOver) {
         resetGame();
       } else {
@@ -8536,6 +8552,7 @@ async function loadDraftFromServer() {
   }
 
   function startDino() {
+    initCanvas();
     resetGame();
     gameRunning = true;
     document.addEventListener('keydown', handleInput);
@@ -8543,6 +8560,8 @@ async function loadDraftFromServer() {
 
     function loop() {
       if (!gameRunning) return;
+      const ctx = getCtx();
+
       ctx.clearRect(0, 0, W, H);
 
       // Ground
@@ -8558,13 +8577,11 @@ async function loadDraftFromServer() {
         dino.onGround = true;
       }
 
-      // Dino body
+      // Dino
       ctx.fillStyle = '#16a34a';
       ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
-      // Eye white
       ctx.fillStyle = '#fff';
       ctx.fillRect(dino.x + 20, dino.y + 6, 6, 6);
-      // Eye pupil
       ctx.fillStyle = '#000';
       ctx.fillRect(dino.x + 23, dino.y + 8, 3, 3);
 
@@ -8622,7 +8639,7 @@ async function loadDraftFromServer() {
     document.removeEventListener('keydown', handleInput);
     dinoCanvas.removeEventListener('click', handleInput);
     dinoModal.classList.add('hidden');
-    ctx.clearRect(0, 0, W, H);
+    getCtx().clearRect(0, 0, W, H);
   }
 })();
 
