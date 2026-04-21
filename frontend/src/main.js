@@ -8564,7 +8564,8 @@ async function loadDraftFromServer() {
         getComputedStyle(document.documentElement)
           .getPropertyValue('--text')
           .trim() || '#1a1a1a';
-      ctx.fillStyle = textColor;
+      const dinoColor = textColor || '#1a1a1a';
+      ctx.fillStyle = dinoColor;
       // Body
       ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
       // Eye
@@ -8607,12 +8608,12 @@ async function loadDraftFromServer() {
       }
 
       // Score
-      ctx.fillStyle = textColor;
+      ctx.fillStyle = dinoColor;
       ctx.font = 'bold 14px monospace';
       ctx.fillText(`${score}`, W - 60, 24);
 
       if (gameOver) {
-        ctx.fillStyle = textColor;
+        ctx.fillStyle = dinoColor;
         ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('GAME OVER', W / 2, H / 2 - 10);
