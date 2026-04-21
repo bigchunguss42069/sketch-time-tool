@@ -8560,11 +8560,7 @@ async function loadDraftFromServer() {
         dino.onGround = true;
       }
 
-      const textColor =
-        getComputedStyle(document.documentElement)
-          .getPropertyValue('--text')
-          .trim() || '#1a1a1a';
-      const dinoColor = textColor || '#1a1a1a';
+      const dinoColor = '#16a34a'; // immer grün — sichtbar auf hell und dunkel
       ctx.fillStyle = dinoColor;
       // Body
       ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
@@ -8608,12 +8604,12 @@ async function loadDraftFromServer() {
       }
 
       // Score
-      ctx.fillStyle = dinoColor;
+      ctx.fillStyle = '#374151';
       ctx.font = 'bold 14px monospace';
       ctx.fillText(`${score}`, W - 60, 24);
 
       if (gameOver) {
-        ctx.fillStyle = dinoColor;
+        ctx.fillStyle = '#374151';
         ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'center';
         ctx.fillText('GAME OVER', W / 2, H / 2 - 10);
