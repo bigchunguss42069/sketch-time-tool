@@ -8465,7 +8465,6 @@ async function loadDraftFromServer() {
     console.error('Draft load failed', err);
   }
 }
-
 // ============================================================================
 // 🦕 Dino Easter Egg
 // ============================================================================
@@ -8481,31 +8480,27 @@ async function loadDraftFromServer() {
     dinoClickTimer = setTimeout(() => {
       dinoClickCount = 0;
     }, 600);
-
     if (dinoClickCount >= 3) {
       dinoClickCount = 0;
       dinoModal.classList.remove('hidden');
       startDino();
     }
   });
-  dinoModalClose?.addEventListener('click', stopDino);
 
+  dinoModalClose?.addEventListener('click', stopDino);
   dinoModal?.addEventListener('click', (e) => {
     if (e.target === dinoModal) stopDino();
   });
-
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') stopDino();
   });
 
   let animFrame = null;
   let gameRunning = false;
-
   const ctx = dinoCanvas.getContext('2d');
   const W = dinoCanvas.width;
   const H = dinoCanvas.height;
   const GROUND = H - 30;
-
   let dino, obstacles, score, speed, frameCount, gameOver;
 
   function resetGame() {
@@ -8524,34 +8519,37 @@ async function loadDraftFromServer() {
     }
   }
 
-  function startDino() {
-    resetGame();
-    gameRunning = true;
-
-    const onKey = (e) => {
+  function handleInput(e) {
+    if (e.type === 'keydown') {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
         e.preventDefault();
         jump();
       }
-    };
-    const onTap = () => jump();
+    } else {
+      // click/tap
+      if (gameOver) {
+        resetGame();
+      } else {
+        jump();
+      }
+    }
+  }
 
-    document.addEventListener('keydown', onKey);
-    dinoCanvas.addEventListener('click', onTap);
+  function startDino() {
+    resetGame();
+    gameRunning = true;
+    document.addEventListener('keydown', handleInput);
+    dinoCanvas.addEventListener('click', handleInput);
 
     function loop() {
       if (!gameRunning) return;
-
       ctx.clearRect(0, 0, W, H);
 
       // Ground
-      ctx.fillStyle =
-        getComputedStyle(document.documentElement)
-          .getPropertyValue('--border')
-          .trim() || '#e2e8f0';
+      ctx.fillStyle = '#d1d5db';
       ctx.fillRect(0, GROUND + dino.h, W, 2);
 
-      // Dino
+      // Physics
       dino.vy += 0.7;
       dino.y += dino.vy;
       if (dino.y >= GROUND) {
@@ -8560,25 +8558,21 @@ async function loadDraftFromServer() {
         dino.onGround = true;
       }
 
-      const dinoColor = '#16a34a'; // immer grün — sichtbar auf hell und dunkel
-      ctx.fillStyle = dinoColor;
-      // Body
+      // Dino body
+      ctx.fillStyle = '#16a34a';
       ctx.fillRect(dino.x, dino.y, dino.w, dino.h);
-      // Eye
-      ctx.fillStyle =
-        getComputedStyle(document.documentElement)
-          .getPropertyValue('--panel')
-          .trim() || '#fff';
+      // Eye white
+      ctx.fillStyle = '#fff';
       ctx.fillRect(dino.x + 20, dino.y + 6, 6, 6);
-      ctx.fillStyle = textColor;
+      // Eye pupil
+      ctx.fillStyle = '#000';
       ctx.fillRect(dino.x + 23, dino.y + 8, 3, 3);
 
       // Obstacles
       frameCount++;
       speed = 4 + Math.floor(score / 500) * 0.5;
       if (frameCount % Math.max(60, 90 - Math.floor(score / 200)) === 0) {
-        const h = 30 + Math.random() * 25;
-        obstacles.push({ x: W, w: 18, h });
+        obstacles.push({ x: W, w: 18, h: 30 + Math.random() * 25 });
       }
 
       for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -8586,8 +8580,6 @@ async function loadDraftFromServer() {
         o.x -= speed;
         ctx.fillStyle = '#ef4444';
         ctx.fillRect(o.x, GROUND + dino.h - o.h, o.w, o.h);
-
-        // Kollision
         if (
           dino.x + 4 < o.x + o.w &&
           dino.x + dino.w - 4 > o.x &&
@@ -8596,7 +8588,6 @@ async function loadDraftFromServer() {
         ) {
           gameOver = true;
         }
-
         if (o.x + o.w < 0) {
           obstacles.splice(i, 1);
           score += 10;
@@ -8606,6 +8597,7 @@ async function loadDraftFromServer() {
       // Score
       ctx.fillStyle = '#374151';
       ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'left';
       ctx.fillText(`${score}`, W - 60, 24);
 
       if (gameOver) {
@@ -8614,43 +8606,21 @@ async function loadDraftFromServer() {
         ctx.textAlign = 'center';
         ctx.fillText('GAME OVER', W / 2, H / 2 - 10);
         ctx.font = '13px monospace';
-        ctx.fillText('Klicken oder ↑ zum Neustart', W / 2, H / 2 + 14);
+        ctx.fillText('Tippen oder ↑ zum Neustart', W / 2, H / 2 + 14);
         ctx.textAlign = 'left';
-
-        const restart = () => {
-          resetGame();
-          dinoCanvas.removeEventListener('click', restart);
-          document.removeEventListener('keydown', restartKey);
-        };
-        const restartKey = (e) => {
-          if (e.code === 'Space' || e.code === 'ArrowUp') {
-            e.preventDefault();
-            resetGame();
-            document.removeEventListener('keydown', restartKey);
-            dinoCanvas.removeEventListener('click', restart);
-          }
-        };
-        dinoCanvas.addEventListener('click', restart);
-        document.addEventListener('keydown', restartKey);
-        animFrame = requestAnimationFrame(loop);
-        return;
       }
 
       animFrame = requestAnimationFrame(loop);
     }
 
     animFrame = requestAnimationFrame(loop);
-
-    dinoCanvas._cleanup = () => {
-      document.removeEventListener('keydown', onKey);
-      dinoCanvas.removeEventListener('click', onTap);
-    };
   }
 
   function stopDino() {
     gameRunning = false;
     if (animFrame) cancelAnimationFrame(animFrame);
-    if (dinoCanvas._cleanup) dinoCanvas._cleanup();
+    document.removeEventListener('keydown', handleInput);
+    dinoCanvas.removeEventListener('click', handleInput);
     dinoModal.classList.add('hidden');
     ctx.clearRect(0, 0, W, H);
   }
