@@ -8936,13 +8936,17 @@ async function loadDraftFromServer() {
   const resetToken = urlParams.get('reset');
 
   if (resetToken) {
-    // Login verstecken, Reset-Formular zeigen
-    document
-      .getElementById('loginForm')
-      ?.closest('.login-box, .login-card, .login-container, form')
-      ?.closest('div')
-      ?.classList.add('hidden');
-    resetOverlay.classList.remove('hidden');
+    // Warten bis DOM fertig geladen
+    const showReset = () => {
+      const loginView = document.getElementById('loginView');
+      if (loginView) loginView.classList.add('hidden');
+      resetOverlay?.classList.remove('hidden');
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', showReset);
+    } else {
+      showReset();
+    }
   }
 
   resetSendBtn?.addEventListener('click', async () => {
