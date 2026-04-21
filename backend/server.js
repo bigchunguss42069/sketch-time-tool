@@ -1736,6 +1736,15 @@ async function ensureKontenTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
 }
 
 function normalizeKontenObject(value) {
@@ -7300,6 +7309,94 @@ app.get('/api/dino-scores/top', requireAuth, async (req, res) => {
     return res.json({ ok: true, scores: top3 });
   } catch (err) {
     return res.status(500).json({ ok: false, scores: [] });
+  }
+});
+
+// POST /api/auth/forgot-password
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  if (!username)
+    return res.status(400).json({ ok: false, error: 'Benutzername fehlt' });
+
+  try {
+    const userRow = await db.query(
+      'SELECT id, email FROM users WHERE username = $1 AND active = TRUE',
+      [username]
+    );
+    // Immer ok zurückgeben — kein Username-Leak
+    if (!userRow.rows[0] || !userRow.rows[0].email) {
+      return res.json({ ok: true });
+    }
+
+    const user = userRow.rows[0];
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1h
+
+    await db.query(
+      `INSERT INTO password_reset_tokens (token, user_id, expires_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (token) DO NOTHING`,
+      [token, user.id, expiresAt]
+    );
+
+    const resetUrl = `${process.env.APP_URL || 'https://xn--normaufzge-heb.app'}/?reset=${token}`;
+
+    const transporter = createMailTransporter();
+    await transporter.sendMail({
+      from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
+      to: user.email,
+      subject: 'Passwort zurücksetzen',
+      text: `Hallo ${username}\n\nHier ist dein Link zum Zurücksetzen des Passworts:\n\n${resetUrl}\n\nDer Link ist 1 Stunde gültig.\n\nFalls du kein Passwort-Reset angefordert hast, kannst du diese Email ignorieren.\n\nFreundliche Grüsse\nNorm Aufzüge AG`,
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    return res.status(500).json({ ok: false, error: 'Fehler beim Senden' });
+  }
+});
+
+// POST /api/auth/reset-password
+app.post('/api/auth/reset-password', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+
+  if (!token || password.length < 6) {
+    return res.status(400).json({ ok: false, error: 'Ungültige Eingabe' });
+  }
+
+  try {
+    const row = await db.query(
+      `SELECT t.user_id FROM password_reset_tokens t
+       WHERE t.token = $1 AND t.used = FALSE AND t.expires_at > NOW()`,
+      [token]
+    );
+
+    if (!row.rows[0]) {
+      return res
+        .status(400)
+        .json({ ok: false, error: 'Link ungültig oder abgelaufen' });
+    }
+
+    const userId = row.rows[0].user_id;
+
+    const hash = await argon2.hash(password);
+
+    await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [
+      hash,
+      userId,
+    ]);
+    await db.query(
+      'UPDATE password_reset_tokens SET used = TRUE WHERE token = $1',
+      [token]
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Fehler beim Zurücksetzen' });
   }
 });
 

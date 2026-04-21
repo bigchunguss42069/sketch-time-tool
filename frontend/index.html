@@ -45,6 +45,32 @@
             Anmelden
           </button>
           </form>
+          <button type="button" id="forgotPasswordBtn" class="login-forgot-link">Passwort vergessen?</button>
+
+          <!-- Passwort vergessen Overlay -->
+          <div id="forgotPasswordOverlay" class="login-forgot-overlay hidden">
+            <div class="login-forgot-box">
+              <p class="login-forgot-title">Passwort zurücksetzen</p>
+              <p class="login-forgot-desc">Gib deinen Benutzernamen ein. Wir schicken dir einen Link an deine hinterlegte E-Mail-Adresse.</p>
+              <input type="text" id="forgotUsernameInput" class="login-forgot-input" placeholder="Benutzername" />
+              <div id="forgotMsg" class="login-forgot-msg hidden"></div>
+              <div class="login-forgot-actions">
+                <button type="button" id="forgotCancelBtn" class="login-forgot-cancel">Abbrechen</button>
+                <button type="button" id="forgotSendBtn" class="login-forgot-send">Link senden</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Passwort zurücksetzen Formular (erscheint wenn ?reset=TOKEN in URL) -->
+          <div id="resetPasswordOverlay" class="login-forgot-overlay hidden">
+            <div class="login-forgot-box">
+              <p class="login-forgot-title">Neues Passwort</p>
+              <input type="password" id="resetPasswordInput" class="login-forgot-input" placeholder="Neues Passwort (min. 6 Zeichen)" />
+              <input type="password" id="resetPasswordConfirm" class="login-forgot-input" placeholder="Passwort wiederholen" style="margin-top:8px" />
+              <div id="resetMsg" class="login-forgot-msg hidden"></div>
+              <button type="button" id="resetSendBtn" class="login-forgot-send" style="margin-top:8px;width:100%">Passwort setzen</button>
+            </div>
+          </div>
 
           <div id="loginLoader" class="login-loader hidden" aria-hidden="true">
             <div class="floor-display">

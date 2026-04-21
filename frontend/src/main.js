@@ -8871,6 +8871,118 @@ async function loadDraftFromServer() {
   }
 })();
 
+// ============================================================================
+// Passwort vergessen
+// ============================================================================
+(function () {
+  const forgotBtn = document.getElementById('forgotPasswordBtn');
+  const forgotOverlay = document.getElementById('forgotPasswordOverlay');
+  const forgotCancelBtn = document.getElementById('forgotCancelBtn');
+  const forgotSendBtn = document.getElementById('forgotSendBtn');
+  const forgotUsernameInput = document.getElementById('forgotUsernameInput');
+  const forgotMsg = document.getElementById('forgotMsg');
+
+  const resetOverlay = document.getElementById('resetPasswordOverlay');
+  const resetInput = document.getElementById('resetPasswordInput');
+  const resetConfirm = document.getElementById('resetPasswordConfirm');
+  const resetSendBtn = document.getElementById('resetSendBtn');
+  const resetMsg = document.getElementById('resetMsg');
+
+  function showMsg(el, text, type) {
+    el.textContent = text;
+    el.className = `login-forgot-msg ${type}`;
+  }
+
+  // Passwort vergessen Flow
+  forgotBtn?.addEventListener('click', () => {
+    forgotOverlay.classList.remove('hidden');
+    forgotUsernameInput.value = '';
+    forgotMsg.className = 'login-forgot-msg hidden';
+  });
+
+  forgotCancelBtn?.addEventListener('click', () => {
+    forgotOverlay.classList.add('hidden');
+  });
+
+  forgotSendBtn?.addEventListener('click', async () => {
+    const username = forgotUsernameInput.value.trim();
+    if (!username) {
+      showMsg(forgotMsg, 'Bitte Benutzernamen eingeben.', 'error');
+      return;
+    }
+    forgotSendBtn.disabled = true;
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      showMsg(
+        forgotMsg,
+        'Falls ein Konto mit diesem Benutzernamen existiert, wurde eine Email gesendet.',
+        'success'
+      );
+    } catch (e) {
+      showMsg(forgotMsg, e.message || 'Fehler beim Senden.', 'error');
+    } finally {
+      forgotSendBtn.disabled = false;
+    }
+  });
+
+  // Reset Flow — Token aus URL prüfen beim Laden
+  const urlParams = new URLSearchParams(window.location.search);
+  const resetToken = urlParams.get('reset');
+
+  if (resetToken) {
+    // Login verstecken, Reset-Formular zeigen
+    document
+      .getElementById('loginForm')
+      ?.closest('.login-box, .login-card, .login-container, form')
+      ?.closest('div')
+      ?.classList.add('hidden');
+    resetOverlay.classList.remove('hidden');
+  }
+
+  resetSendBtn?.addEventListener('click', async () => {
+    const password = resetInput.value;
+    const confirm = resetConfirm.value;
+    if (password.length < 6) {
+      showMsg(resetMsg, 'Passwort muss mindestens 6 Zeichen haben.', 'error');
+      return;
+    }
+    if (password !== confirm) {
+      showMsg(resetMsg, 'Passwörter stimmen nicht überein.', 'error');
+      return;
+    }
+    resetSendBtn.disabled = true;
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, password }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+      showMsg(
+        resetMsg,
+        'Passwort erfolgreich geändert! Du kannst dich jetzt anmelden.',
+        'success'
+      );
+      resetSendBtn.disabled = true;
+      setTimeout(() => {
+        window.history.replaceState({}, '', '/');
+        resetOverlay.classList.add('hidden');
+      }, 2000);
+    } catch (e) {
+      showMsg(resetMsg, e.message || 'Fehler.', 'error');
+    } finally {
+      resetSendBtn.disabled = false;
+    }
+  });
+})();
+
 /**
  * Reload all per-user draft stores after login/logout/session restoration and refresh the visible UI.
  */
