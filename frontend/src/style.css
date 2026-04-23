@@ -3799,6 +3799,18 @@ body.in-admin-view #view-admin {
   background: var(--accent);
 }
 
+.admin-status.ok-unverteilt .admin-status-dot {
+  background: #f59e0b;
+}
+.admin-status.ok-unverteilt {
+  color: #b45309;
+}
+
+.admin-day-status-badge.is-unverteilt {
+  background: #fef3c7;
+  color: #b45309;
+}
+
 /* Admin day drawer */
 .admin-day-drawer {
   overflow: hidden;

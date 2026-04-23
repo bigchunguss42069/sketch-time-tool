@@ -948,6 +948,98 @@ async function computeMonthUeZ1AndVorarbeit(
   };
 }
 
+// Identisch mit computeMonthUeZ1AndVorarbeit aber für beliebige Date-Ranges.
+// Wird für Lohnperioden gebraucht die nicht auf Monatsgrenzen fallen.
+async function computeRangeUeZ1AndVorarbeit(
+  submission,
+  fromKey,
+  toKey,
+  userId,
+  vorarbeitBalanceIn,
+  vorarbeitRequired
+) {
+  const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+  const daysObj =
+    submission?.days && typeof submission.days === 'object'
+      ? submission.days
+      : {};
+
+  // Absenzen nur im geclippten Bereich
+  const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
+    submission?.absences,
+    fromKey,
+    toKey
+  );
+
+  const cachedEmpStartKey = await fetchEmpStartKey(userId);
+  let ueZ1 = 0;
+  let ueZ1Raw = 0;
+  let vorarbeit = vorarbeitBalanceIn;
+
+  const cursor = new Date(fromKey + 'T00:00:00');
+  const end = new Date(toKey + 'T00:00:00');
+
+  while (cursor <= end) {
+    const dateKey = formatDateKey(cursor);
+    const weekday = cursor.getDay();
+    cursor.setDate(cursor.getDate() + 1);
+
+    if (weekday === 0 || weekday === 6) continue;
+
+    const { soll, employmentPct } = await getDailySoll(
+      userId,
+      dateKey,
+      acceptedAbsenceDays,
+      cachedEmpStartKey
+    );
+    if (soll === 0) continue;
+
+    const dayData = daysObj[dateKey] || null;
+    const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
+    const isFerien = !!dayData?.flags?.ferien;
+
+    const absHoursForDay =
+      typeof acceptedAbsenceDays.get(dateKey) === 'number'
+        ? acceptedAbsenceDays.get(dateKey)
+        : 0;
+    const baseSoll = soll + absHoursForDay;
+
+    let diff = 0;
+    if (isFerien) {
+      diff = dayTotal > soll ? dayTotal - soll : 0;
+    } else if (dayTotal > baseSoll) {
+      diff = dayTotal - baseSoll;
+    } else {
+      diff = dayTotal + absHoursForDay - baseSoll;
+    }
+
+    ueZ1Raw += diff;
+
+    if (diff <= 0) {
+      ueZ1 += diff;
+    } else {
+      const schwelle = r1(0.5 * (employmentPct / 100));
+      const inVorarbeit = Math.min(diff, schwelle);
+      const inUeZ1 = r1(diff - inVorarbeit);
+
+      if (vorarbeit < vorarbeitRequired) {
+        const actual = r1(Math.min(inVorarbeit, vorarbeitRequired - vorarbeit));
+        ueZ1 += r1(inVorarbeit - actual);
+        vorarbeit = r1(vorarbeit + actual);
+      } else {
+        ueZ1 += inVorarbeit;
+      }
+      ueZ1 += inUeZ1;
+    }
+  }
+
+  return {
+    ueZ1Raw: r1(ueZ1Raw),
+    ueZ1Net: r1(ueZ1),
+    vorarbeitBalance: r1(vorarbeit),
+  };
+}
+
 // Compute only POSITIVE ÜZ1 hours for the month (for Vorarbeit tracking)
 async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
   const daysObj =
@@ -1203,12 +1295,14 @@ function buildMonthOverviewFromSubmission(
       w.workDaysInMonth += 1;
       if (status === 'missing') w.missingCount += 1;
 
+      // Kommissionsstunden = Summe aller entries.hours (nur für Montage-Check relevant)
       w.days.push({
         dateKey,
-        weekday, // for "Mo/Di/..." mapping in frontend
+        weekday,
         totalHours,
         stampHours,
-        status, // "missing" | "ok" | "ferien" | "absence"
+        distributedHours: Math.round(nonPikett * 10) / 10,
+        status,
       });
     }
 
@@ -1335,6 +1429,8 @@ app.post('/api/auth/logout', requireAuth, async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ ok: true, message: 'Backend is running 🚀' });
 });
+
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.get('/health/db', async (req, res) => {
   if (!db) {
@@ -2969,6 +3065,9 @@ function aggregatePayrollFromSubmission(
     nebenauslagenCount: 0,
     pikettHours: 0,
     ueZ3Hours: 0,
+    ferienDays: 0,
+    stunden: 0,
+    arztKrankHours: 0,
   };
 
   const daysObj =
@@ -3580,25 +3679,13 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
     // Alle Submissions der letzten 5 Jahre laden
     const subResult = await db.query(
       `
-      SELECT username, year, month_index, payload
+      SELECT DISTINCT ON (username, year, month_index)
+        username, year, month_index, payload
       FROM month_submissions
       WHERE sent_at >= $1
-      ORDER BY username ASC, year ASC, month_index ASC
+      ORDER BY username ASC, year ASC, month_index ASC, sent_at DESC
     `,
       [fiveYearsAgo.toISOString()]
-    );
-
-    // Stamp Edits laden (für "bearbeitet" Markierung)
-    const editsResult = await db.query(
-      `
-      SELECT username, date_key FROM stamp_edits
-      WHERE transmitted_at >= $1
-    `,
-      [fiveYearsAgo.toISOString()]
-    );
-
-    const editedDays = new Set(
-      editsResult.rows.map((r) => `${r.username}|${r.date_key}`)
     );
 
     // Submissions nach User gruppieren
@@ -3721,7 +3808,6 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
           if (stamps.length === 0) return;
 
           hasAnyStamp = true;
-          const isEdited = editedDays.has(`${username}|${dateKey}`);
 
           // Datum
           const d = new Date(dateKey + 'T00:00:00');
@@ -3753,22 +3839,29 @@ app.get('/api/admin/audit-pdf', requireAuth, requireAdmin, async (req, res) => {
               : '–';
 
           // Stempel-Zeilen
-          const stampStr = sorted
-            .map((s) => `${s.type === 'in' ? 'Ein' : 'Aus'} ${s.time}`)
-            .join('  ·  ');
+          // Stempel als Ein/Aus-Paare: 07:00–12:00  |  13:00–17:00
+          const pairs = [];
+          for (let i = 0; i < sorted.length - 1; i++) {
+            if (sorted[i].type === 'in' && sorted[i + 1].type === 'out') {
+              pairs.push(`${sorted[i].time}–${sorted[i + 1].time}`);
+              i++;
+            }
+          }
+          // Tag überspringen wenn letzter Stempel ein offenes 'in' ist
+          // (passiert wenn Monat übertragen wurde während jemand eingestempelt war)
+          if (
+            sorted.length % 2 !== 0 &&
+            sorted[sorted.length - 1].type === 'in'
+          ) {
+            return;
+          }
+          const stampStr = pairs.join('   |   ');
 
-          // Zeile rendern
-          const editMark = isEdited ? '  ✎' : '';
           doc
             .fontSize(9)
             .font('Helvetica')
-            .fillColor(isEdited ? '#d97706' : '#374151')
-            .text(
-              `${dateLabel}    ${stampStr}    Netto: ${netHours}${editMark}`,
-              {
-                continued: false,
-              }
-            );
+            .fillColor('#374151')
+            .text(`${dateLabel}    ${stampStr}    Netto: ${netHours}`);
         });
 
         if (!hasAnyStamp) {
@@ -6357,6 +6450,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
       pikettHours: 0,
       overtime3Hours: 0,
       absenceLabels: [],
+      stamps: [],
     });
   }
   return rowMap.get(dateKey);
@@ -6398,11 +6492,64 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
   const yearCfg = getPayrollYearConfig(selectedYear);
   const vorarbeitRequired = Number(yearCfg.vorarbeitRequired) || 0;
 
-  let ytdPositiveUntilEnd = 0;
-  let ytdPositiveBeforePeriod = 0;
+  // Vorarbeit-Startsaldo für beliebigen Periodenstart:
+  // Letzter Monats-Snapshot vor dem Periodenstart laden, dann den
+  // Partial-Monat bis zum Tag vor Periodenstart draufrechnen.
+  const dayBeforePeriod = new Date(periodStart);
+  dayBeforePeriod.setDate(dayBeforePeriod.getDate() - 1);
+  const dayBeforePeriodKey = formatDateKey(dayBeforePeriod);
+
+  const lastSnapRes = await db.query(
+    `SELECT year, month_index, vorarbeit_balance FROM konten_snapshots
+     WHERE username = $1 AND (year < $2 OR (year = $2 AND month_index < $3))
+     ORDER BY year DESC, month_index DESC LIMIT 1`,
+    [user.username, periodStart.getFullYear(), periodStart.getMonth()]
+  );
+  const lastSnap = lastSnapRes.rows[0];
+  let vorarbeitBalanceBeforePeriod = r1(
+    Number(lastSnap?.vorarbeit_balance) || 0
+  );
+
+  // Falls der Periodenstart mitten in einem Monat liegt, den Partial-Monat
+  // vom Snapshot bis zum Tag vor Periodenstart nachrechnen
+  if (lastSnap) {
+    const snapMonthEnd = formatDateKey(
+      new Date(lastSnap.year, lastSnap.month_index + 1, 0)
+    );
+    if (snapMonthEnd < dayBeforePeriodKey) {
+      // Es gibt Tage zwischen Snapshot-Ende und Periodenstart → Partial-Monat rechnen
+      const partialSub = await loadLatestMonthSubmission(
+        user.username,
+        periodStart.getFullYear(),
+        periodStart.getMonth()
+      );
+      if (partialSub) {
+        const partialMonthStart = formatDateKey(
+          new Date(periodStart.getFullYear(), periodStart.getMonth(), 1)
+        );
+        const { vorarbeitBalance: vb } = await computeRangeUeZ1AndVorarbeit(
+          partialSub,
+          partialMonthStart,
+          dayBeforePeriodKey,
+          user.id,
+          vorarbeitBalanceBeforePeriod,
+          Number(
+            getPayrollYearConfig(periodStart.getFullYear()).vorarbeitRequired
+          ) || 0
+        );
+        vorarbeitBalanceBeforePeriod = vb;
+      }
+    }
+  }
+
+  let runningVorarbeit = vorarbeitBalanceBeforePeriod;
+  let ueZ1Net = 0;
+  let ueZ1RawTotal = 0;
 
   const transmittedMonths = [];
   const missingMonths = [];
+
+  const submissionCache = new Map();
 
   for (const month of monthRange) {
     const submission = await loadLatestMonthSubmission(
@@ -6418,6 +6565,8 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
 
     transmittedMonths.push(month.monthKey);
 
+    submissionCache.set(month.monthKey, submission);
+
     const partial = aggregatePayrollFromSubmission(
       submission,
       fromKey,
@@ -6425,12 +6574,40 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       absencesById
     );
 
+    // Range auf den Monat der Submission clippen, damit Tage ausserhalb
+    // des Submissions-Monats nicht als Fehltage gerechnet werden
+    const monthStartKey = formatDateKey(
+      new Date(month.year, month.monthIndex, 1)
+    );
+    const monthEndKey = formatDateKey(
+      new Date(month.year, month.monthIndex + 1, 0)
+    );
+    const clippedFrom = fromKey > monthStartKey ? fromKey : monthStartKey;
+    const clippedTo = toKey < monthEndKey ? toKey : monthEndKey;
+
     const partialOvertime = await computePayrollPeriodOvertimeFromSubmission(
       submission,
-      fromKey,
-      toKey,
+      clippedFrom,
+      clippedTo,
       user.id
     );
+
+    // Exakte Berechnung identisch mit Transmit-Logik
+    const {
+      ueZ1Raw: rangeRaw,
+      ueZ1Net: rangeNet,
+      vorarbeitBalance: newVorarbeit,
+    } = await computeRangeUeZ1AndVorarbeit(
+      submission,
+      clippedFrom,
+      clippedTo,
+      user.id,
+      runningVorarbeit,
+      Number(getPayrollYearConfig(month.year).vorarbeitRequired) || 0
+    );
+    ueZ1Net = r1(ueZ1Net + rangeNet);
+    ueZ1RawTotal = r1(ueZ1RawTotal + rangeRaw);
+    runningVorarbeit = newVorarbeit;
 
     totals.praesenzStunden += partial.praesenzStunden;
     totals.ueZ3Hours += partial.ueZ3Hours;
@@ -6441,7 +6618,6 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     totals.nebenauslagenCount += partial.nebenauslagenCount;
     totals.pikettHours += partial.pikettHours;
 
-    overtime.ueZ1Raw += partialOvertime.ueZ1Raw;
     overtime.ueZ2 += partialOvertime.ueZ2;
     overtime.ueZ3 += partialOvertime.ueZ3;
 
@@ -6462,6 +6638,11 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
         row.praesenzStunden += num(
           computeNetWorkingHoursFromStamps(dayData.stamps)
         );
+        // Stamps für PDF-Export speichern
+        const sorted = [...dayData.stamps].sort((a, b) =>
+          String(a.time || '').localeCompare(String(b.time || ''))
+        );
+        row.stamps = sorted.map((s) => ({ time: s.time, type: s.type }));
       }
 
       const meal = dayData.mealAllowance || {};
@@ -6560,78 +6741,22 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     }
   }
 
-  const selectedYearStart = new Date(selectedYear, 0, 1);
-  const selectedYearStartKey = formatDateKey(selectedYearStart);
-
-  const vorarbeitPeriodStart =
-    periodStart > selectedYearStart ? periodStart : selectedYearStart;
-
-  const dayBeforeVorarbeitPeriodStart = new Date(vorarbeitPeriodStart);
-  dayBeforeVorarbeitPeriodStart.setDate(
-    dayBeforeVorarbeitPeriodStart.getDate() - 1
-  );
-
-  const hasPriorVorarbeitWindow =
-    dayBeforeVorarbeitPeriodStart >= selectedYearStart;
-  const priorVorarbeitEndKey = hasPriorVorarbeitWindow
-    ? formatDateKey(dayBeforeVorarbeitPeriodStart)
-    : null;
-
-  const ytdMonthRange = getMonthRangeBetween(selectedYearStart, periodEnd);
-
-  for (const month of ytdMonthRange) {
-    const submission = await loadLatestMonthSubmission(
-      user.username,
-      month.year,
-      month.monthIndex
-    );
-
-    if (!submission) continue;
-
-    const ytdPartial = await computePayrollPeriodOvertimeFromSubmission(
-      submission,
-      selectedYearStartKey,
-      toKey,
-      user.id
-    );
-
-    ytdPositiveUntilEnd += ytdPartial.ueZ1Positive;
-
-    if (hasPriorVorarbeitWindow) {
-      const beforePartial = await computePayrollPeriodOvertimeFromSubmission(
-        submission,
-        selectedYearStartKey,
-        priorVorarbeitEndKey,
-        user.id
-      );
-      ytdPositiveBeforePeriod += beforePartial.ueZ1Positive;
-    }
-  }
-
   totals.stunden = r1(totals.stunden);
   totals.arztKrankHours = r1(totals.arztKrankHours);
   totals.ferienDays = r1(totals.ferienDays);
   totals.pikettHours = r1(totals.pikettHours);
 
-  overtime.ueZ1Raw = r1(overtime.ueZ1Raw);
+  overtime.ueZ1Raw = r1(ueZ1RawTotal);
   overtime.ueZ2 = r1(overtime.ueZ2);
   overtime.ueZ3 = r1(overtime.ueZ3);
 
-  const vorarbeitFilledAtPeriodEnd = r1(
-    Math.min(vorarbeitRequired, Math.max(0, ytdPositiveUntilEnd))
-  );
-
-  const vorarbeitFilledBeforePeriod = r1(
-    Math.min(vorarbeitRequired, Math.max(0, ytdPositiveBeforePeriod))
-  );
-
-  const vorarbeitAppliedInPeriod = r1(
-    Math.max(0, vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod)
-  );
-
-  const ueZ1AfterVorarbeitInPeriod = r1(
-    overtime.ueZ1Raw - vorarbeitAppliedInPeriod
-  );
+  // Vorarbeit aus laufender Berechnung (exakt identisch mit Transmit)
+  const vorarbeitFilledAtPeriodEnd = r1(runningVorarbeit);
+  const vorarbeitFilledBeforePeriod = r1(vorarbeitBalanceBeforePeriod);
+  // vorarbeitApplied = Differenz zwischen rawDiff und nettem ÜZ1 (immer ≥ 0)
+  const vorarbeitAppliedInPeriod = r1(Math.max(0, overtime.ueZ1Raw - ueZ1Net));
+  // ÜZ1AfterVorarbeit = nettes ÜZ1 (exakt was ins Konto fliesst)
+  const ueZ1AfterVorarbeitInPeriod = r1(ueZ1Net);
 
   const auditRows = Array.from(auditRowMap.values())
     .map((row) => ({
@@ -6648,8 +6773,20 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
       overtime3Hours: r1(row.overtime3Hours),
       absenceLabels: row.absenceLabels || [],
       absencesText: (row.absenceLabels || []).join(' | '),
+      stamps: row.stamps || [],
     }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  // Manuelle Korrekturen aus konten laden — damit Lohnabrechnung mit Konten übereinstimmt
+  const kontoRes = await db.query(
+    `SELECT ue_z1_correction, ue_z2_correction, ue_z3_correction
+     FROM konten WHERE username = $1`,
+    [user.username]
+  );
+  const kontoRow = kontoRes.rows[0] || {};
+  const ueZ1Correction = r1(Number(kontoRow.ue_z1_correction) || 0);
+  const ueZ2Correction = r1(Number(kontoRow.ue_z2_correction) || 0);
+  const ueZ3Correction = r1(Number(kontoRow.ue_z3_correction) || 0);
 
   // Absenzen direkt aus DB laden
   const dbAbsResult = await db.query(
@@ -6693,16 +6830,24 @@ async function buildPayrollPeriodDataForUser(user, periodStart, periodEnd) {
     absencesByType,
     overtime: {
       ueZ1Raw: overtime.ueZ1Raw,
+      ueZ1Correction,
+      ueZ1Total: r1(overtime.ueZ1Raw + ueZ1Correction),
       vorarbeitApplied: vorarbeitAppliedInPeriod,
       ueZ1AfterVorarbeit: ueZ1AfterVorarbeitInPeriod,
       ueZ2: overtime.ueZ2,
+      ueZ2Correction,
+      ueZ2Total: r1(overtime.ueZ2 + ueZ2Correction),
       ueZ3: overtime.ueZ3,
+      ueZ3Correction,
+      ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
     },
     vorarbeit: {
       year: selectedYear,
       filled: vorarbeitFilledAtPeriodEnd,
       required: vorarbeitRequired,
-      changeInPeriod: vorarbeitAppliedInPeriod,
+      changeInPeriod: r1(
+        vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod
+      ),
     },
     teamId: user.teamId || null,
     auditRows,
@@ -6964,9 +7109,28 @@ app.get(
           .text('Keine relevanten Einträge im ausgewählten Zeitraum.');
       } else {
         row.auditRows.forEach((entry) => {
-          ensurePdfSpace(42);
+          ensurePdfSpace(54);
 
           doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+
+          // Stempel-Paare formatieren: Ein/Aus
+          if (entry.stamps && entry.stamps.length > 0) {
+            const pairs = [];
+            const sorted = [...entry.stamps];
+            for (let i = 0; i < sorted.length - 1; i++) {
+              if (sorted[i].type === 'in' && sorted[i + 1].type === 'out') {
+                pairs.push(`${sorted[i].time}–${sorted[i + 1].time}`);
+                i++;
+              }
+            }
+            const stampStr = pairs.length > 0 ? pairs.join('  |  ') : '–';
+            doc
+              .font('Helvetica')
+              .fontSize(8)
+              .fillColor('#555555')
+              .text(`Stempel: ${stampStr}`)
+              .fillColor('#000000');
+          }
 
           doc
             .font('Helvetica')
@@ -7398,6 +7562,58 @@ app.post('/api/auth/reset-password', async (req, res) => {
       .status(500)
       .json({ ok: false, error: 'Fehler beim Zurücksetzen' });
   }
+});
+
+// ============================================================================
+// Auto lockweeks jeden Montagmittag
+// ============================================================================
+
+// Gibt ISO-Woche und Jahr für ein Date zurück
+function getISOWeekAndYear(date) {
+  const d = new Date(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+  );
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return {
+    week: Math.ceil(((d - yearStart) / 86400000 + 1) / 7),
+    year: d.getUTCFullYear(),
+  };
+}
+
+async function autoLockPreviousWeek() {
+  const now = new Date();
+  // Vorherige Woche berechnen (heute minus 7 Tage)
+  const lastWeekDate = new Date(now);
+  lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+  const { week, year } = getISOWeekAndYear(lastWeekDate);
+
+  console.log(`[AutoLock] Sperre KW ${week}/${year} für alle User`);
+
+  const users = await listUsersFromDb({ role: 'user' });
+  let locked = 0;
+
+  for (const user of users) {
+    try {
+      await db.query(
+        `INSERT INTO week_locks (user_id, username, week_year, week, locked_at, locked_by)
+         VALUES ($1, $2, $3, $4, NOW(), 'system')
+         ON CONFLICT (user_id, week_year, week) DO NOTHING`,
+        [user.id, user.username, year, week]
+      );
+      locked++;
+    } catch (err) {
+      console.error(`[AutoLock] Fehler bei ${user.username}:`, err.message);
+    }
+  }
+
+  console.log(`[AutoLock] ${locked} User gesperrt für KW ${week}/${year}`);
+}
+
+// Jeden Montag 12:00 — vergangene Woche sperren
+cron.schedule('0 12 * * 1', autoLockPreviousWeek, {
+  timezone: 'Europe/Zurich',
 });
 
 // ============================================================================

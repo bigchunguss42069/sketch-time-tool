@@ -27,7 +27,6 @@ const adminTabContents = document.querySelectorAll('.admin-tab-content');
 const adminMonthPrevBtn = document.getElementById('adminMonthPrev');
 const adminMonthNextBtn = document.getElementById('adminMonthNext');
 const adminMonthLabelEl = document.getElementById('adminMonthLabel');
-const adminDayDetailCache = new Map(); // key: username|year|monthIndex|dateKey
 let adminMonthOffset = 0;
 
 /**
@@ -560,12 +559,56 @@ function renderAdminPayrollCards(rows) {
         formatPayrollSignedHours(overtime.ueZ1AfterVorarbeit)
       )
     );
+
+    if (overtime.ueZ1Correction !== 0) {
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ1 Korrektur (Admin)',
+          formatPayrollSignedHours(overtime.ueZ1Correction)
+        )
+      );
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ1 Total',
+          formatPayrollSignedHours(overtime.ueZ1Total)
+        )
+      );
+    }
+
     overtimeMetrics.appendChild(
       createPayrollMetric('ÜZ2', formatPayrollSignedHours(overtime.ueZ2))
     );
+    if (overtime.ueZ2Correction !== 0) {
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ2 Korrektur (Admin)',
+          formatPayrollSignedHours(overtime.ueZ2Correction)
+        )
+      );
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ2 Total',
+          formatPayrollSignedHours(overtime.ueZ2Total)
+        )
+      );
+    }
     overtimeMetrics.appendChild(
       createPayrollMetric('ÜZ3', formatPayrollSignedHours(overtime.ueZ3))
     );
+    if (overtime.ueZ3Correction !== 0) {
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ3 Korrektur (Admin)',
+          formatPayrollSignedHours(overtime.ueZ3Correction)
+        )
+      );
+      overtimeMetrics.appendChild(
+        createPayrollMetric(
+          'ÜZ3 Total',
+          formatPayrollSignedHours(overtime.ueZ3Total)
+        )
+      );
+    }
 
     const vorarbeitDivider = document.createElement('div');
     vorarbeitDivider.className = 'admin-payroll-divider';
@@ -727,6 +770,37 @@ const OPTION_LABELS = {
 // In-memory store: dateKey -> { flags: {...}, entries: [...] }
 const dayStore = {}; // e.g. { "2025-11-25": { flags: { sick: true, ... }, entries: [...] } }
 
+function cleanDayStoreEntries(rawDayStore) {
+  const cleaned = {};
+  Object.entries(rawDayStore).forEach(([dateKey, dayData]) => {
+    if (!dayData) return;
+    const cleanedEntries = Array.isArray(dayData.entries)
+      ? dayData.entries.filter((e) => {
+          if (!e) return false;
+          const hasKomNr = String(e.komNr || '').trim() !== '';
+          const hasHours =
+            e.hours && Object.values(e.hours).some((v) => Number(v) > 0);
+          return hasKomNr && hasHours;
+        })
+      : [];
+    const cleanedSpecialEntries = Array.isArray(dayData.specialEntries)
+      ? dayData.specialEntries.filter((e) => {
+          if (!e) return false;
+          const hasKomNr = String(e.komNr || '').trim() !== '';
+          const hasHours = Number(e.hours || 0) > 0;
+          const hasDescription = String(e.description || '').trim() !== '';
+          return hasKomNr || hasHours || hasDescription;
+        })
+      : [];
+    cleaned[dateKey] = {
+      ...dayData,
+      entries: cleanedEntries,
+      specialEntries: cleanedSpecialEntries,
+    };
+  });
+  return cleaned;
+}
+
 function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -734,13 +808,12 @@ function loadFromStorage() {
 
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      Object.assign(dayStore, parsed);
+      Object.assign(dayStore, cleanDayStoreEntries(parsed));
     }
   } catch (err) {
     console.error('Failed to load from storage', err);
   }
 }
-
 function saveToStorage() {
   try {
     const json = JSON.stringify(dayStore);
@@ -927,10 +1000,11 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
       ? savedPayload.days
       : {};
 
-  Object.entries(daysObj).forEach(([dateKey, dayData]) => {
-    dayStore[dateKey] = { ...dayData, stampEditLog: [] };
-  });
-
+  Object.entries(cleanDayStoreEntries(daysObj)).forEach(
+    ([dateKey, dayData]) => {
+      dayStore[dateKey] = { ...dayData, stampEditLog: [] };
+    }
+  );
   saveToStorage();
 
   // 2) Overwrite pikettStore for that month
@@ -2204,24 +2278,12 @@ document.addEventListener('click', (e) => {
   openDrawer(row, drawer);
   openAdminDayRow = row;
 
-  const cacheKey = `${username}|${year}|${monthIndex}|${dateKey}`;
-  const cached = adminDayDetailCache.get(cacheKey);
-
-  if (cached) {
-    drawer.innerHTML = '';
-    drawer.appendChild(buildAdminDayDrawer(cached));
-    refreshDrawerHeight(drawer);
-    return;
-  }
-
   authFetch(
     `/api/admin/day-detail?username=${encodeURIComponent(username)}&year=${year}&monthIndex=${monthIndex}&date=${encodeURIComponent(dateKey)}`
   )
     .then((res) => res.json())
     .then((data) => {
       if (!data.ok) throw new Error(data.error || 'Fehler beim Laden');
-
-      adminDayDetailCache.set(cacheKey, data);
 
       // If user clicked elsewhere and this drawer got closed in the meantime:
       const stillThere = getDrawerForRow(row);
@@ -2256,6 +2318,7 @@ function buildAdminDayDrawer(data) {
 
   const badgeClassForStatus = (s) => {
     if (s === 'ok') return 'is-ok';
+    if (s === 'ok-unverteilt') return 'is-unverteilt';
     if (s === 'missing') return 'is-missing';
     if (s === 'ferien') return 'is-ferien';
     if (s === 'absence') return 'is-absence';
@@ -2655,6 +2718,7 @@ function formatDayLabelFromKey(dateKey, weekdayNum) {
 
 function adminStatusText(status) {
   if (status === 'ok') return 'OK';
+  if (status === 'ok-unverteilt') return 'Unverteilt';
   if (status === 'ferien') return 'Ferien';
   if (status === 'absence') return 'Absenz';
   return 'Fehlt';
@@ -2674,7 +2738,32 @@ function buildPayloadForCurrentDashboardMonth() {
     if (Number.isNaN(d.getTime())) return;
     if (d.getFullYear() !== year || d.getMonth() !== monthIndex) return;
 
-    monthDays[dateKey] = dayData;
+    // Leere Entries (alle Stunden 0, kein komNr) herausfiltern
+    const cleanedEntries = Array.isArray(dayData.entries)
+      ? dayData.entries.filter((e) => {
+          if (!e) return false;
+          const hasKomNr = String(e.komNr || '').trim() !== '';
+          const hasHours =
+            e.hours && Object.values(e.hours).some((v) => Number(v) > 0);
+          return hasKomNr && hasHours;
+        })
+      : [];
+
+    const cleanedSpecialEntries = Array.isArray(dayData.specialEntries)
+      ? dayData.specialEntries.filter((e) => {
+          if (!e) return false;
+          const hasKomNr = String(e.komNr || '').trim() !== '';
+          const hasHours = Number(e.hours || 0) > 0;
+          const hasDescription = String(e.description || '').trim() !== '';
+          return hasKomNr || hasHours || hasDescription;
+        })
+      : [];
+
+    monthDays[dateKey] = {
+      ...dayData,
+      entries: cleanedEntries,
+      specialEntries: cleanedSpecialEntries,
+    };
   });
 
   // 2) Pikett-Einsätze dieses Monats
@@ -4464,6 +4553,7 @@ function updateUIForRole() {
 
     // Load admin data when switching to admin view
     loadAdminSummary();
+    startAdminSummaryPolling();
 
     return;
   }
@@ -6170,14 +6260,26 @@ function loadAdminSummary() {
                 dayCenter.appendChild(hoursText);
                 dayCenter.appendChild(bar);
 
+                // Für Team Montage: ok-unverteilt wenn Stempel > Kommissionsstunden + 0.5h
+                let effectiveStatus = d.status || 'missing';
+                if (
+                  effectiveStatus === 'ok' &&
+                  u.teamId === 'montage' &&
+                  d.stampHours != null &&
+                  d.stampHours > 0
+                ) {
+                  const unverteilt = d.stampHours - (d.distributedHours || 0);
+                  if (unverteilt > 0.5) effectiveStatus = 'ok-unverteilt';
+                }
+
                 const dayRight = document.createElement('div');
-                dayRight.className = `admin-status ${d.status || 'missing'}`;
+                dayRight.className = `admin-status ${effectiveStatus}`;
 
                 const sdot = document.createElement('span');
                 sdot.className = 'admin-status-dot';
 
                 const stxt = document.createElement('span');
-                stxt.textContent = adminStatusText(d.status);
+                stxt.textContent = adminStatusText(effectiveStatus);
 
                 dayRight.appendChild(sdot);
                 dayRight.appendChild(stxt);
@@ -8358,12 +8460,30 @@ if (stampModalSave) {
   });
 }
 
+let _adminSummaryPollTimer = null;
+
+function startAdminSummaryPolling() {
+  stopAdminSummaryPolling();
+  if (import.meta.env.DEV) return; // kein Polling in Dev
+  _adminSummaryPollTimer = setInterval(() => {
+    if (adminActiveInnerTab === 'overview') loadAdminSummary();
+  }, 60_000);
+}
+
+function stopAdminSummaryPolling() {
+  if (_adminSummaryPollTimer) {
+    clearInterval(_adminSummaryPollTimer);
+    _adminSummaryPollTimer = null;
+  }
+}
+
 adminInnerTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.adminTab;
     if (!target) return;
 
     stopPraesenzPolling();
+    stopAdminSummaryPolling();
 
     adminActiveInnerTab = target;
 
@@ -8376,6 +8496,7 @@ adminInnerTabButtons.forEach((btn) => {
     });
     if (target === 'overview') {
       loadAdminSummary();
+      startAdminSummaryPolling();
     } else if (target === 'anlagen') {
       const previouslySelectedKomNr = selectedKomNr;
 
@@ -8426,12 +8547,11 @@ async function loadDraftFromServer() {
     const res = await authFetch('/api/draft/load');
     const data = await res.json();
 
-    if (!data.ok || !data.draft) return; // kein Draft vorhanden
+    if (!data.ok || !data.draft) return;
 
     const draft = data.draft;
     const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
 
-    // Lokalen Timestamp prüfen
     const localRaw = localStorage.getItem(STORAGE_KEY + '_savedAt');
     const localTime = localRaw ? new Date(localRaw).getTime() : 0;
 
@@ -8444,13 +8564,11 @@ async function loadDraftFromServer() {
             delete dayStore[dateKey];
           }
         });
-        Object.assign(dayStore, draft.dayStore);
 
-        // WICHTIG: saveToStorage() NICHT aufrufen — würde _savedAt überschreiben
-        // Direkt in localStorage schreiben ohne Timestamp-Update:
+        Object.assign(dayStore, cleanDayStoreEntries(draft.dayStore));
+
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(dayStore));
-          // _savedAt auf Server-Zeit setzen damit nächster Vergleich korrekt ist
           localStorage.setItem(STORAGE_KEY + '_savedAt', data.updatedAt);
         } catch (err) {
           console.error('Failed to write draft to localStorage', err);
@@ -8582,39 +8700,853 @@ async function loadDraftFromServer() {
     if (!onGround) {
       // Jump frame
       ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x+20*p, y+1*p, p, p); ctx.fillRect(x+21*p, y+1*p, p, p); ctx.fillRect(x+18*p, y+2*p, p, p); ctx.fillRect(x+19*p, y+2*p, p, p); ctx.fillRect(x+17*p, y+3*p, p, p); ctx.fillRect(x+18*p, y+3*p, p, p); ctx.fillRect(x+17*p, y+4*p, p, p); ctx.fillRect(x+18*p, y+4*p, p, p); ctx.fillRect(x+17*p, y+5*p, p, p); ctx.fillRect(x+18*p, y+5*p, p, p); ctx.fillRect(x+26*p, y+5*p, p, p); ctx.fillRect(x+27*p, y+5*p, p, p); ctx.fillRect(x+17*p, y+6*p, p, p); ctx.fillRect(x+18*p, y+6*p, p, p); ctx.fillRect(x+26*p, y+6*p, p, p); ctx.fillRect(x+28*p, y+6*p, p, p); ctx.fillRect(x+0*p, y+7*p, p, p); ctx.fillRect(x+1*p, y+7*p, p, p); ctx.fillRect(x+17*p, y+7*p, p, p); ctx.fillRect(x+18*p, y+7*p, p, p); ctx.fillRect(x+19*p, y+7*p, p, p); ctx.fillRect(x+27*p, y+7*p, p, p); ctx.fillRect(x+28*p, y+7*p, p, p); ctx.fillRect(x+0*p, y+8*p, p, p); ctx.fillRect(x+1*p, y+8*p, p, p); ctx.fillRect(x+2*p, y+8*p, p, p); ctx.fillRect(x+17*p, y+8*p, p, p); ctx.fillRect(x+18*p, y+8*p, p, p); ctx.fillRect(x+22*p, y+8*p, p, p); ctx.fillRect(x+23*p, y+8*p, p, p); ctx.fillRect(x+24*p, y+8*p, p, p); ctx.fillRect(x+25*p, y+8*p, p, p); ctx.fillRect(x+26*p, y+8*p, p, p); ctx.fillRect(x+27*p, y+8*p, p, p); ctx.fillRect(x+28*p, y+8*p, p, p); ctx.fillRect(x+0*p, y+9*p, p, p); ctx.fillRect(x+1*p, y+9*p, p, p); ctx.fillRect(x+2*p, y+9*p, p, p); ctx.fillRect(x+3*p, y+9*p, p, p); ctx.fillRect(x+15*p, y+9*p, p, p); ctx.fillRect(x+16*p, y+9*p, p, p); ctx.fillRect(x+17*p, y+9*p, p, p); ctx.fillRect(x+18*p, y+9*p, p, p); ctx.fillRect(x+21*p, y+9*p, p, p); ctx.fillRect(x+22*p, y+9*p, p, p); ctx.fillRect(x+23*p, y+9*p, p, p); ctx.fillRect(x+24*p, y+9*p, p, p); ctx.fillRect(x+25*p, y+9*p, p, p); ctx.fillRect(x+26*p, y+9*p, p, p); ctx.fillRect(x+27*p, y+9*p, p, p); ctx.fillRect(x+1*p, y+10*p, p, p); ctx.fillRect(x+2*p, y+10*p, p, p); ctx.fillRect(x+3*p, y+10*p, p, p); ctx.fillRect(x+4*p, y+10*p, p, p); ctx.fillRect(x+13*p, y+10*p, p, p); ctx.fillRect(x+14*p, y+10*p, p, p); ctx.fillRect(x+22*p, y+10*p, p, p); ctx.fillRect(x+1*p, y+11*p, p, p); ctx.fillRect(x+4*p, y+11*p, p, p); ctx.fillRect(x+5*p, y+11*p, p, p); ctx.fillRect(x+6*p, y+11*p, p, p); ctx.fillRect(x+12*p, y+11*p, p, p); ctx.fillRect(x+13*p, y+11*p, p, p); ctx.fillRect(x+2*p, y+12*p, p, p); ctx.fillRect(x+6*p, y+12*p, p, p); ctx.fillRect(x+8*p, y+12*p, p, p); ctx.fillRect(x+9*p, y+12*p, p, p); ctx.fillRect(x+10*p, y+12*p, p, p); ctx.fillRect(x+11*p, y+12*p, p, p); ctx.fillRect(x+12*p, y+12*p, p, p); ctx.fillRect(x+17*p, y+12*p, p, p); ctx.fillRect(x+19*p, y+12*p, p, p); ctx.fillRect(x+3*p, y+13*p, p, p); ctx.fillRect(x+4*p, y+13*p, p, p); ctx.fillRect(x+5*p, y+13*p, p, p); ctx.fillRect(x+6*p, y+13*p, p, p); ctx.fillRect(x+7*p, y+13*p, p, p); ctx.fillRect(x+8*p, y+13*p, p, p); ctx.fillRect(x+9*p, y+13*p, p, p); ctx.fillRect(x+10*p, y+13*p, p, p); ctx.fillRect(x+11*p, y+13*p, p, p); ctx.fillRect(x+12*p, y+13*p, p, p); ctx.fillRect(x+17*p, y+13*p, p, p); ctx.fillRect(x+19*p, y+13*p, p, p); ctx.fillRect(x+22*p, y+13*p, p, p); ctx.fillRect(x+4*p, y+14*p, p, p); ctx.fillRect(x+5*p, y+14*p, p, p); ctx.fillRect(x+6*p, y+14*p, p, p); ctx.fillRect(x+7*p, y+14*p, p, p); ctx.fillRect(x+8*p, y+14*p, p, p); ctx.fillRect(x+16*p, y+14*p, p, p); ctx.fillRect(x+17*p, y+14*p, p, p); ctx.fillRect(x+18*p, y+14*p, p, p); ctx.fillRect(x+19*p, y+14*p, p, p); ctx.fillRect(x+20*p, y+14*p, p, p); ctx.fillRect(x+21*p, y+14*p, p, p); ctx.fillRect(x+22*p, y+14*p, p, p); ctx.fillRect(x+5*p, y+15*p, p, p); ctx.fillRect(x+6*p, y+15*p, p, p); ctx.fillRect(x+7*p, y+15*p, p, p); ctx.fillRect(x+8*p, y+15*p, p, p); ctx.fillRect(x+9*p, y+15*p, p, p); ctx.fillRect(x+10*p, y+15*p, p, p); ctx.fillRect(x+11*p, y+15*p, p, p); ctx.fillRect(x+12*p, y+15*p, p, p); ctx.fillRect(x+16*p, y+15*p, p, p); ctx.fillRect(x+20*p, y+15*p, p, p); ctx.fillRect(x+21*p, y+15*p, p, p); ctx.fillRect(x+22*p, y+15*p, p, p); ctx.fillRect(x+8*p, y+16*p, p, p); ctx.fillRect(x+9*p, y+16*p, p, p); ctx.fillRect(x+10*p, y+16*p, p, p); ctx.fillRect(x+11*p, y+16*p, p, p); ctx.fillRect(x+12*p, y+16*p, p, p); ctx.fillRect(x+13*p, y+16*p, p, p); ctx.fillRect(x+16*p, y+16*p, p, p); ctx.fillRect(x+20*p, y+16*p, p, p); ctx.fillRect(x+21*p, y+16*p, p, p); ctx.fillRect(x+10*p, y+17*p, p, p); ctx.fillRect(x+11*p, y+17*p, p, p); ctx.fillRect(x+12*p, y+17*p, p, p); ctx.fillRect(x+13*p, y+17*p, p, p); ctx.fillRect(x+16*p, y+17*p, p, p); ctx.fillRect(x+17*p, y+17*p, p, p); ctx.fillRect(x+18*p, y+17*p, p, p); ctx.fillRect(x+19*p, y+17*p, p, p); ctx.fillRect(x+20*p, y+17*p, p, p); ctx.fillRect(x+12*p, y+18*p, p, p); ctx.fillRect(x+13*p, y+18*p, p, p); ctx.fillRect(x+16*p, y+18*p, p, p); ctx.fillRect(x+17*p, y+18*p, p, p); ctx.fillRect(x+18*p, y+18*p, p, p); ctx.fillRect(x+19*p, y+18*p, p, p); ctx.fillRect(x+12*p, y+19*p, p, p); ctx.fillRect(x+13*p, y+19*p, p, p); ctx.fillRect(x+14*p, y+19*p, p, p); ctx.fillRect(x+16*p, y+19*p, p, p); ctx.fillRect(x+17*p, y+19*p, p, p); ctx.fillRect(x+18*p, y+19*p, p, p); ctx.fillRect(x+19*p, y+19*p, p, p); ctx.fillRect(x+12*p, y+20*p, p, p); ctx.fillRect(x+13*p, y+20*p, p, p); ctx.fillRect(x+14*p, y+20*p, p, p); ctx.fillRect(x+16*p, y+20*p, p, p); ctx.fillRect(x+18*p, y+20*p, p, p); ctx.fillRect(x+19*p, y+20*p, p, p); ctx.fillRect(x+20*p, y+20*p, p, p);
+      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 20 * p, p, p);
       ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x+20*p, y+2*p, p, p); ctx.fillRect(x+21*p, y+2*p, p, p); ctx.fillRect(x+22*p, y+2*p, p, p); ctx.fillRect(x+23*p, y+2*p, p, p); ctx.fillRect(x+19*p, y+3*p, p, p); ctx.fillRect(x+20*p, y+3*p, p, p); ctx.fillRect(x+21*p, y+3*p, p, p); ctx.fillRect(x+22*p, y+3*p, p, p); ctx.fillRect(x+23*p, y+3*p, p, p); ctx.fillRect(x+24*p, y+3*p, p, p); ctx.fillRect(x+25*p, y+3*p, p, p); ctx.fillRect(x+19*p, y+4*p, p, p); ctx.fillRect(x+20*p, y+4*p, p, p); ctx.fillRect(x+21*p, y+4*p, p, p); ctx.fillRect(x+23*p, y+4*p, p, p); ctx.fillRect(x+24*p, y+4*p, p, p); ctx.fillRect(x+25*p, y+4*p, p, p); ctx.fillRect(x+26*p, y+4*p, p, p); ctx.fillRect(x+19*p, y+5*p, p, p); ctx.fillRect(x+20*p, y+5*p, p, p); ctx.fillRect(x+21*p, y+5*p, p, p); ctx.fillRect(x+22*p, y+5*p, p, p); ctx.fillRect(x+23*p, y+5*p, p, p); ctx.fillRect(x+24*p, y+5*p, p, p); ctx.fillRect(x+25*p, y+5*p, p, p); ctx.fillRect(x+19*p, y+6*p, p, p); ctx.fillRect(x+20*p, y+6*p, p, p); ctx.fillRect(x+21*p, y+6*p, p, p); ctx.fillRect(x+22*p, y+6*p, p, p); ctx.fillRect(x+23*p, y+6*p, p, p); ctx.fillRect(x+24*p, y+6*p, p, p); ctx.fillRect(x+25*p, y+6*p, p, p); ctx.fillRect(x+27*p, y+6*p, p, p); ctx.fillRect(x+20*p, y+7*p, p, p); ctx.fillRect(x+21*p, y+7*p, p, p); ctx.fillRect(x+22*p, y+7*p, p, p); ctx.fillRect(x+23*p, y+7*p, p, p); ctx.fillRect(x+24*p, y+7*p, p, p); ctx.fillRect(x+25*p, y+7*p, p, p); ctx.fillRect(x+26*p, y+7*p, p, p); ctx.fillRect(x+19*p, y+8*p, p, p); ctx.fillRect(x+20*p, y+8*p, p, p); ctx.fillRect(x+21*p, y+8*p, p, p); ctx.fillRect(x+19*p, y+9*p, p, p); ctx.fillRect(x+20*p, y+9*p, p, p); ctx.fillRect(x+15*p, y+10*p, p, p); ctx.fillRect(x+16*p, y+10*p, p, p); ctx.fillRect(x+17*p, y+10*p, p, p); ctx.fillRect(x+18*p, y+10*p, p, p); ctx.fillRect(x+19*p, y+10*p, p, p); ctx.fillRect(x+20*p, y+10*p, p, p); ctx.fillRect(x+2*p, y+11*p, p, p); ctx.fillRect(x+3*p, y+11*p, p, p); ctx.fillRect(x+14*p, y+11*p, p, p); ctx.fillRect(x+15*p, y+11*p, p, p); ctx.fillRect(x+16*p, y+11*p, p, p); ctx.fillRect(x+17*p, y+11*p, p, p); ctx.fillRect(x+18*p, y+11*p, p, p); ctx.fillRect(x+19*p, y+11*p, p, p); ctx.fillRect(x+3*p, y+12*p, p, p); ctx.fillRect(x+4*p, y+12*p, p, p); ctx.fillRect(x+5*p, y+12*p, p, p); ctx.fillRect(x+13*p, y+12*p, p, p); ctx.fillRect(x+14*p, y+12*p, p, p); ctx.fillRect(x+15*p, y+12*p, p, p); ctx.fillRect(x+16*p, y+12*p, p, p); ctx.fillRect(x+18*p, y+12*p, p, p); ctx.fillRect(x+21*p, y+12*p, p, p); ctx.fillRect(x+13*p, y+13*p, p, p); ctx.fillRect(x+14*p, y+13*p, p, p); ctx.fillRect(x+15*p, y+13*p, p, p); ctx.fillRect(x+16*p, y+13*p, p, p); ctx.fillRect(x+18*p, y+13*p, p, p); ctx.fillRect(x+9*p, y+14*p, p, p); ctx.fillRect(x+10*p, y+14*p, p, p); ctx.fillRect(x+11*p, y+14*p, p, p); ctx.fillRect(x+12*p, y+14*p, p, p); ctx.fillRect(x+13*p, y+14*p, p, p); ctx.fillRect(x+14*p, y+14*p, p, p); ctx.fillRect(x+15*p, y+14*p, p, p); ctx.fillRect(x+13*p, y+15*p, p, p); ctx.fillRect(x+14*p, y+15*p, p, p); ctx.fillRect(x+15*p, y+15*p, p, p); ctx.fillRect(x+17*p, y+15*p, p, p); ctx.fillRect(x+14*p, y+16*p, p, p); ctx.fillRect(x+15*p, y+16*p, p, p); ctx.fillRect(x+17*p, y+16*p, p, p); ctx.fillRect(x+14*p, y+17*p, p, p); ctx.fillRect(x+15*p, y+17*p, p, p); ctx.fillRect(x+14*p, y+18*p, p, p); ctx.fillRect(x+15*p, y+18*p, p, p); ctx.fillRect(x+15*p, y+19*p, p, p); ctx.fillRect(x+15*p, y+20*p, p, p);
+      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 20 * p, p, p);
       ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x+19*p, y+1*p, p, p); ctx.fillRect(x+22*p, y+1*p, p, p); ctx.fillRect(x+23*p, y+1*p, p, p); ctx.fillRect(x+24*p, y+1*p, p, p); ctx.fillRect(x+24*p, y+2*p, p, p); ctx.fillRect(x+25*p, y+2*p, p, p); ctx.fillRect(x+26*p, y+2*p, p, p); ctx.fillRect(x+27*p, y+3*p, p, p); ctx.fillRect(x+22*p, y+4*p, p, p); ctx.fillRect(x+28*p, y+4*p, p, p); ctx.fillRect(x+28*p, y+5*p, p, p); ctx.fillRect(x+0*p, y+10*p, p, p); ctx.fillRect(x+20*p, y+11*p, p, p); ctx.fillRect(x+22*p, y+11*p, p, p); ctx.fillRect(x+7*p, y+12*p, p, p); ctx.fillRect(x+20*p, y+12*p, p, p); ctx.fillRect(x+22*p, y+12*p, p, p); ctx.fillRect(x+20*p, y+13*p, p, p); ctx.fillRect(x+18*p, y+15*p, p, p); ctx.fillRect(x+6*p, y+16*p, p, p); ctx.fillRect(x+7*p, y+16*p, p, p); ctx.fillRect(x+8*p, y+17*p, p, p); ctx.fillRect(x+9*p, y+17*p, p, p); ctx.fillRect(x+20*p, y+18*p, p, p); ctx.fillRect(x+20*p, y+19*p, p, p);
+      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 19 * p, p, p);
       ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x+26*p, y+3*p, p, p); ctx.fillRect(x+27*p, y+4*p, p, p); ctx.fillRect(x+21*p, y+10*p, p, p); ctx.fillRect(x+21*p, y+11*p, p, p); ctx.fillRect(x+21*p, y+13*p, p, p); ctx.fillRect(x+19*p, y+15*p, p, p); ctx.fillRect(x+18*p, y+16*p, p, p); ctx.fillRect(x+19*p, y+16*p, p, p);
+      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 16 * p, p, p);
       ctx.fillStyle = '#2d3748';
-       ctx.fillRect(x+28*p, y+3*p, p, p); ctx.fillRect(x+29*p, y+7*p, p, p); ctx.fillRect(x+29*p, y+8*p, p, p); ctx.fillRect(x+28*p, y+9*p, p, p); ctx.fillRect(x+22*p, y+16*p, p, p); ctx.fillRect(x+20*p, y+21*p, p, p);
+      ctx.fillRect(x + 28 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 29 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 29 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 28 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 21 * p, p, p);
     } else if (runFrame) {
       // Walking frame 1 (normal)
       ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x+18*p, y+0*p, p, p); ctx.fillRect(x+19*p, y+0*p, p, p); ctx.fillRect(x+16*p, y+1*p, p, p); ctx.fillRect(x+17*p, y+1*p, p, p); ctx.fillRect(x+15*p, y+2*p, p, p); ctx.fillRect(x+16*p, y+2*p, p, p); ctx.fillRect(x+15*p, y+3*p, p, p); ctx.fillRect(x+16*p, y+3*p, p, p); ctx.fillRect(x+20*p, y+3*p, p, p); ctx.fillRect(x+15*p, y+4*p, p, p); ctx.fillRect(x+16*p, y+4*p, p, p); ctx.fillRect(x+24*p, y+4*p, p, p); ctx.fillRect(x+25*p, y+4*p, p, p); ctx.fillRect(x+15*p, y+5*p, p, p); ctx.fillRect(x+16*p, y+5*p, p, p); ctx.fillRect(x+24*p, y+5*p, p, p); ctx.fillRect(x+26*p, y+5*p, p, p); ctx.fillRect(x+1*p, y+6*p, p, p); ctx.fillRect(x+15*p, y+6*p, p, p); ctx.fillRect(x+16*p, y+6*p, p, p); ctx.fillRect(x+25*p, y+6*p, p, p); ctx.fillRect(x+26*p, y+6*p, p, p); ctx.fillRect(x+0*p, y+7*p, p, p); ctx.fillRect(x+1*p, y+7*p, p, p); ctx.fillRect(x+15*p, y+7*p, p, p); ctx.fillRect(x+16*p, y+7*p, p, p); ctx.fillRect(x+20*p, y+7*p, p, p); ctx.fillRect(x+21*p, y+7*p, p, p); ctx.fillRect(x+22*p, y+7*p, p, p); ctx.fillRect(x+23*p, y+7*p, p, p); ctx.fillRect(x+24*p, y+7*p, p, p); ctx.fillRect(x+25*p, y+7*p, p, p); ctx.fillRect(x+26*p, y+7*p, p, p); ctx.fillRect(x+0*p, y+8*p, p, p); ctx.fillRect(x+1*p, y+8*p, p, p); ctx.fillRect(x+2*p, y+8*p, p, p); ctx.fillRect(x+13*p, y+8*p, p, p); ctx.fillRect(x+14*p, y+8*p, p, p); ctx.fillRect(x+15*p, y+8*p, p, p); ctx.fillRect(x+16*p, y+8*p, p, p); ctx.fillRect(x+19*p, y+8*p, p, p); ctx.fillRect(x+20*p, y+8*p, p, p); ctx.fillRect(x+21*p, y+8*p, p, p); ctx.fillRect(x+22*p, y+8*p, p, p); ctx.fillRect(x+23*p, y+8*p, p, p); ctx.fillRect(x+24*p, y+8*p, p, p); ctx.fillRect(x+25*p, y+8*p, p, p); ctx.fillRect(x+1*p, y+9*p, p, p); ctx.fillRect(x+2*p, y+9*p, p, p); ctx.fillRect(x+3*p, y+9*p, p, p); ctx.fillRect(x+11*p, y+9*p, p, p); ctx.fillRect(x+12*p, y+9*p, p, p); ctx.fillRect(x+19*p, y+9*p, p, p); ctx.fillRect(x+20*p, y+9*p, p, p); ctx.fillRect(x+1*p, y+10*p, p, p); ctx.fillRect(x+2*p, y+10*p, p, p); ctx.fillRect(x+3*p, y+10*p, p, p); ctx.fillRect(x+4*p, y+10*p, p, p); ctx.fillRect(x+10*p, y+10*p, p, p); ctx.fillRect(x+11*p, y+10*p, p, p); ctx.fillRect(x+1*p, y+11*p, p, p); ctx.fillRect(x+2*p, y+11*p, p, p); ctx.fillRect(x+3*p, y+11*p, p, p); ctx.fillRect(x+5*p, y+11*p, p, p); ctx.fillRect(x+6*p, y+11*p, p, p); ctx.fillRect(x+7*p, y+11*p, p, p); ctx.fillRect(x+8*p, y+11*p, p, p); ctx.fillRect(x+9*p, y+11*p, p, p); ctx.fillRect(x+10*p, y+11*p, p, p); ctx.fillRect(x+15*p, y+11*p, p, p); ctx.fillRect(x+17*p, y+11*p, p, p); ctx.fillRect(x+20*p, y+11*p, p, p); ctx.fillRect(x+2*p, y+12*p, p, p); ctx.fillRect(x+3*p, y+12*p, p, p); ctx.fillRect(x+4*p, y+12*p, p, p); ctx.fillRect(x+5*p, y+12*p, p, p); ctx.fillRect(x+6*p, y+12*p, p, p); ctx.fillRect(x+7*p, y+12*p, p, p); ctx.fillRect(x+8*p, y+12*p, p, p); ctx.fillRect(x+9*p, y+12*p, p, p); ctx.fillRect(x+10*p, y+12*p, p, p); ctx.fillRect(x+15*p, y+12*p, p, p); ctx.fillRect(x+16*p, y+12*p, p, p); ctx.fillRect(x+17*p, y+12*p, p, p); ctx.fillRect(x+2*p, y+13*p, p, p); ctx.fillRect(x+3*p, y+13*p, p, p); ctx.fillRect(x+4*p, y+13*p, p, p); ctx.fillRect(x+5*p, y+13*p, p, p); ctx.fillRect(x+6*p, y+13*p, p, p); ctx.fillRect(x+7*p, y+13*p, p, p); ctx.fillRect(x+14*p, y+13*p, p, p); ctx.fillRect(x+15*p, y+13*p, p, p); ctx.fillRect(x+16*p, y+13*p, p, p); ctx.fillRect(x+17*p, y+13*p, p, p); ctx.fillRect(x+3*p, y+14*p, p, p); ctx.fillRect(x+4*p, y+14*p, p, p); ctx.fillRect(x+5*p, y+14*p, p, p); ctx.fillRect(x+6*p, y+14*p, p, p); ctx.fillRect(x+7*p, y+14*p, p, p); ctx.fillRect(x+8*p, y+14*p, p, p); ctx.fillRect(x+10*p, y+14*p, p, p); ctx.fillRect(x+14*p, y+14*p, p, p); ctx.fillRect(x+18*p, y+14*p, p, p); ctx.fillRect(x+19*p, y+14*p, p, p); ctx.fillRect(x+5*p, y+15*p, p, p); ctx.fillRect(x+6*p, y+15*p, p, p); ctx.fillRect(x+7*p, y+15*p, p, p); ctx.fillRect(x+8*p, y+15*p, p, p); ctx.fillRect(x+9*p, y+15*p, p, p); ctx.fillRect(x+10*p, y+15*p, p, p); ctx.fillRect(x+11*p, y+15*p, p, p); ctx.fillRect(x+14*p, y+15*p, p, p); ctx.fillRect(x+18*p, y+15*p, p, p); ctx.fillRect(x+19*p, y+15*p, p, p); ctx.fillRect(x+7*p, y+16*p, p, p); ctx.fillRect(x+8*p, y+16*p, p, p); ctx.fillRect(x+9*p, y+16*p, p, p); ctx.fillRect(x+10*p, y+16*p, p, p); ctx.fillRect(x+11*p, y+16*p, p, p); ctx.fillRect(x+14*p, y+16*p, p, p); ctx.fillRect(x+15*p, y+16*p, p, p); ctx.fillRect(x+16*p, y+16*p, p, p); ctx.fillRect(x+17*p, y+16*p, p, p); ctx.fillRect(x+18*p, y+16*p, p, p); ctx.fillRect(x+10*p, y+17*p, p, p); ctx.fillRect(x+11*p, y+17*p, p, p); ctx.fillRect(x+14*p, y+17*p, p, p); ctx.fillRect(x+15*p, y+17*p, p, p); ctx.fillRect(x+16*p, y+17*p, p, p); ctx.fillRect(x+17*p, y+17*p, p, p); ctx.fillRect(x+10*p, y+18*p, p, p); ctx.fillRect(x+11*p, y+18*p, p, p); ctx.fillRect(x+12*p, y+18*p, p, p); ctx.fillRect(x+14*p, y+18*p, p, p); ctx.fillRect(x+15*p, y+18*p, p, p); ctx.fillRect(x+16*p, y+18*p, p, p); ctx.fillRect(x+17*p, y+18*p, p, p); ctx.fillRect(x+18*p, y+18*p, p, p); ctx.fillRect(x+10*p, y+19*p, p, p); ctx.fillRect(x+11*p, y+19*p, p, p); ctx.fillRect(x+12*p, y+19*p, p, p); ctx.fillRect(x+14*p, y+19*p, p, p); ctx.fillRect(x+16*p, y+19*p, p, p); ctx.fillRect(x+17*p, y+19*p, p, p); ctx.fillRect(x+18*p, y+19*p, p, p);
+      ctx.fillRect(x + 18 * p, y + 0 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 0 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
       ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x+18*p, y+1*p, p, p); ctx.fillRect(x+19*p, y+1*p, p, p); ctx.fillRect(x+20*p, y+1*p, p, p); ctx.fillRect(x+21*p, y+1*p, p, p); ctx.fillRect(x+17*p, y+2*p, p, p); ctx.fillRect(x+18*p, y+2*p, p, p); ctx.fillRect(x+19*p, y+2*p, p, p); ctx.fillRect(x+20*p, y+2*p, p, p); ctx.fillRect(x+21*p, y+2*p, p, p); ctx.fillRect(x+22*p, y+2*p, p, p); ctx.fillRect(x+23*p, y+2*p, p, p); ctx.fillRect(x+17*p, y+3*p, p, p); ctx.fillRect(x+18*p, y+3*p, p, p); ctx.fillRect(x+19*p, y+3*p, p, p); ctx.fillRect(x+21*p, y+3*p, p, p); ctx.fillRect(x+22*p, y+3*p, p, p); ctx.fillRect(x+23*p, y+3*p, p, p); ctx.fillRect(x+24*p, y+3*p, p, p); ctx.fillRect(x+17*p, y+4*p, p, p); ctx.fillRect(x+18*p, y+4*p, p, p); ctx.fillRect(x+19*p, y+4*p, p, p); ctx.fillRect(x+20*p, y+4*p, p, p); ctx.fillRect(x+21*p, y+4*p, p, p); ctx.fillRect(x+22*p, y+4*p, p, p); ctx.fillRect(x+23*p, y+4*p, p, p); ctx.fillRect(x+17*p, y+5*p, p, p); ctx.fillRect(x+18*p, y+5*p, p, p); ctx.fillRect(x+19*p, y+5*p, p, p); ctx.fillRect(x+20*p, y+5*p, p, p); ctx.fillRect(x+21*p, y+5*p, p, p); ctx.fillRect(x+22*p, y+5*p, p, p); ctx.fillRect(x+23*p, y+5*p, p, p); ctx.fillRect(x+25*p, y+5*p, p, p); ctx.fillRect(x+17*p, y+6*p, p, p); ctx.fillRect(x+18*p, y+6*p, p, p); ctx.fillRect(x+19*p, y+6*p, p, p); ctx.fillRect(x+20*p, y+6*p, p, p); ctx.fillRect(x+21*p, y+6*p, p, p); ctx.fillRect(x+22*p, y+6*p, p, p); ctx.fillRect(x+23*p, y+6*p, p, p); ctx.fillRect(x+24*p, y+6*p, p, p); ctx.fillRect(x+17*p, y+7*p, p, p); ctx.fillRect(x+18*p, y+7*p, p, p); ctx.fillRect(x+19*p, y+7*p, p, p); ctx.fillRect(x+17*p, y+8*p, p, p); ctx.fillRect(x+18*p, y+8*p, p, p); ctx.fillRect(x+13*p, y+9*p, p, p); ctx.fillRect(x+14*p, y+9*p, p, p); ctx.fillRect(x+15*p, y+9*p, p, p); ctx.fillRect(x+16*p, y+9*p, p, p); ctx.fillRect(x+17*p, y+9*p, p, p); ctx.fillRect(x+18*p, y+9*p, p, p); ctx.fillRect(x+12*p, y+10*p, p, p); ctx.fillRect(x+13*p, y+10*p, p, p); ctx.fillRect(x+14*p, y+10*p, p, p); ctx.fillRect(x+15*p, y+10*p, p, p); ctx.fillRect(x+16*p, y+10*p, p, p); ctx.fillRect(x+17*p, y+10*p, p, p); ctx.fillRect(x+4*p, y+11*p, p, p); ctx.fillRect(x+11*p, y+11*p, p, p); ctx.fillRect(x+12*p, y+11*p, p, p); ctx.fillRect(x+13*p, y+11*p, p, p); ctx.fillRect(x+14*p, y+11*p, p, p); ctx.fillRect(x+16*p, y+11*p, p, p); ctx.fillRect(x+19*p, y+11*p, p, p); ctx.fillRect(x+11*p, y+12*p, p, p); ctx.fillRect(x+12*p, y+12*p, p, p); ctx.fillRect(x+13*p, y+12*p, p, p); ctx.fillRect(x+14*p, y+12*p, p, p); ctx.fillRect(x+8*p, y+13*p, p, p); ctx.fillRect(x+9*p, y+13*p, p, p); ctx.fillRect(x+10*p, y+13*p, p, p); ctx.fillRect(x+11*p, y+13*p, p, p); ctx.fillRect(x+12*p, y+13*p, p, p); ctx.fillRect(x+13*p, y+13*p, p, p); ctx.fillRect(x+9*p, y+14*p, p, p); ctx.fillRect(x+11*p, y+14*p, p, p); ctx.fillRect(x+12*p, y+14*p, p, p); ctx.fillRect(x+13*p, y+14*p, p, p); ctx.fillRect(x+15*p, y+14*p, p, p); ctx.fillRect(x+12*p, y+15*p, p, p); ctx.fillRect(x+13*p, y+15*p, p, p); ctx.fillRect(x+15*p, y+15*p, p, p); ctx.fillRect(x+12*p, y+16*p, p, p); ctx.fillRect(x+13*p, y+16*p, p, p); ctx.fillRect(x+12*p, y+17*p, p, p); ctx.fillRect(x+13*p, y+17*p, p, p); ctx.fillRect(x+13*p, y+18*p, p, p); ctx.fillRect(x+13*p, y+19*p, p, p);
+      ctx.fillRect(x + 18 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
       ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x+17*p, y+0*p, p, p); ctx.fillRect(x+20*p, y+0*p, p, p); ctx.fillRect(x+21*p, y+0*p, p, p);  ctx.fillRect(x+22*p, y+1*p, p, p); ctx.fillRect(x+23*p, y+1*p, p, p); ctx.fillRect(x+24*p, y+1*p, p, p); ctx.fillRect(x+25*p, y+2*p, p, p); ctx.fillRect(x+26*p, y+3*p, p, p); ctx.fillRect(x+26*p, y+4*p, p, p); ctx.fillRect(x+0*p, y+6*p, p, p); ctx.fillRect(x+0*p, y+9*p, p, p); ctx.fillRect(x+0*p, y+10*p, p, p); ctx.fillRect(x+18*p, y+10*p, p, p); ctx.fillRect(x+20*p, y+10*p, p, p); ctx.fillRect(x+18*p, y+11*p, p, p); ctx.fillRect(x+18*p, y+12*p, p, p); ctx.fillRect(x+20*p, y+12*p, p, p); ctx.fillRect(x+18*p, y+13*p, p, p); ctx.fillRect(x+20*p, y+13*p, p, p); ctx.fillRect(x+16*p, y+14*p, p, p); ctx.fillRect(x+20*p, y+14*p, p, p); ctx.fillRect(x+4*p, y+15*p, p, p); ctx.fillRect(x+6*p, y+16*p, p, p); ctx.fillRect(x+18*p, y+17*p, p, p);
+      ctx.fillRect(x + 17 * p, y + 0 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 0 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 0 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
       ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x+24*p, y+2*p, p, p); ctx.fillRect(x+25*p, y+3*p, p, p); ctx.fillRect(x+19*p, y+10*p, p, p); ctx.fillRect(x+19*p, y+12*p, p, p); ctx.fillRect(x+19*p, y+13*p, p, p); ctx.fillRect(x+17*p, y+14*p, p, p); ctx.fillRect(x+16*p, y+15*p, p, p); ctx.fillRect(x+17*p, y+15*p, p, p);
+      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
       ctx.fillStyle = '#2d3748';
-      ctx.fillRect(x+26*p, y+2*p, p, p); ctx.fillRect(x+0*p, y+5*p, p, p); ctx.fillRect(x+27*p, y+6*p, p, p); ctx.fillRect(x+27*p, y+7*p, p, p); ctx.fillRect(x+26*p, y+8*p, p, p); ctx.fillRect(x+20*p, y+15*p, p, p); ctx.fillRect(x+18*p, y+20*p, p, p);
+      ctx.fillRect(x + 26 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
     } else {
       // Walking frame 2
       ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x+18*p, y+1*p, p, p); ctx.fillRect(x+19*p, y+1*p, p, p); ctx.fillRect(x+16*p, y+2*p, p, p); ctx.fillRect(x+17*p, y+2*p, p, p); ctx.fillRect(x+15*p, y+3*p, p, p); ctx.fillRect(x+16*p, y+3*p, p, p); ctx.fillRect(x+15*p, y+4*p, p, p); ctx.fillRect(x+16*p, y+4*p, p, p); ctx.fillRect(x+15*p, y+5*p, p, p); ctx.fillRect(x+16*p, y+5*p, p, p); ctx.fillRect(x+24*p, y+5*p, p, p); ctx.fillRect(x+25*p, y+5*p, p, p); ctx.fillRect(x+15*p, y+6*p, p, p); ctx.fillRect(x+16*p, y+6*p, p, p); ctx.fillRect(x+24*p, y+6*p, p, p); ctx.fillRect(x+26*p, y+6*p, p, p); ctx.fillRect(x+1*p, y+7*p, p, p); ctx.fillRect(x+15*p, y+7*p, p, p); ctx.fillRect(x+16*p, y+7*p, p, p); ctx.fillRect(x+25*p, y+7*p, p, p); ctx.fillRect(x+26*p, y+7*p, p, p); ctx.fillRect(x+0*p, y+8*p, p, p); ctx.fillRect(x+1*p, y+8*p, p, p); ctx.fillRect(x+15*p, y+8*p, p, p); ctx.fillRect(x+16*p, y+8*p, p, p); ctx.fillRect(x+20*p, y+8*p, p, p); ctx.fillRect(x+21*p, y+8*p, p, p); ctx.fillRect(x+22*p, y+8*p, p, p); ctx.fillRect(x+23*p, y+8*p, p, p); ctx.fillRect(x+24*p, y+8*p, p, p); ctx.fillRect(x+25*p, y+8*p, p, p); ctx.fillRect(x+26*p, y+8*p, p, p); ctx.fillRect(x+0*p, y+9*p, p, p); ctx.fillRect(x+1*p, y+9*p, p, p); ctx.fillRect(x+2*p, y+9*p, p, p); ctx.fillRect(x+13*p, y+9*p, p, p); ctx.fillRect(x+14*p, y+9*p, p, p); ctx.fillRect(x+15*p, y+9*p, p, p); ctx.fillRect(x+16*p, y+9*p, p, p); ctx.fillRect(x+19*p, y+9*p, p, p); ctx.fillRect(x+20*p, y+9*p, p, p); ctx.fillRect(x+21*p, y+9*p, p, p); ctx.fillRect(x+22*p, y+9*p, p, p); ctx.fillRect(x+23*p, y+9*p, p, p); ctx.fillRect(x+24*p, y+9*p, p, p); ctx.fillRect(x+25*p, y+9*p, p, p); ctx.fillRect(x+1*p, y+10*p, p, p); ctx.fillRect(x+2*p, y+10*p, p, p); ctx.fillRect(x+3*p, y+10*p, p, p); ctx.fillRect(x+11*p, y+10*p, p, p); ctx.fillRect(x+12*p, y+10*p, p, p); ctx.fillRect(x+19*p, y+10*p, p, p); ctx.fillRect(x+20*p, y+10*p, p, p); ctx.fillRect(x+1*p, y+11*p, p, p); ctx.fillRect(x+2*p, y+11*p, p, p); ctx.fillRect(x+3*p, y+11*p, p, p); ctx.fillRect(x+4*p, y+11*p, p, p); ctx.fillRect(x+10*p, y+11*p, p, p); ctx.fillRect(x+11*p, y+11*p, p, p); ctx.fillRect(x+1*p, y+12*p, p, p); ctx.fillRect(x+2*p, y+12*p, p, p); ctx.fillRect(x+3*p, y+12*p, p, p); ctx.fillRect(x+5*p, y+12*p, p, p); ctx.fillRect(x+6*p, y+12*p, p, p); ctx.fillRect(x+7*p, y+12*p, p, p); ctx.fillRect(x+8*p, y+12*p, p, p); ctx.fillRect(x+9*p, y+12*p, p, p); ctx.fillRect(x+10*p, y+12*p, p, p); ctx.fillRect(x+18*p, y+12*p, p, p); ctx.fillRect(x+20*p, y+12*p, p, p); ctx.fillRect(x+2*p, y+13*p, p, p); ctx.fillRect(x+3*p, y+13*p, p, p); ctx.fillRect(x+4*p, y+13*p, p, p); ctx.fillRect(x+5*p, y+13*p, p, p); ctx.fillRect(x+6*p, y+13*p, p, p); ctx.fillRect(x+7*p, y+13*p, p, p); ctx.fillRect(x+8*p, y+13*p, p, p); ctx.fillRect(x+9*p, y+13*p, p, p); ctx.fillRect(x+10*p, y+13*p, p, p); ctx.fillRect(x+14*p, y+13*p, p, p); ctx.fillRect(x+15*p, y+13*p, p, p); ctx.fillRect(x+16*p, y+13*p, p, p); ctx.fillRect(x+17*p, y+13*p, p, p); ctx.fillRect(x+2*p, y+14*p, p, p); ctx.fillRect(x+3*p, y+14*p, p, p); ctx.fillRect(x+4*p, y+14*p, p, p); ctx.fillRect(x+5*p, y+14*p, p, p); ctx.fillRect(x+6*p, y+14*p, p, p); ctx.fillRect(x+7*p, y+14*p, p, p); ctx.fillRect(x+14*p, y+14*p, p, p); ctx.fillRect(x+15*p, y+14*p, p, p); ctx.fillRect(x+16*p, y+14*p, p, p); ctx.fillRect(x+17*p, y+14*p, p, p); ctx.fillRect(x+18*p, y+14*p, p, p); ctx.fillRect(x+19*p, y+14*p, p, p); ctx.fillRect(x+20*p, y+14*p, p, p); ctx.fillRect(x+3*p, y+15*p, p, p); ctx.fillRect(x+4*p, y+15*p, p, p); ctx.fillRect(x+5*p, y+15*p, p, p); ctx.fillRect(x+6*p, y+15*p, p, p); ctx.fillRect(x+7*p, y+15*p, p, p); ctx.fillRect(x+8*p, y+15*p, p, p); ctx.fillRect(x+9*p, y+15*p, p, p); ctx.fillRect(x+10*p, y+15*p, p, p); ctx.fillRect(x+14*p, y+15*p, p, p); ctx.fillRect(x+16*p, y+15*p, p, p); ctx.fillRect(x+18*p, y+15*p, p, p); ctx.fillRect(x+19*p, y+15*p, p, p); ctx.fillRect(x+20*p, y+15*p, p, p); ctx.fillRect(x+5*p, y+16*p, p, p); ctx.fillRect(x+6*p, y+16*p, p, p); ctx.fillRect(x+7*p, y+16*p, p, p); ctx.fillRect(x+8*p, y+16*p, p, p); ctx.fillRect(x+9*p, y+16*p, p, p); ctx.fillRect(x+10*p, y+16*p, p, p); ctx.fillRect(x+11*p, y+16*p, p, p); ctx.fillRect(x+14*p, y+16*p, p, p); ctx.fillRect(x+17*p, y+16*p, p, p); ctx.fillRect(x+18*p, y+16*p, p, p); ctx.fillRect(x+19*p, y+16*p, p, p); ctx.fillRect(x+6*p, y+17*p, p, p); ctx.fillRect(x+9*p, y+17*p, p, p); ctx.fillRect(x+10*p, y+17*p, p, p); ctx.fillRect(x+11*p, y+17*p, p, p); ctx.fillRect(x+14*p, y+17*p, p, p); ctx.fillRect(x+15*p, y+17*p, p, p); ctx.fillRect(x+16*p, y+17*p, p, p); ctx.fillRect(x+17*p, y+17*p, p, p); ctx.fillRect(x+18*p, y+17*p, p, p); ctx.fillRect(x+9*p, y+18*p, p, p); ctx.fillRect(x+10*p, y+18*p, p, p); ctx.fillRect(x+11*p, y+18*p, p, p); ctx.fillRect(x+14*p, y+18*p, p, p); ctx.fillRect(x+15*p, y+18*p, p, p); ctx.fillRect(x+16*p, y+18*p, p, p); ctx.fillRect(x+17*p, y+18*p, p, p); ctx.fillRect(x+9*p, y+19*p, p, p); ctx.fillRect(x+10*p, y+19*p, p, p); ctx.fillRect(x+11*p, y+19*p, p, p); ctx.fillRect(x+12*p, y+19*p, p, p); ctx.fillRect(x+13*p, y+19*p, p, p); ctx.fillRect(x+14*p, y+19*p, p, p); ctx.fillRect(x+15*p, y+19*p, p, p); ctx.fillRect(x+16*p, y+19*p, p, p); ctx.fillRect(x+17*p, y+19*p, p, p); ctx.fillRect(x+9*p, y+20*p, p, p); ctx.fillRect(x+10*p, y+20*p, p, p); ctx.fillRect(x+11*p, y+20*p, p, p); ctx.fillRect(x+12*p, y+20*p, p, p); ctx.fillRect(x+13*p, y+20*p, p, p); ctx.fillRect(x+16*p, y+20*p, p, p); ctx.fillRect(x+17*p, y+20*p, p, p); ctx.fillRect(x+18*p, y+20*p, p, p);
+      ctx.fillRect(x + 18 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 2 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 3 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 5 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 6 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 20 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
       ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x+18*p, y+2*p, p, p); ctx.fillRect(x+19*p, y+2*p, p, p); ctx.fillRect(x+20*p, y+2*p, p, p); ctx.fillRect(x+21*p, y+2*p, p, p); ctx.fillRect(x+17*p, y+3*p, p, p); ctx.fillRect(x+18*p, y+3*p, p, p); ctx.fillRect(x+19*p, y+3*p, p, p); ctx.fillRect(x+20*p, y+3*p, p, p); ctx.fillRect(x+21*p, y+3*p, p, p); ctx.fillRect(x+22*p, y+3*p, p, p); ctx.fillRect(x+23*p, y+3*p, p, p); ctx.fillRect(x+17*p, y+4*p, p, p); ctx.fillRect(x+18*p, y+4*p, p, p); ctx.fillRect(x+19*p, y+4*p, p, p); ctx.fillRect(x+21*p, y+4*p, p, p); ctx.fillRect(x+22*p, y+4*p, p, p); ctx.fillRect(x+23*p, y+4*p, p, p); ctx.fillRect(x+24*p, y+4*p, p, p); ctx.fillRect(x+17*p, y+5*p, p, p); ctx.fillRect(x+18*p, y+5*p, p, p); ctx.fillRect(x+19*p, y+5*p, p, p); ctx.fillRect(x+20*p, y+5*p, p, p); ctx.fillRect(x+21*p, y+5*p, p, p); ctx.fillRect(x+22*p, y+5*p, p, p); ctx.fillRect(x+23*p, y+5*p, p, p); ctx.fillRect(x+17*p, y+6*p, p, p); ctx.fillRect(x+18*p, y+6*p, p, p); ctx.fillRect(x+19*p, y+6*p, p, p); ctx.fillRect(x+20*p, y+6*p, p, p); ctx.fillRect(x+21*p, y+6*p, p, p); ctx.fillRect(x+22*p, y+6*p, p, p); ctx.fillRect(x+23*p, y+6*p, p, p); ctx.fillRect(x+25*p, y+6*p, p, p); ctx.fillRect(x+17*p, y+7*p, p, p); ctx.fillRect(x+18*p, y+7*p, p, p); ctx.fillRect(x+19*p, y+7*p, p, p); ctx.fillRect(x+20*p, y+7*p, p, p); ctx.fillRect(x+21*p, y+7*p, p, p); ctx.fillRect(x+22*p, y+7*p, p, p); ctx.fillRect(x+23*p, y+7*p, p, p); ctx.fillRect(x+24*p, y+7*p, p, p); ctx.fillRect(x+17*p, y+8*p, p, p); ctx.fillRect(x+18*p, y+8*p, p, p); ctx.fillRect(x+19*p, y+8*p, p, p); ctx.fillRect(x+17*p, y+9*p, p, p); ctx.fillRect(x+18*p, y+9*p, p, p); ctx.fillRect(x+13*p, y+10*p, p, p); ctx.fillRect(x+14*p, y+10*p, p, p); ctx.fillRect(x+15*p, y+10*p, p, p); ctx.fillRect(x+16*p, y+10*p, p, p); ctx.fillRect(x+17*p, y+10*p, p, p); ctx.fillRect(x+18*p, y+10*p, p, p); ctx.fillRect(x+12*p, y+11*p, p, p); ctx.fillRect(x+13*p, y+11*p, p, p); ctx.fillRect(x+14*p, y+11*p, p, p); ctx.fillRect(x+15*p, y+11*p, p, p); ctx.fillRect(x+16*p, y+11*p, p, p); ctx.fillRect(x+17*p, y+11*p, p, p); ctx.fillRect(x+4*p, y+12*p, p, p); ctx.fillRect(x+11*p, y+12*p, p, p); ctx.fillRect(x+12*p, y+12*p, p, p); ctx.fillRect(x+13*p, y+12*p, p, p); ctx.fillRect(x+14*p, y+12*p, p, p); ctx.fillRect(x+16*p, y+12*p, p, p); ctx.fillRect(x+17*p, y+12*p, p, p); ctx.fillRect(x+11*p, y+13*p, p, p); ctx.fillRect(x+12*p, y+13*p, p, p); ctx.fillRect(x+13*p, y+13*p, p, p); ctx.fillRect(x+8*p, y+14*p, p, p); ctx.fillRect(x+9*p, y+14*p, p, p); ctx.fillRect(x+10*p, y+14*p, p, p); ctx.fillRect(x+11*p, y+14*p, p, p); ctx.fillRect(x+12*p, y+14*p, p, p); ctx.fillRect(x+13*p, y+14*p, p, p); ctx.fillRect(x+11*p, y+15*p, p, p); ctx.fillRect(x+12*p, y+15*p, p, p); ctx.fillRect(x+13*p, y+15*p, p, p); ctx.fillRect(x+15*p, y+15*p, p, p); ctx.fillRect(x+12*p, y+16*p, p, p); ctx.fillRect(x+13*p, y+16*p, p, p); ctx.fillRect(x+15*p, y+16*p, p, p); ctx.fillRect(x+12*p, y+17*p, p, p); ctx.fillRect(x+13*p, y+17*p, p, p); ctx.fillRect(x+12*p, y+18*p, p, p); ctx.fillRect(x+13*p, y+18*p, p, p);
+      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
       ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x+17*p, y+1*p, p, p); ctx.fillRect(x+20*p, y+1*p, p, p); ctx.fillRect(x+21*p, y+1*p, p, p); ctx.fillRect(x+22*p, y+1*p, p, p); ctx.fillRect(x+22*p, y+2*p, p, p); ctx.fillRect(x+23*p, y+2*p, p, p); ctx.fillRect(x+24*p, y+2*p, p, p); ctx.fillRect(x+25*p, y+3*p, p, p); ctx.fillRect(x+20*p, y+4*p, p, p); ctx.fillRect(x+26*p, y+4*p, p, p); ctx.fillRect(x+26*p, y+5*p, p, p); ctx.fillRect(x+0*p, y+7*p, p, p); ctx.fillRect(x+0*p, y+10*p, p, p); ctx.fillRect(x+0*p, y+11*p, p, p); ctx.fillRect(x+18*p, y+11*p, p, p); ctx.fillRect(x+20*p, y+11*p, p, p); ctx.fillRect(x+18*p, y+13*p, p, p); ctx.fillRect(x+20*p, y+13*p, p, p); ctx.fillRect(x+4*p, y+16*p, p, p); ctx.fillRect(x+7*p, y+17*p, p, p); ctx.fillRect(x+8*p, y+17*p, p, p); ctx.fillRect(x+18*p, y+18*p, p, p); ctx.fillRect(x+18*p, y+19*p, p, p);
+      ctx.fillRect(x + 17 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
+      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 4 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 7 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 8 * p, y + 17 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
       ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x+24*p, y+3*p, p, p); ctx.fillRect(x+25*p, y+4*p, p, p); ctx.fillRect(x+19*p, y+11*p, p, p); ctx.fillRect(x+19*p, y+13*p, p, p); ctx.fillRect(x+17*p, y+15*p, p, p); ctx.fillRect(x+16*p, y+16*p, p, p);
+      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
+      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
+      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
+      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
       ctx.fillStyle = '#2d3748';
-       ctx.fillRect(x+26*p, y+3*p, p, p); ctx.fillRect(x+0*p, y+6*p, p, p); ctx.fillRect(x+1*p, y+6*p, p, p); ctx.fillRect(x+27*p, y+7*p, p, p); ctx.fillRect(x+27*p, y+8*p, p, p); ctx.fillRect(x+26*p, y+9*p, p, p); ctx.fillRect(x+20*p, y+16*p, p, p); ctx.fillRect(x+11*p, y+21*p, p, p); ctx.fillRect(x+12*p, y+21*p, p, p); ctx.fillRect(x+18*p, y+21*p, p, p);
+      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
+      ctx.fillRect(x + 0 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 1 * p, y + 6 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
+      ctx.fillRect(x + 27 * p, y + 8 * p, p, p);
+      ctx.fillRect(x + 26 * p, y + 9 * p, p, p);
+      ctx.fillRect(x + 20 * p, y + 16 * p, p, p);
+      ctx.fillRect(x + 11 * p, y + 21 * p, p, p);
+      ctx.fillRect(x + 12 * p, y + 21 * p, p, p);
+      ctx.fillRect(x + 18 * p, y + 21 * p, p, p);
     }
   }
 
