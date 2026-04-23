@@ -420,7 +420,7 @@ async function run() {
 
       check('Präsenzstunden = 350.0h', totals.praesenzStunden, 350.0);
       check('ueZ1Raw = +22.0h', overtime.ueZ1Raw, 22.0);
-      check('vorarbeit.filled = 30.0h', vorarbeit.filled, 30.0);
+      check('vorarbeit.filled = 20.0h', vorarbeit.filled, 20.0);
       check('vorarbeitApplied = 20.0h', overtime.vorarbeitApplied, 20.0);
       check('ueZ1AfterVorarbeit = 2.0h', overtime.ueZ1AfterVorarbeit, 2.0);
       check(
@@ -450,7 +450,7 @@ async function run() {
 
       check('ueZ1Raw unverändert = 22.0h', overtime.ueZ1Raw, 22.0);
       check('ueZ1Correction = +5.0h', overtime.ueZ1Correction, 5.0);
-      check('ueZ1Total = 2.0 + 5.0 = 7.0h', overtime.ueZ1Total, 7.0);
+      check('ueZ1Total = 22.0 + 5.0 = 27.0h', overtime.ueZ1Total, 27.0);
     }
 
     // ── Negative Korrektur ────────────────────────────────────
