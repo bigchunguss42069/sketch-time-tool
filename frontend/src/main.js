@@ -243,6 +243,60 @@ function showToast(message, type = 'info', duration = 3500) {
   }, duration);
 }
 
+function showConfirmToast(message, onConfirm, onCancel) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = 'toast toast--warning toast--confirm';
+
+  const msg = document.createElement('div');
+  msg.className = 'toast-message';
+  msg.textContent = message;
+
+  const actions = document.createElement('div');
+  actions.className = 'toast-actions';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'toast-btn toast-btn--confirm';
+  confirmBtn.textContent = 'Trotzdem speichern';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'toast-btn toast-btn--cancel';
+  cancelBtn.textContent = 'Abbrechen';
+
+  const remove = () => {
+    toast.classList.remove('toast--visible');
+    toast.addEventListener('transitionend', () => toast.remove(), {
+      once: true,
+    });
+  };
+
+  confirmBtn.addEventListener('click', () => {
+    remove();
+    onConfirm();
+  });
+  cancelBtn.addEventListener('click', () => {
+    remove();
+    if (onCancel) onCancel();
+  });
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(confirmBtn);
+  toast.appendChild(msg);
+  toast.appendChild(actions);
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add('toast--visible'));
+  });
+}
+
 // ── XSS Protection ───────────────────────────────────────────────
 function escapeHtml(str) {
   if (str == null) return '';
@@ -1618,49 +1672,61 @@ if (absenceSaveBtn) {
     if (type === 'ferien') {
       const halberTag = document.getElementById('absenceHalberTag')?.checked;
       days = halberTag ? 0.5 : countAbsenceWorkdays(from, to);
-      if (halberTag) hours = 4; // halber Tag = 4h Ferien
+      if (halberTag) hours = 4;
     } else if (type === 'krank') {
       const hoursRaw = document.getElementById('absenceHours')?.value;
       hours = hoursRaw ? Number(hoursRaw) : null;
       days = hours ? hours / 8 : 1;
     }
+
     if (!type || !from || !to) {
       showToast('Bitte Typ, Von und Bis ausfüllen.');
       return;
     }
 
-    const localId = `abs-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-
-    try {
-      const res = await authFetch('/api/absences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: localId,
-          type,
-          from,
-          to,
-          days,
-          hours,
-          comment,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Absenz konnte nicht gespeichert werden');
+    const submitAbsence = async ({ type, from, to, days, hours, comment }) => {
+      const localId = `abs-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      try {
+        const res = await authFetch('/api/absences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: localId,
+            type,
+            from,
+            to,
+            days,
+            hours,
+            comment,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          throw new Error(
+            data.error || 'Absenz konnte nicht gespeichert werden'
+          );
+        }
+        absenceFromEl.value = '';
+        absenceToEl.value = '';
+        absenceCommentEl.value = '';
+        await syncMyAbsencesFromServer();
+      } catch (e) {
+        console.error(e);
+        showToast(e.message || 'Fehler beim Speichern');
       }
+    };
 
-      // Reset form
-      absenceFromEl.value = '';
-      absenceToEl.value = '';
-      absenceCommentEl.value = '';
-
-      await syncMyAbsencesFromServer();
-    } catch (e) {
-      console.error(e);
-      showToast(e.message || 'Fehler beim Speichern');
+    if (type === 'krank' && hours > 0 && from !== to) {
+      showConfirmToast(
+        `${hours}h Arzt/Krank für mehrere Tage (${from} – ${to}) — stundenweise Absenzen sollten nur für einen Tag erfasst werden.`,
+        async () => {
+          await submitAbsence({ type, from, to, days, hours, comment });
+        }
+      );
+      return;
     }
+
+    await submitAbsence({ type, from, to, days, hours, comment });
   });
 }
 
@@ -3364,11 +3430,25 @@ function renderAbsenceListForCurrentYear() {
       : formatShortDate(toDate);
 
     const daysForYear = computeAbsenceDaysForYear(req, year);
-    const daysText = formatDays(daysForYear);
-
     const typeLabel = absenceTypeLabel(req.type);
 
-    titleSpan.textContent = `${typeLabel} · ${fromStr} – ${toStr} (${daysText} Tage)`;
+    // Anzeige: nur Stunden wenn < 1 Tag, nur Tage wenn ganze Tage, kombiniert wenn beides
+    let durationText;
+    const hours =
+      typeof req.hours === 'number' && req.hours > 0 ? req.hours : 0;
+    const days = daysForYear;
+    if (days < 1 && hours > 0) {
+      durationText = `${String(hours).replace('.', ',')}h`;
+    } else if (days >= 1 && hours > 0 && hours % 8 !== 0) {
+      const fullDays = Math.floor(days);
+      const remHours = Math.round((days - fullDays) * 8 * 10) / 10;
+      durationText =
+        remHours > 0 ? `${fullDays}T ${remHours}h` : `${fullDays}T`;
+    } else {
+      durationText = `${String(days).replace('.', ',')}T`;
+    }
+
+    titleSpan.textContent = `${typeLabel} · ${fromStr} – ${toStr} (${durationText})`;
 
     const meta = document.createElement('div');
     meta.className = 'absence-meta';

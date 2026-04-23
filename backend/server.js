@@ -849,7 +849,7 @@ async function computeUeZ1NetForMonth(payload, year, monthIndex, userId) {
     } else if (dayTotal > baseSoll) {
       diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal + absHoursForDay - baseSoll;
+      diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
     }
 
     sum += diff;
@@ -916,7 +916,7 @@ async function computeMonthUeZ1AndVorarbeit(
     } else if (dayTotal > baseSoll) {
       diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal + absHoursForDay - baseSoll;
+      diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
     }
 
     if (diff <= 0) {
@@ -1010,7 +1010,7 @@ async function computeRangeUeZ1AndVorarbeit(
     } else if (dayTotal > baseSoll) {
       diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal + absHoursForDay - baseSoll;
+      diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
     }
 
     ueZ1Raw += diff;
@@ -1089,7 +1089,7 @@ async function computeUeZ1PositiveForMonth(payload, year, monthIndex, userId) {
     } else if (dayTotal > baseSoll) {
       diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal + absHoursForDay - baseSoll;
+      diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
     }
 
     if (diff > 0) positiveSum += diff;
@@ -1166,7 +1166,7 @@ async function computePayrollPeriodOvertimeFromSubmission(
     } else if (dayTotal > baseSoll) {
       diff = dayTotal - baseSoll;
     } else {
-      diff = dayTotal + absHoursForDay - baseSoll;
+      diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
     }
 
     ueZ1Raw += diff;
