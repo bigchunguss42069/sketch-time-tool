@@ -3,9 +3,11 @@
     "pdfkit": "^0.17.2"
   },
   "devDependencies": {
-    "eslint": "^10.2.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.5.0",
     "prettier": "^3.8.3"
   }
 }

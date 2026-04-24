@@ -124,13 +124,83 @@ const {
   registerAnlagenRoutes,
 } = require('./lib/anlagen');
 
+// ============================================================================
+// konten.js Import
+// ============================================================================
+
+const {
+  computeVacationDaysPerYear,
+  mapKontenRow,
+  mapKontenSnapshotRow,
+  calculateAbsenceVacationDays,
+  createKontenService,
+} = require('./lib/konten');
+
+// ============================================================================
+// week-locks.js Import
+// ============================================================================
+
+const {
+  mapWeekLockRow,
+  buildWeekLocksMap,
+  getLockMeta,
+  collectLockedDatesForMonth,
+  absenceOverlapsLockedDates,
+  createWeekLocksService,
+} = require('./lib/week-locks');
+
+// ============================================================================
+// submissions.js Import
+// ============================================================================
+
+const {
+  mapTransmissionMeta,
+  createSubmissionsService,
+} = require('./lib/submissions');
+
 const db = DATABASE_URL
   ? new Pool({
       connectionString: DATABASE_URL,
     })
   : null;
 
+// ============================================================================
+// Service Instanzen
+// ============================================================================
+
 const requireAuth = createRequireAuth(db);
+
+const {
+  ensureKontenUserRecord,
+  persistKontenUserRecord,
+  listKontenMonthKeys,
+  listKontenRowsForUsers,
+  updateKontenManualValues,
+  fetchEmpStartKey,
+  getDailySoll,
+  updateKontenFromSubmission,
+  restoreVacationDaysForCancelledAbsence,
+  registerKontenRoutes,
+} = createKontenService(db);
+
+const {
+  readWeekLocksFromDb,
+  readUserWeekLocksFromDb,
+  setWeekLockState,
+  clearWeekLockState,
+  autoLockPreviousWeek,
+  registerWeekLockRoutes,
+} = createWeekLocksService(db);
+
+const {
+  listUsersFromDb,
+  insertMonthSubmission,
+  deleteMonthSubmissionById,
+  listUserTransmissions,
+  getLatestTransmissionMeta,
+  getLatestMonthSubmissionRecord,
+  loadLatestMonthSubmission,
+} = createSubmissionsService(db, mapDbUser);
 
 if (db) {
   db.on('error', (err) => {
@@ -150,209 +220,6 @@ app.use(
 );
 app.use(helmet());
 app.use(express.json({ limit: '25mb' }));
-
-// ============================================================================
-// In-memory identity data and option labels
-// ============================================================================
-// Note: Now users are in postgres with argon2 hashes
-//
-
-function computeVacationDaysPerYear(birthYear, isNonSmoker, isKader) {
-  let base = 20;
-  if (birthYear) {
-    const age = new Date().getFullYear() - Number(birthYear);
-    if (age <= 20) base = 25;
-    else if (age >= 50) base = 25;
-    else base = 20;
-  }
-  if (isNonSmoker) base += 1;
-  if (isKader) base += 5;
-  return base;
-}
-
-function mapTransmissionMeta(row) {
-  return {
-    id: row.id,
-    year: row.year,
-    monthIndex: row.month_index,
-    monthLabel: row.month_label,
-    sentAt:
-      row.sent_at instanceof Date
-        ? row.sent_at.toISOString()
-        : String(row.sent_at || ''),
-    sizeBytes: Number(row.size_bytes) || 0,
-    totals: row.totals || null,
-  };
-}
-
-async function listUsersFromDb({ role = null, teamId = null } = {}) {
-  if (!db) return [];
-
-  const params = [];
-  let sql = `
-   SELECT id, username, role, team_id, active, email, employment_start
-    FROM users
-    WHERE active = TRUE
-  `;
-
-  if (role) {
-    params.push(role);
-    sql += ` AND role = $${params.length}`;
-  }
-
-  if (teamId) {
-    params.push(teamId);
-    sql += ` AND team_id = $${params.length}`;
-  }
-
-  sql += ` ORDER BY username ASC`;
-
-  const result = await db.query(sql, params);
-  return result.rows.map(mapDbUser);
-}
-
-async function insertMonthSubmission({
-  id,
-  userId,
-  username,
-  teamId,
-  year,
-  monthIndex,
-  monthLabel,
-  sentAt,
-  receivedAt,
-  sizeBytes,
-  totals,
-  payload,
-}) {
-  if (!db) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  await db.query(
-    `
-      INSERT INTO month_submissions (
-        id,
-        user_id,
-        username,
-        team_id,
-        year,
-        month_index,
-        month_label,
-        sent_at,
-        received_at,
-        size_bytes,
-        totals,
-        payload
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb)
-    `,
-    [
-      id,
-      userId,
-      username,
-      teamId,
-      year,
-      monthIndex,
-      monthLabel,
-      sentAt,
-      receivedAt,
-      sizeBytes,
-      JSON.stringify(totals || {}),
-      JSON.stringify(payload || {}),
-    ]
-  );
-}
-
-async function deleteMonthSubmissionById(id) {
-  if (!db) return;
-  await db.query(`DELETE FROM month_submissions WHERE id = $1`, [id]);
-}
-
-async function listUserTransmissions(username) {
-  if (!db) return [];
-
-  const result = await db.query(
-    `
-      SELECT
-        id,
-        year,
-        month_index,
-        month_label,
-        sent_at,
-        size_bytes,
-        totals
-      FROM month_submissions
-      WHERE username = $1
-      ORDER BY sent_at DESC, created_at DESC
-    `,
-    [username]
-  );
-
-  return result.rows.map(mapTransmissionMeta);
-}
-
-async function getLatestTransmissionMeta(username) {
-  if (!db) return null;
-
-  const result = await db.query(
-    `
-      SELECT
-        id,
-        year,
-        month_index,
-        month_label,
-        sent_at,
-        size_bytes,
-        totals
-      FROM month_submissions
-      WHERE username = $1
-      ORDER BY sent_at DESC, created_at DESC
-      LIMIT 1
-    `,
-    [username]
-  );
-
-  const row = result.rows[0];
-  return row ? mapTransmissionMeta(row) : null;
-}
-
-async function getLatestMonthSubmissionRecord(username, year, monthIndex) {
-  if (!db) return null;
-
-  const result = await db.query(
-    `
-      SELECT
-        id,
-        year,
-        month_index,
-        month_label,
-        sent_at,
-        size_bytes,
-        totals,
-        payload
-      FROM month_submissions
-      WHERE username = $1
-        AND year = $2
-        AND month_index = $3
-      ORDER BY sent_at DESC, created_at DESC
-      LIMIT 1
-    `,
-    [username, year, monthIndex]
-  );
-
-  const row = result.rows[0];
-  if (!row) return null;
-
-  return {
-    meta: mapTransmissionMeta(row),
-    submission: row.payload || null,
-  };
-}
-
-// ============================================================================
-// Authentication / authorization helpers
-// ============================================================================
 
 // ============================================================================
 // Shared date, number and month-overview helpers
@@ -818,7 +685,7 @@ registerAbsenceRoutes(
   db,
   requireAuth,
   requireAdmin,
-  findUserByUsername,
+  (username) => findUserByUsername(db, username),
   restoreVacationDaysForCancelledAbsence,
   listUsersFromDb
 );
@@ -832,944 +699,23 @@ registerAnlagenRoutes(
   listUsersFromDb
 );
 
-// ---- Konten (Postgres-backed, idempotent by user-month snapshot) ----
-// ----------------------------------------------------------------------------
-// Konten helpers
-// ----------------------------------------------------------------------------
-
-function normalizeKontenObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value
-    : {};
-}
-
-function mapKontenRow(row, fallback = {}) {
-  const updatedAtRaw = row?.updated_at;
-
-  return {
-    teamId: row?.team_id ?? fallback.teamId ?? null,
-    ueZ1: Number(row?.ue_z1) || 0,
-    ueZ2: Number(row?.ue_z2) || 0,
-    ueZ3: Number(row?.ue_z3) || 0,
-    vorarbeitBalance: Number(row?.vorarbeit_balance) || 0,
-    ueZ1Correction: Number(row?.ue_z1_correction) || 0,
-    ueZ2Correction: Number(row?.ue_z2_correction) || 0,
-    ueZ3Correction: Number(row?.ue_z3_correction) || 0,
-    ueZ1PositiveByYear: normalizeKontenObject(row?.ue_z1_positive_by_year),
-    vacationDays: Number(row?.vacation_days) || 0,
-    vacationDaysPerYear: Number(row?.vacation_days_per_year) || 21,
-    creditedYears: normalizeKontenObject(row?.credited_years),
-    updatedAt:
-      updatedAtRaw instanceof Date
-        ? updatedAtRaw.toISOString()
-        : updatedAtRaw || null,
-    updatedBy: row?.updated_by || null,
-  };
-}
-
-function mapKontenSnapshotRow(row) {
-  return {
-    ueZ1: Number(row?.ue_z1) || 0,
-    ueZ1Positive: Number(row?.ue_z1_positive) || 0,
-    ueZ2: Number(row?.ue_z2) || 0,
-    ueZ3: Number(row?.ue_z3) || 0,
-    vacUsed: Number(row?.vac_used) || 0,
-    vorarbeitBalance: Number(row?.vorarbeit_balance) || 0,
-  };
-}
-
-async function ensureKontenUserRecord({
-  username,
-  teamId = null,
-  client = db,
-}) {
-  if (!client) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  const userResult = await client.query(
-    `
-      SELECT id, username, team_id, active
-      FROM users
-      WHERE username = $1
-      LIMIT 1
-    `,
-    [username]
-  );
-
-  const userRow = userResult.rows[0];
-  if (!userRow || !userRow.active) {
-    throw new Error(`User not found for konten: ${username}`);
-  }
-
-  const effectiveTeamId = teamId || userRow.team_id || null;
-
-  let kontenResult = await client.query(
-    `
-      SELECT *
-      FROM konten
-      WHERE user_id = $1
-      LIMIT 1
-    `,
-    [userRow.id]
-  );
-
-  let kontenRow = kontenResult.rows[0];
-
-  if (!kontenRow) {
-    kontenResult = await client.query(
-      `
-        INSERT INTO konten (
-          user_id,
-          username,
-          team_id,
-          ue_z1,
-          ue_z2,
-          ue_z3,
-          ue_z1_positive_by_year,
-          vacation_days,
-          vacation_days_per_year,
-          credited_years,
-          updated_at,
-          updated_by
-        )
-        VALUES (
-          $1,
-          $2,
-          $3,
-          0,
-          0,
-          0,
-          '{}'::jsonb,
-          0,
-          21,
-          '{}'::jsonb,
-          NULL,
-          NULL
-        )
-        RETURNING *
-      `,
-      [userRow.id, userRow.username, effectiveTeamId]
-    );
-
-    kontenRow = kontenResult.rows[0];
-  } else if (effectiveTeamId && kontenRow.team_id !== effectiveTeamId) {
-    kontenResult = await client.query(
-      `
-        UPDATE konten
-        SET team_id = $2
-        WHERE user_id = $1
-        RETURNING *
-      `,
-      [userRow.id, effectiveTeamId]
-    );
-
-    kontenRow = kontenResult.rows[0];
-  }
-
-  return {
-    userId: userRow.id,
-    username: userRow.username,
-    teamId: effectiveTeamId,
-    konto: mapKontenRow(kontenRow, { teamId: effectiveTeamId }),
-  };
-}
-
-async function persistKontenUserRecord({
-  client,
-  userId,
-  username,
-  teamId,
-  konto,
-}) {
-  if (!client) {
-    throw new Error('Missing DB client');
-  }
-
-  await client.query(
-    `
-    UPDATE konten
-    SET
-      username = $2,
-      team_id = $3,
-      ue_z1 = $4,
-      ue_z2 = $5,
-      ue_z3 = $6,
-      ue_z1_positive_by_year = $7::jsonb,
-      vacation_days = $8,
-      vacation_days_per_year = $9,
-      credited_years = $10::jsonb,
-      updated_at = $11,
-      updated_by = $12,
-      vorarbeit_balance = $13,
-      ue_z1_correction = $14,
-      ue_z2_correction = $15,
-      ue_z3_correction = $16
-    WHERE user_id = $1
-  `,
-    [
-      userId,
-      username,
-      teamId,
-      Number(konto.ueZ1) || 0,
-      Number(konto.ueZ2) || 0,
-      Number(konto.ueZ3) || 0,
-      JSON.stringify(konto.ueZ1PositiveByYear || {}),
-      Number(konto.vacationDays) || 0,
-      Number(konto.vacationDaysPerYear) || 21,
-      JSON.stringify(konto.creditedYears || {}),
-      konto.updatedAt || null,
-      konto.updatedBy || null,
-      Number(konto.vorarbeitBalance) || 0,
-      Number(konto.ueZ1Correction) || 0,
-      Number(konto.ueZ2Correction) || 0,
-      Number(konto.ueZ3Correction) || 0,
-    ]
-  );
-}
-
-async function listKontenMonthKeys(username, client = db) {
-  if (!client) return [];
-
-  const result = await client.query(
-    `
-      SELECT month_key
-      FROM konten_snapshots
-      WHERE username = $1
-      ORDER BY year ASC, month_index ASC
-    `,
-    [username]
-  );
-
-  return result.rows.map((row) => row.month_key);
-}
-
-async function listKontenRowsForUsers(users) {
-  return Promise.all(
-    users.map(async (user) => {
-      const ensured = await ensureKontenUserRecord({
-        username: user.username,
-        teamId: user.teamId || null,
-      });
-
-      return {
-        username: user.username,
-        teamId: user.teamId || null,
-        konto: ensured.konto,
-      };
-    })
-  );
-}
-
-async function updateKontenManualValues({ username, values, updatedBy }) {
-  if (!db) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  const client = await db.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const ensured = await ensureKontenUserRecord({ username, client });
-    const next = {
-      ...ensured.konto,
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy || username,
-    };
-
-    // Korrekturen: Delta addieren (kumulativ)
-    const correctionFields = [
-      'ueZ1Correction',
-      'ueZ2Correction',
-      'ueZ3Correction',
-    ];
-    // Absolute Felder: direkt setzen
-    const absoluteFields = ['vacationDays', 'vacationDaysPerYear'];
-
-    const auditEntries = [];
-
-    for (const field of correctionFields) {
-      if (values[field] == null) continue;
-      const delta = Number(values[field]);
-      if (!Number.isFinite(delta) || delta === 0) continue;
-      const oldVal = Number(ensured.konto[field]) || 0;
-      const newVal = Math.round((oldVal + delta) * 10) / 10;
-      auditEntries.push({ field, oldValue: oldVal, newValue: newVal, delta });
-      next[field] = newVal;
-    }
-
-    for (const field of absoluteFields) {
-      if (values[field] == null) continue;
-      const n = Number(values[field]);
-      if (!Number.isFinite(n)) continue;
-      const oldVal = Number(ensured.konto[field]) || 0;
-      if (oldVal !== n) {
-        auditEntries.push({
-          field,
-          oldValue: oldVal,
-          newValue: n,
-          delta: null,
-        });
-        next[field] = n;
-      }
-    }
-
-    await persistKontenUserRecord({
-      client,
-      userId: ensured.userId,
-      username: ensured.username,
-      teamId: ensured.teamId,
-      konto: next,
-    });
-
-    for (const entry of auditEntries) {
-      await client.query(
-        `INSERT INTO konto_adjustments
-          (user_id, username, admin_username, field, old_value, new_value, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          ensured.userId,
-          ensured.username,
-          values.updatedBy || 'admin',
-          entry.field,
-          entry.oldValue,
-          entry.newValue,
-          values.reason || null,
-        ]
-      );
-    }
-
-    await client.query('COMMIT');
-    return next;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-async function fetchEmpStartKey(userId) {
-  const row = await db.query(
-    'SELECT employment_start FROM users WHERE id = $1',
-    [userId]
-  );
-  const empStart = row.rows[0]?.employment_start;
-  return empStart
-    ? String(
-        empStart instanceof Date ? empStart.toLocaleDateString('sv') : empStart
-      ).slice(0, 10)
-    : null;
-}
-
-// Gibt das Tagessoll für einen User an einem bestimmten Datum zurück.
-// Berücksichtigt Arbeitszeitmodell, Feiertage und Absenzen.
-async function getDailySoll(
-  userId,
-  dateKey,
-  acceptedAbsenceHoursMap,
-  cachedEmpStartKey = undefined
-) {
-  const weekday = new Date(dateKey + 'T00:00:00').getDay();
-  if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
-
-  let empStartKey;
-  if (cachedEmpStartKey !== undefined) {
-    empStartKey = cachedEmpStartKey;
-  } else {
-    const userRow = await db.query(
-      'SELECT employment_start FROM users WHERE id = $1',
-      [userId]
-    );
-    const empStart = userRow.rows[0]?.employment_start;
-    empStartKey = empStart
-      ? String(
-          empStart instanceof Date
-            ? empStart.toLocaleDateString('sv')
-            : empStart
-        ).slice(0, 10)
-      : null;
-  }
-
-  if (empStartKey && empStartKey > dateKey) {
-    return { soll: 0, employmentPct: 100 };
-  }
-
-  const today = formatDateKey(new Date());
-  if (dateKey >= today) return { soll: 0, employmentPct: 100 };
-
-  if (isBernHolidayKey(dateKey)) return { soll: 0, employmentPct: 100 };
-  if (isCompanyBridgeDay(dateKey)) return { soll: 0, employmentPct: 100 };
-
-  // Absenz prüfen
-  if (acceptedAbsenceHoursMap && acceptedAbsenceHoursMap.has(dateKey)) {
-    const absHours = acceptedAbsenceHoursMap.get(dateKey);
-    if (absHours === null) return { soll: 0, employmentPct: 100 }; // ganzer Tag
-    // Stundenweise — Soll wird weiter unten reduziert
-  }
-
-  // Arbeitszeitmodell laden
-  const result = await db.query(
-    `
-    SELECT employment_pct, work_days FROM work_schedules
-    WHERE user_id = $1 AND valid_from <= $2
-    ORDER BY valid_from DESC LIMIT 1
-  `,
-    [userId, dateKey]
-  );
-
-  const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-  const dayKey = DAY_KEYS[weekday];
-  let baseSoll = 8.0;
-  let employmentPct = 100;
-
-  if (result.rows.length > 0) {
-    const row = result.rows[0];
-    baseSoll = toNumber((row.work_days || {})[dayKey]) || 0;
-    employmentPct = Number(row.employment_pct) || 100;
-  }
-
-  // Stundenweise Absenz abziehen
-  if (acceptedAbsenceHoursMap && acceptedAbsenceHoursMap.has(dateKey)) {
-    const absHours = acceptedAbsenceHoursMap.get(dateKey);
-    if (absHours !== null) {
-      baseSoll = Math.max(0, baseSoll - absHours);
-    }
-  }
-
-  return { soll: baseSoll, employmentPct };
-}
-
-// Calculate vacation days for an absence (weekdays minus holidays)
-function calculateAbsenceVacationDays(absence) {
-  if (!absence || !absence.from || !absence.to) return 0;
-
-  const type = String(absence.type || '').toLowerCase();
-  if (type !== 'ferien') return 0;
-
-  let fromDate = new Date(absence.from + 'T00:00:00');
-  let toDate = new Date(absence.to + 'T00:00:00');
-
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
-    return 0;
-
-  if (toDate < fromDate) {
-    const tmp = fromDate;
-    fromDate = toDate;
-    toDate = tmp;
-  }
-
-  let days = 0;
-  const cursor = new Date(fromDate);
-
-  while (cursor <= toDate) {
-    const weekday = cursor.getDay();
-    const dateKey = formatDateKey(cursor);
-
-    if (
-      weekday >= 1 &&
-      weekday <= 5 &&
-      !isBernHolidayKey(dateKey) &&
-      !isCompanyBridgeDay(dateKey)
-    ) {
-      // ← NEU
-      days += absence.hours ? 0.5 : 1;
-    }
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return days;
-}
-
-async function updateKontenFromSubmission({
-  username,
-  teamId,
-  year,
-  monthIndex,
-  totals,
-  payload,
-  updatedBy,
-}) {
-  if (!db) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  const client = await db.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const ensured = await ensureKontenUserRecord({
-      username,
-      teamId,
-      client,
-    });
-
-    const monthKey = kontenMonthKey(year, monthIndex);
-    const yearStr = String(year);
-
-    const snapResult = await client.query(
-      `
-        SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vac_used, vorarbeit_balance
-        FROM konten_snapshots
-        WHERE user_id = $1
-          AND year = $2
-          AND month_index = $3
-        LIMIT 1
-      `,
-      [ensured.userId, year, monthIndex]
-    );
-
-    const prevSnap = snapResult.rows[0]
-      ? mapKontenSnapshotRow(snapResult.rows[0])
-      : {
-          ueZ1: 0,
-          ueZ1Positive: 0,
-          ueZ2: 0,
-          ueZ3: 0,
-          vacUsed: 0,
-          vorarbeitBalance: 0,
-        };
-
-    const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
-    const vorarbeitRequired =
-      Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
-
-    const nextKonto = {
-      ...ensured.konto,
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy || username,
-    };
-
-    // Vorarbeit-Startwert = Stand vor diesem Monat (aus vorherigem Snapshot)
-    // NICHT aus aktuellem Konto, da der Konto-Stand bereits diesen Monat enthält
-    const prevMonthSnap = await client.query(
-      `
-      SELECT vorarbeit_balance FROM konten_snapshots
-      WHERE user_id = $1 AND year = $2
-        AND month_index < $3
-      ORDER BY year DESC, month_index DESC LIMIT 1
-    `,
-      [ensured.userId, year, monthIndex]
-    );
-
-    let vorarbeitBalance =
-      prevMonthSnap.rows.length > 0
-        ? r1(Number(prevMonthSnap.rows[0].vorarbeit_balance) || 0)
-        : 0;
-
-    if (!nextKonto.creditedYears[yearStr]) {
-      nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
-      nextKonto.creditedYears[yearStr] = true;
-      vorarbeitBalance = 0;
-    }
-
-    const { ueZ1: monthUeZ1, vorarbeitBalance: newVorarbeitBalance } =
-      await computeMonthUeZ1AndVorarbeit(
-        payload,
-        year,
-        monthIndex,
-        ensured.userId,
-        vorarbeitBalance,
-        vorarbeitRequired
-      );
-
-    const deltaUeZ1 = r1(monthUeZ1 - prevSnap.ueZ1);
-
-    const nextSnap = {
-      ueZ1: monthUeZ1,
-      ueZ1Positive: 0,
-      ueZ2: Number(totals?.pikett) || 0,
-      ueZ3: Number(totals?.overtime3) || 0,
-      vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
-      vorarbeitBalance: newVorarbeitBalance,
-    };
-
-    nextKonto.vorarbeitBalance = newVorarbeitBalance;
-    nextKonto.ueZ1 += deltaUeZ1;
-    nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
-    nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
-    nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
-
-    await client.query(
-      `
-    INSERT INTO konten_snapshots (
-      user_id,
-      username,
-      year,
-      month_index,
-      month_key,
-      ue_z1,
-      ue_z1_positive,
-      ue_z2,
-      ue_z3,
-      vac_used,
-      vorarbeit_balance,
-      updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    ON CONFLICT (user_id, year, month_index)
-    DO UPDATE SET
-      username = EXCLUDED.username,
-      month_key = EXCLUDED.month_key,
-      ue_z1 = EXCLUDED.ue_z1,
-      ue_z1_positive = EXCLUDED.ue_z1_positive,
-      ue_z2 = EXCLUDED.ue_z2,
-      ue_z3 = EXCLUDED.ue_z3,
-      vac_used = EXCLUDED.vac_used,
-      vorarbeit_balance = EXCLUDED.vorarbeit_balance,
-      updated_at = EXCLUDED.updated_at
-  `,
-      [
-        ensured.userId,
-        ensured.username,
-        year,
-        monthIndex,
-        monthKey,
-        nextSnap.ueZ1,
-        nextSnap.ueZ1Positive,
-        nextSnap.ueZ2,
-        nextSnap.ueZ3,
-        nextSnap.vacUsed,
-        nextSnap.vorarbeitBalance, // ← NEU $11
-        nextKonto.updatedAt, // ← $12
-      ]
-    );
-
-    await client.query(
-      `
-      UPDATE konten SET
-        ue_z1 = $2,
-        ue_z2 = $3,
-        ue_z3 = $4,
-        vorarbeit_balance = $5,
-        vacation_days = $6,
-        credited_years = $7,
-        updated_at = $8,
-        updated_by = $9
-      WHERE user_id = $1
-    `,
-      [
-        ensured.userId,
-        nextKonto.ueZ1,
-        nextKonto.ueZ2,
-        nextKonto.ueZ3,
-        nextKonto.vorarbeitBalance,
-        nextKonto.vacationDays,
-        JSON.stringify(nextKonto.creditedYears),
-        nextKonto.updatedAt,
-        nextKonto.updatedBy,
-      ]
-    );
-
-    await client.query('COMMIT');
-    return nextKonto;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-async function restoreVacationDaysForCancelledAbsence({
-  username,
-  absence,
-  updatedBy,
-}) {
-  if (!db) return 0;
-
-  const vacDays = calculateAbsenceVacationDays(absence);
-  if (!(vacDays > 0)) return 0;
-
-  let fromDate = new Date(absence.from + 'T00:00:00');
-  let toDate = new Date(absence.to + 'T00:00:00');
-
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return 0;
-  }
-
-  if (toDate < fromDate) {
-    const tmp = fromDate;
-    fromDate = toDate;
-    toDate = tmp;
-  }
-
-  const affectedMonths = new Set();
-  const cursor = new Date(fromDate);
-
-  while (cursor <= toDate) {
-    affectedMonths.add(kontenMonthKey(cursor.getFullYear(), cursor.getMonth()));
-    cursor.setMonth(cursor.getMonth() + 1);
-    cursor.setDate(1);
-  }
-
-  const monthKeys = Array.from(affectedMonths);
-  if (!monthKeys.length) return 0;
-
-  const client = await db.connect();
-
-  try {
-    await client.query('BEGIN');
-
-    const ensured = await ensureKontenUserRecord({ username, client });
-
-    const snapResult = await client.query(
-      `
-        SELECT year, month_index, month_key, vac_used
-        FROM konten_snapshots
-        WHERE user_id = $1
-          AND month_key = ANY($2::text[])
-      `,
-      [ensured.userId, monthKeys]
-    );
-
-    if (!snapResult.rows.length) {
-      await client.query('ROLLBACK');
-      return 0;
-    }
-
-    const nextKonto = {
-      ...ensured.konto,
-      vacationDays: (Number(ensured.konto.vacationDays) || 0) + vacDays,
-      updatedAt: new Date().toISOString(),
-      updatedBy: updatedBy || username,
-    };
-
-    await persistKontenUserRecord({
-      client,
-      userId: ensured.userId,
-      username: ensured.username,
-      teamId: ensured.teamId,
-      konto: nextKonto,
-    });
-
-    for (const row of snapResult.rows) {
-      const nextVacUsed = Math.max(0, (Number(row.vac_used) || 0) - vacDays);
-
-      await client.query(
-        `
-          UPDATE konten_snapshots
-          SET vac_used = $4, updated_at = $5
-          WHERE user_id = $1
-            AND year = $2
-            AND month_index = $3
-            
-        `,
-        [
-          ensured.userId,
-          row.year,
-          row.month_index,
-          nextVacUsed,
-          nextKonto.updatedAt,
-        ]
-      );
-    }
-
-    await client.query('COMMIT');
-    return vacDays;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-}
+registerKontenRoutes(
+  app,
+  requireAuth,
+  requireAdmin,
+  (username) => findUserByUsername(db, username),
+  listUsersFromDb
+);
+
+registerWeekLockRoutes(app, requireAuth, requireAdmin, (username) =>
+  findUserByUsername(db, username)
+);
 
 // ---- Week locks (persistent) ----
 // Stored globally, keyed by username -> weekKey -> { locked:true, lockedAt, lockedBy }
 // ----------------------------------------------------------------------------
 // Week locks, date ranges and payroll-period helpers
 // ----------------------------------------------------------------------------
-
-function mapWeekLockRow(row) {
-  return {
-    locked: true,
-    lockedAt:
-      row?.locked_at instanceof Date
-        ? row.locked_at.toISOString()
-        : row?.locked_at || null,
-    lockedBy: row?.locked_by || null,
-  };
-}
-
-function buildWeekLocksMap(rows) {
-  const out = {};
-
-  for (const row of rows || []) {
-    const username = row.username;
-    const wk = weekKey(row.week_year, row.week);
-
-    if (!out[username]) out[username] = {};
-    out[username][wk] = mapWeekLockRow(row);
-  }
-
-  return out;
-}
-
-async function readWeekLocksFromDb() {
-  if (!db) return {};
-
-  const result = await db.query(`
-    SELECT username, week_year, week, locked_at, locked_by
-    FROM week_locks
-    ORDER BY username ASC, week_year ASC, week ASC
-  `);
-
-  return buildWeekLocksMap(result.rows);
-}
-
-async function readUserWeekLocksFromDb(username) {
-  if (!db) return {};
-
-  const result = await db.query(
-    `
-      SELECT username, week_year, week, locked_at, locked_by
-      FROM week_locks
-      WHERE username = $1
-      ORDER BY week_year ASC, week ASC
-    `,
-    [username]
-  );
-
-  const all = buildWeekLocksMap(result.rows);
-  return all[username] || {};
-}
-
-async function setWeekLockState({
-  userId,
-  username,
-  weekYear,
-  week,
-  lockedBy,
-}) {
-  if (!db) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  const result = await db.query(
-    `
-      INSERT INTO week_locks (
-        user_id,
-        username,
-        week_year,
-        week,
-        locked_at,
-        locked_by
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (user_id, week_year, week)
-      DO UPDATE SET
-        username = EXCLUDED.username,
-        locked_at = EXCLUDED.locked_at,
-        locked_by = EXCLUDED.locked_by
-      RETURNING username, week_year, week, locked_at, locked_by
-    `,
-    [
-      userId,
-      username,
-      weekYear,
-      week,
-      new Date().toISOString(),
-      lockedBy || null,
-    ]
-  );
-
-  return mapWeekLockRow(result.rows[0] || null);
-}
-
-async function clearWeekLockState({ userId, weekYear, week }) {
-  if (!db) {
-    throw new Error('DATABASE_URL is not configured');
-  }
-
-  await db.query(
-    `
-      DELETE FROM week_locks
-      WHERE user_id = $1
-        AND week_year = $2
-        AND week = $3
-    `,
-    [userId, weekYear, week]
-  );
-}
-
-function getLockMeta(userLocks, wk) {
-  const v = userLocks ? userLocks[wk] : null;
-  if (!v) return { locked: false, lockedAt: null, lockedBy: null };
-  if (v === true) return { locked: true, lockedAt: null, lockedBy: null };
-  if (typeof v === 'object' && v.locked) {
-    return {
-      locked: true,
-      lockedAt: v.lockedAt || null,
-      lockedBy: v.lockedBy || null,
-    };
-  }
-  return { locked: false, lockedAt: null, lockedBy: null };
-}
-
-function collectLockedDatesForMonth(userLocks, year, monthIndex) {
-  const lockedDateKeys = new Set();
-  const lockedWeekKeys = new Set();
-
-  const start = new Date(year, monthIndex, 1);
-  const end = new Date(year, monthIndex + 1, 0);
-
-  const cursor = new Date(start);
-  while (cursor <= end) {
-    const dk = formatDateKey(cursor);
-    const iso = getISOWeekInfo(cursor); // { week, year }
-    const wk = weekKey(iso.year, iso.week);
-
-    const meta = getLockMeta(userLocks, wk);
-    if (meta.locked) {
-      lockedDateKeys.add(dk);
-      lockedWeekKeys.add(wk);
-    }
-
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return { lockedDateKeys, lockedWeekKeys };
-}
-
-function absenceOverlapsLockedDates(abs, lockedDateKeys) {
-  if (!abs || !abs.from || !abs.to) return false;
-
-  const fromKey = String(abs.from).slice(0, 10);
-  const toKey = String(abs.to).slice(0, 10);
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(fromKey) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(toKey)
-  ) {
-    return false;
-  }
-
-  const startKey = fromKey <= toKey ? fromKey : toKey;
-  const endKey = fromKey <= toKey ? toKey : fromKey;
-
-  const cursor = new Date(startKey + 'T00:00:00');
-  const end = new Date(endKey + 'T00:00:00');
-
-  while (cursor <= end) {
-    const k = formatDateKey(cursor);
-    if (lockedDateKeys.has(k)) return true;
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return false;
-}
-
-// Load the newest saved snapshot for a specific user/month combination.
-async function loadLatestMonthSubmission(username, year, monthIndex) {
-  const record = await getLatestMonthSubmissionRecord(
-    username,
-    year,
-    monthIndex
-  );
-  return record ? record.submission : null;
-}
 
 // Core payroll aggregation for one transmitted submission inside a selected period.
 function aggregatePayrollFromSubmission(
@@ -2751,6 +1697,7 @@ app.post('/api/transmit-month', requireAuth, async (req, res) => {
       totals,
       payload: payloadToSave,
       updatedBy: strictUsername,
+      computeMonthUeZ1AndVorarbeit,
     });
   } catch (e) {
     console.error(
@@ -2833,106 +1780,6 @@ app.get('/api/transmissions', requireAuth, async (req, res) => {
       .json({ ok: false, error: 'Could not load transmissions' });
   }
 });
-
-// ---- Absenzen: user APIs ----
-
-// GET /api/absences  -> list my absences
-// ============================================================================
-// Absence routes (user + admin)
-// ============================================================================
-
-// GET /api/konten/me
-// ============================================================================
-// Konten routes
-// ============================================================================
-app.get('/api/konten/me', requireAuth, async (req, res) => {
-  try {
-    const ensured = await ensureKontenUserRecord({
-      username: req.user.username,
-      teamId: req.user.teamId || null,
-    });
-
-    const transmittedMonths = await listKontenMonthKeys(req.user.username);
-
-    return res.json({
-      ok: true,
-      konto: ensured.konto,
-      transmittedMonths,
-    });
-  } catch (err) {
-    console.error('Failed to load my konto', err);
-    return res.status(500).json({ ok: false, error: 'Could not load konto' });
-  }
-});
-
-// GET /api/admin/konten
-app.get('/api/admin/konten', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const users = await listUsersFromDb();
-    const rows = await listKontenRowsForUsers(users);
-
-    return res.json({ ok: true, users: rows });
-  } catch (err) {
-    console.error('Failed to load admin konten', err);
-    return res.status(500).json({ ok: false, error: 'Could not load konten' });
-  }
-});
-
-// POST /api/admin/konten/set
-// body: { username, ueZ1, ueZ2, ueZ3, vacationDays, vacationDaysPerYear }
-app.post(
-  '/api/admin/konten/set',
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    const username = String(req.body?.username || '');
-
-    try {
-      const targetUser = await findUserByUsername(username);
-
-      if (!username || !targetUser) {
-        return res.status(400).json({ ok: false, error: 'Invalid username' });
-      }
-
-      const konto = await updateKontenManualValues({
-        username,
-        values: { ...req.body, updatedBy: req.user.username },
-        updatedBy: req.user.username,
-      });
-
-      return res.json({ ok: true, konto });
-    } catch (err) {
-      console.error('Failed to save admin konto', err);
-      return res.status(500).json({ ok: false, error: 'Could not save konto' });
-    }
-  }
-);
-
-// GET /api/admin/konten/adjustments/:username
-app.get(
-  '/api/admin/konten/adjustments/:username',
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    const username = String(req.params.username || '');
-    try {
-      const result = await db.query(
-        `SELECT field, old_value, new_value, admin_username, reason, created_at
-       FROM konto_adjustments
-       WHERE username = $1
-       ORDER BY created_at DESC
-       LIMIT 50`,
-        [username]
-      );
-      return res.json({ ok: true, adjustments: result.rows });
-    } catch (err) {
-      console.error('Failed to load konto adjustments', err);
-      return res
-        .status(500)
-        .json({ ok: false, error: 'Could not load adjustments' });
-    }
-  }
-);
 
 // ---- Admin: month overview (per user, month-specific) ----
 // ============================================================================
@@ -3071,90 +1918,6 @@ app.get(
     }
   }
 );
-
-// ---- Admin: lock/unlock a week ----
-// POST /api/admin/week-lock
-// body: { username, weekYear, week, locked?: boolean }
-app.post(
-  '/api/admin/week-lock',
-  requireAuth,
-  requireAdmin,
-  async (req, res) => {
-    const username = String(req.body?.username || '');
-    const weekYear = Number(req.body?.weekYear);
-    const week = Number(req.body?.week);
-    const lockedParam = req.body?.locked;
-
-    try {
-      const targetUser = await findUserByUsername(username);
-
-      if (!username || !targetUser) {
-        return res.status(400).json({ ok: false, error: 'Invalid username' });
-      }
-
-      if (!Number.isInteger(weekYear) || weekYear < 2000 || weekYear > 2100) {
-        return res.status(400).json({ ok: false, error: 'Invalid weekYear' });
-      }
-
-      if (!Number.isInteger(week) || week < 1 || week > 53) {
-        return res.status(400).json({ ok: false, error: 'Invalid week' });
-      }
-
-      const userLocks = await readUserWeekLocksFromDb(username);
-      const wk = weekKey(weekYear, week);
-      const currentMeta = getLockMeta(userLocks, wk);
-      const nextLocked =
-        typeof lockedParam === 'boolean' ? lockedParam : !currentMeta.locked;
-
-      let finalMeta = null;
-
-      if (nextLocked) {
-        finalMeta = await setWeekLockState({
-          userId: targetUser.id,
-          username: targetUser.username,
-          weekYear,
-          week,
-          lockedBy: req.user.username,
-        });
-      } else {
-        await clearWeekLockState({
-          userId: targetUser.id,
-          weekYear,
-          week,
-        });
-      }
-
-      return res.json({
-        ok: true,
-        username,
-        weekYear,
-        week,
-        weekKey: wk,
-        locked: nextLocked,
-        lockedAt: finalMeta?.lockedAt || null,
-        lockedBy: finalMeta?.lockedBy || null,
-      });
-    } catch (err) {
-      console.error('Failed to update week lock', err);
-      return res
-        .status(500)
-        .json({ ok: false, error: 'Could not update lock state' });
-    }
-  }
-);
-
-// GET /api/week-locks/me...... für user panel
-app.get('/api/week-locks/me', requireAuth, async (req, res) => {
-  try {
-    const locks = await readUserWeekLocksFromDb(req.user.username);
-    return res.json({ ok: true, locks });
-  } catch (err) {
-    console.error('Failed to load week locks', err);
-    return res
-      .status(500)
-      .json({ ok: false, error: 'Could not load week locks' });
-  }
-});
 
 // POST /api/draft/sync — Client speichert Draft
 app.post('/api/draft/sync', requireAuth, async (req, res) => {
@@ -4487,37 +3250,8 @@ function getISOWeekAndYear(date) {
   };
 }
 
-async function autoLockPreviousWeek() {
-  const now = new Date();
-  // Vorherige Woche berechnen (heute minus 7 Tage)
-  const lastWeekDate = new Date(now);
-  lastWeekDate.setDate(lastWeekDate.getDate() - 7);
-  const { week, year } = getISOWeekAndYear(lastWeekDate);
-
-  console.log(`[AutoLock] Sperre KW ${week}/${year} für alle User`);
-
-  const users = await listUsersFromDb({ role: 'user' });
-  let locked = 0;
-
-  for (const user of users) {
-    try {
-      await db.query(
-        `INSERT INTO week_locks (user_id, username, week_year, week, locked_at, locked_by)
-         VALUES ($1, $2, $3, $4, NOW(), 'system')
-         ON CONFLICT (user_id, week_year, week) DO NOTHING`,
-        [user.id, user.username, year, week]
-      );
-      locked++;
-    } catch (err) {
-      console.error(`[AutoLock] Fehler bei ${user.username}:`, err.message);
-    }
-  }
-
-  console.log(`[AutoLock] ${locked} User gesperrt für KW ${week}/${year}`);
-}
-
 // Jeden Montag 12:00 — vergangene Woche sperren
-cron.schedule('0 12 * * 1', autoLockPreviousWeek, {
+cron.schedule('0 12 * * 1', () => autoLockPreviousWeek(listUsersFromDb), {
   timezone: 'Europe/Zurich',
 });
 

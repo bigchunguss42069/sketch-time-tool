@@ -93,16 +93,19 @@ function check(name, got, exp, tol = 0.05) {
 
 // ── .env laden ───────────────────────────────────────────────
 function loadEnv() {
-  const envPath = path.join(__dirname, '.env');
-  if (!fs.existsSync(envPath)) return;
-  fs.readFileSync(envPath, 'utf8')
-    .split('\n')
-    .forEach((line) => {
+  try {
+    require('dotenv').config({ path: path.join(__dirname, '.env') });
+  } catch {
+    // dotenv nicht installiert — manuell parsen
+    const envPath = path.join(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+    fs.readFileSync(envPath, 'utf8').split(/\r?\n/).forEach(line => {
       const m = line.match(/^([^#=]+)=(.*)$/);
       if (m && !process.env[m[1].trim()]) {
         process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '');
       }
     });
+  }
 }
 
 // ── HTTP Helper ───────────────────────────────────────────────
