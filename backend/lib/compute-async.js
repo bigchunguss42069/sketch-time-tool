@@ -107,7 +107,9 @@ function buildMonthOverviewFromSubmission(
     let status = 'missing';
     if (ferien) status = 'ferien';
     else if (hasAcceptedAbsence) status = 'absence';
-    else if (totalHours > 0 || hasStamps) status = 'ok';
+    else if (hasStamps) status = 'ok';
+    else if (nonPikett > 0) status = 'ok'; // Tagesstunden/Kommission ohne Stempel
+    // Nur Pikett → bleibt 'missing'
 
     const { week, year: weekYear } = getISOWeekInfo(cursor);
     const wk = `${weekYear}-W${week}`;
@@ -230,7 +232,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
       if (weekday === 0 || weekday === 6) continue;
 
-      const { soll, employmentPct } = await getDailySoll(
+      const { soll } = await getDailySoll(
         userId,
         dateKey,
         acceptedAbsenceDays,
@@ -260,7 +262,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       if (diff <= 0) {
         ueZ1 += diff;
       } else {
-        const schwelle = round1(0.5 * (employmentPct / 100));
+        const schwelle = 0.5;
         const inVorarbeit = Math.min(diff, schwelle);
         const inUeZ1 = round1(diff - inVorarbeit);
 
@@ -327,7 +329,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
       if (weekday === 0 || weekday === 6) continue;
 
-      const { soll, employmentPct } = await getDailySoll(
+      const { soll } = await getDailySoll(
         userId,
         dateKey,
         acceptedAbsenceDays,
@@ -359,7 +361,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       if (diff <= 0) {
         ueZ1 += diff;
       } else {
-        const schwelle = round1(0.5 * (employmentPct / 100));
+        const schwelle = 0.5;
         const inVorarbeit = Math.min(diff, schwelle);
         const inUeZ1 = round1(diff - inVorarbeit);
 

@@ -153,9 +153,6 @@ const loginErrorEl = document.getElementById('loginError');
 const loginSubmitBtn = document.getElementById('loginSubmitBtn');
 const loginLoader = document.getElementById('loginLoader');
 const userDisplayEl = document.getElementById('userDisplay');
-const dinoModal = document.getElementById('dinoModal');
-const dinoCanvas = document.getElementById('dinoCanvas');
-const dinoModalClose = document.getElementById('dinoModalClose');
 const logoutBtn = document.getElementById('logoutBtn');
 let _floorInterval = null;
 
@@ -183,6 +180,35 @@ const stampModalSave = document.getElementById('stampModalSave');
 const stampModalTime = document.getElementById('stampModalTime');
 const stampModalTypeIn = document.getElementById('stampModalTypeIn');
 const stampModalTypeOut = document.getElementById('stampModalTypeOut');
+
+import {
+  escapeHtml,
+  escapeXml,
+  formatHours,
+  formatHoursSigned,
+  formatHoursSafe,
+  formatPayrollHours,
+  formatPayrollSignedHours,
+  formatPayrollCounterHours,
+  formatHoursForInput,
+  formatTimeHHMM,
+  formatDays,
+  formatPayrollDays,
+  formatPayrollCount,
+  formatDateKey,
+  formatShortDate,
+  formatShortDateFromKey,
+  formatDateDisplayEU,
+  formatFullDateSlash,
+  formatDayLabelFromKey,
+  formatDateDE,
+  formatDateInputValue,
+  roundToQuarter,
+  statusLabel,
+  adminStatusText,
+  absenceTypeLabel,
+} from './utils/format.js';
+
 /**
  *  Login Loader
  */
@@ -297,17 +323,6 @@ function showConfirmToast(message, onConfirm, onCancel) {
   });
 }
 
-// ── XSS Protection ───────────────────────────────────────────────
-function escapeHtml(str) {
-  if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 /**
  * Auth / sync status pill
  */
@@ -318,13 +333,6 @@ const syncLabelEl = document.getElementById('syncLabel');
  * Admin / payroll helpers and card rendering
  */
 let payrollUsersCache = null;
-
-function formatDateInputValue(date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 /**
  * Seed the payroll period picker with the current month start and today when empty.
@@ -382,28 +390,6 @@ function createPayrollMetric(label, value) {
   item.appendChild(labelEl);
   item.appendChild(valueEl);
   return item;
-}
-
-function formatPayrollSignedHours(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
-
-  const abs = Math.abs(n).toFixed(1).replace('.', ',');
-  if (n > 0) return `+${abs} h`;
-  if (n < 0) return `-${abs} h`;
-  return '0,0 h';
-}
-
-function formatPayrollCounterHours(current, total) {
-  const a = Number.isFinite(Number(current))
-    ? Number(current).toFixed(1).replace('.', ',')
-    : '0,0';
-
-  const b = Number.isFinite(Number(total))
-    ? Number(total).toFixed(1).replace('.', ',')
-    : '0,0';
-
-  return `${a} / ${b} h`;
 }
 
 /**
@@ -801,7 +787,20 @@ window.addEventListener('beforeunload', () => {
  */
 
 let weekOffset = 0; // 0 = current week, -1 = previous, +1 = next, etc.
-let currentDayId = 'montag'; // active weekday
+// Aktuellen Wochentag als Standard setzen (Mo=0, Di=1, ... Fr=4)
+// Wochenende → Montag als Fallback
+const _todayWeekday = new Date().getDay(); // 0=So, 1=Mo, ..., 6=Sa
+const _dayIdByWeekday = [
+  'montag',
+  'montag',
+  'montag',
+  'dienstag',
+  'mittwoch',
+  'donnerstag',
+  'freitag',
+  'montag',
+];
+let currentDayId = _dayIdByWeekday[_todayWeekday] || 'montag';
 
 // mapping weekday -> offset from Monday
 const DAY_OFFSETS = {
@@ -1158,22 +1157,6 @@ function createAbsenceId() {
     '-' +
     Math.random().toString(36).slice(2, 8)
   );
-}
-
-function absenceTypeLabel(type) {
-  const key = String(type || '')
-    .trim()
-    .toLowerCase();
-
-  const map = {
-    ferien: 'Ferien',
-    unfall: 'Unfall',
-    militaer: 'Militär',
-    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
-    vaterschaft: 'Vaterschaftsurlaub',
-  };
-
-  return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '–');
 }
 
 // Create a new empty Pikett-Einsatz entry (default date = today)
@@ -2680,38 +2663,6 @@ function buildAdminDayDrawer(data) {
   return wrap;
 }
 
-function statusLabel(s) {
-  if (s === 'ok') return 'OK';
-  if (s === 'missing') return 'Fehlt';
-  if (s === 'ferien') return 'Ferien';
-  if (s === 'absence') return 'Absenz';
-  return '–';
-}
-
-function formatHoursSafe(v) {
-  const n = typeof v === 'number' ? v : Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
-  return n.toFixed(1).replace('.', ',') + ' h';
-}
-
-function formatPayrollHours(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '0,0 h';
-  return `${n.toFixed(1).replace('.', ',')} h`;
-}
-
-function formatPayrollDays(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '0';
-  return `${String(n).replace('.', ',')} Tage`;
-}
-
-function formatPayrollCount(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '0';
-  return String(Math.round(n));
-}
-
 /**
  * Dashboard month aggregation and admin month helpers
  */
@@ -2757,37 +2708,6 @@ function updateAdminMonthLabel() {
 function parseDateKeyToDate(dateKey) {
   // dateKey = "YYYY-MM-DD"
   return new Date(dateKey + 'T00:00:00');
-}
-
-function formatShortDateFromKey(dateKey) {
-  const d = parseDateKeyToDate(dateKey);
-  return formatShortDate(d); // your existing dd.mm.yy
-}
-
-function formatDateDisplayEU(dateStr) {
-  const raw = String(dateStr || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return String(dateStr || '–');
-
-  const [yyyy, mm, dd] = raw.split('-');
-  return `${dd}.${mm}.${yyyy}`;
-}
-
-function formatDayLabelFromKey(dateKey, weekdayNum) {
-  const d = parseDateKeyToDate(dateKey);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-
-  const map = { 1: 'Mo', 2: 'Di', 3: 'Mi', 4: 'Do', 5: 'Fr' };
-  const wd = map[weekdayNum] || '';
-  return `${wd} ${dd}.${mm}`;
-}
-
-function adminStatusText(status) {
-  if (status === 'ok') return 'OK';
-  if (status === 'ok-unverteilt') return 'Unverteilt';
-  if (status === 'ferien') return 'Ferien';
-  if (status === 'absence') return 'Absenz';
-  return 'Fehlt';
 }
 
 /**
@@ -3074,7 +2994,8 @@ function renderAdminKontenGrid(rows) {
   // Use the same year context as the admin month navigation (so the admin can switch month/year)
   const { year: selectedYear } = getCurrentAdminMonthInfo();
   const yearCfg = getYearConfig(selectedYear);
-  const vorarbeitRequired = Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
+  const vorarbeitRequired =
+    row.vorarbeitRequired ?? Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
 
   rows.forEach(({ username, konto }) => {
     const rawUeZ1 = toNum(konto?.ueZ1, 0);
@@ -3391,7 +3312,13 @@ function renderAbsenceListForCurrentYear() {
 
   const { year } = getCurrentDashboardMonthInfo();
 
-  const items = getAbsencesForYear(year).slice();
+  const items = getAbsencesForYear(year)
+    .filter((a) => {
+      // Stornierte Nicht-Krank Absenzen ausblenden
+      if (a.status === 'cancelled' && a.type !== 'krank') return false;
+      return true;
+    })
+    .slice();
   absenceListEl.innerHTML = '';
 
   if (items.length === 0) {
@@ -3778,8 +3705,10 @@ async function updateOvertimeYearCard() {
       throw new Error('NO_KONTO_DATA');
     }
 
-    const cfgSelected = getYearConfig(selectedYear) || {};
-    const vorarbeitRequired = Number(cfgSelected.vorarbeitRequired) || 0;
+    const vorarbeitRequired =
+      myKontoData?.vorarbeitRequired != null
+        ? myKontoData.vorarbeitRequired
+        : Number((getYearConfig(selectedYear) || {}).vorarbeitRequired) || 0;
     // vacationDaysPerYear kommt vom Server-Konto, nicht aus der lokalen Config
     const vacationDaysPerYear =
       Number(konto.vacationDaysPerYear) ||
@@ -4230,53 +4159,6 @@ function getISOWeekInfo(date) {
   return { week: weekNo, year };
 }
 
-function formatShortDate(date) {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yy = String(date.getFullYear()).slice(-2);
-  return `${dd}.${mm}.${yy}`;
-}
-
-function formatDateKey(date) {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function formatHours(value) {
-  const rounded = Math.round(value * 10) / 10;
-  return rounded.toFixed(1).replace('.', ',') + ' h';
-}
-
-function formatHoursSigned(value) {
-  const rounded = Math.round(value * 10) / 10;
-  if (rounded > 0) {
-    return '+' + rounded.toFixed(1).replace('.', ',') + ' h';
-  }
-  if (rounded < 0) {
-    return '-' + Math.abs(rounded).toFixed(1).replace('.', ',') + ' h';
-  }
-  return '0,0 h';
-}
-
-function roundToQuarter(num) {
-  // round to nearest 0.25
-  return Math.round(num * 4) / 4;
-}
-
-function formatHoursForInput(num) {
-  let s = num.toFixed(2); // e.g. "2.25"
-  s = s.replace('.', ','); // -> "2,25"
-  s = s.replace(/,00$/, ''); // "2,00" -> "2"
-  return s;
-}
-
-function formatDays(value) {
-  const rounded = Math.round(value * 10) / 10; // 1 Nachkommastelle
-  return rounded.toFixed(1).replace('.', ','); // "12.5" -> "12,5"
-}
-
 function getMondayForCurrentWeek() {
   const today = new Date();
   const baseMonday = getMonday(today);
@@ -4295,13 +4177,6 @@ function getCurrentDateKey() {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
-}
-
-function formatFullDateSlash(date) {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  return `${dd}.${mm}.${yyyy}`;
 }
 
 function updateDayTitleWithDate() {
@@ -5480,17 +5355,6 @@ async function exportAnlagePdf(komNr) {
 
   // revoke after a short delay (some browsers need a tick)
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-// ---------- PDF export chart helpers (SVG -> PNG) ----------
-
-function escapeXml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 // You can swap these colors to match your UI.
@@ -8004,20 +7868,6 @@ function getTodayKey() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function formatTimeHHMM(date) {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function formatDateDE(dateKey) {
-  const d = new Date(dateKey + 'T00:00:00');
-  return d.toLocaleDateString('de-CH', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 function getStampNet(stamps) {
   if (!Array.isArray(stamps) || stamps.length === 0) return null;
   let total = 0;
@@ -8667,1200 +8517,8 @@ async function loadDraftFromServer() {
 // ============================================================================
 // 🦕 Dino Easter Egg
 // ============================================================================
-(function () {
-  if (!userDisplayEl || !dinoModal || !dinoCanvas) return;
-
-  let dinoClickCount = 0;
-  let dinoClickTimer = null;
-
-  userDisplayEl.addEventListener('click', () => {
-    dinoClickCount++;
-    clearTimeout(dinoClickTimer);
-    dinoClickTimer = setTimeout(() => {
-      dinoClickCount = 0;
-    }, 600);
-    if (dinoClickCount >= 3) {
-      dinoClickCount = 0;
-      dinoModal.classList.remove('hidden');
-      loadHighscores();
-      startDino();
-    }
-  });
-
-  dinoModalClose?.addEventListener('click', stopDino);
-  dinoModal?.addEventListener('click', (e) => {
-    if (e.target === dinoModal) stopDino();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') stopDino();
-  });
-
-  const dinoHighscoresEl = document.getElementById('dinoHighscores');
-  const rankLabels = [
-    { label: '🥇', cls: 'gold' },
-    { label: '🥈', cls: 'silver' },
-    { label: '🥉', cls: 'bronze' },
-  ];
-
-  async function loadHighscores() {
-    if (!dinoHighscoresEl) return;
-    try {
-      const res = await authFetch('/api/dino-scores/top');
-      const data = await res.json();
-      if (!data.ok) return;
-      dinoHighscoresEl.innerHTML = '';
-      data.scores.forEach((s, i) => {
-        const entry = document.createElement('div');
-        entry.className = 'dino-score-entry';
-        entry.innerHTML = `
-          <span class="dino-score-rank ${rankLabels[i].cls}">${rankLabels[i].label}</span>
-          <span class="dino-score-name">${escapeHtml(s.username)}</span>
-          <span class="dino-score-val">${s.score}</span>
-        `;
-        dinoHighscoresEl.appendChild(entry);
-      });
-    } catch {}
-  }
-
-  async function saveScore(s) {
-    try {
-      await authFetch('/api/dino-score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ score: s }),
-      });
-      await loadHighscores();
-    } catch {}
-  }
-
-  let animFrame = null;
-  let gameRunning = false;
-  let W, H, GROUND;
-  let dino, obstacles, score, speed, frameCount, gameOver;
-
-  function initCanvas() {
-    const dpr = window.devicePixelRatio || 1;
-    const logicalW = dinoCanvas.parentElement.clientWidth - 32 || 560;
-    const logicalH = 200;
-    W = logicalW;
-    H = logicalH;
-    GROUND = H - 80;
-    dinoCanvas.width = logicalW * dpr;
-    dinoCanvas.height = logicalH * dpr;
-    dinoCanvas.style.width = logicalW + 'px';
-    dinoCanvas.style.height = logicalH + 'px';
-    const ctx = dinoCanvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-  }
-
-  function getCtx() {
-    return dinoCanvas.getContext('2d');
-  }
-
-  function resetGame() {
-    dino = { x: 60, y: GROUND, w: 4, h: 58, vy: 0, onGround: true };
-    obstacles = [];
-    score = 0;
-    speed = 5.5;
-    frameCount = 0;
-    gameOver = false;
-  }
-
-  function jump() {
-    if (dino.onGround) {
-      dino.vy = -13;
-      dino.onGround = false;
-    }
-  }
-
-  function drawDino(ctx, x, y, onGround, frame) {
-    const p = 3;
-    const runFrame = onGround && Math.floor(frame / 8) % 2 === 0;
-
-    if (!onGround) {
-      // Jump frame
-      ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 20 * p, p, p);
-      ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 20 * p, p, p);
-      ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 19 * p, p, p);
-      ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 16 * p, p, p);
-      ctx.fillStyle = '#2d3748';
-      ctx.fillRect(x + 28 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 29 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 29 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 28 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 21 * p, p, p);
-    } else if (runFrame) {
-      // Walking frame 1 (normal)
-      ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x + 18 * p, y + 0 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 0 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
-      ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x + 18 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
-      ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x + 17 * p, y + 0 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 0 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 0 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
-      ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
-      ctx.fillStyle = '#2d3748';
-      ctx.fillRect(x + 26 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
-    } else {
-      // Walking frame 2
-      ctx.fillStyle = '#3a4a5c';
-      ctx.fillRect(x + 18 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 2 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 3 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 5 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 6 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 19 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 20 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 20 * p, p, p);
-      ctx.fillStyle = '#8dd4b2';
-      ctx.fillRect(x + 18 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 14 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 12 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 9 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 10 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 14 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 15 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 13 * p, y + 18 * p, p, p);
-      ctx.fillStyle = '#4a5568';
-      ctx.fillRect(x + 17 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 21 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 1 * p, p, p);
-      ctx.fillRect(x + 22 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 23 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 24 * p, y + 2 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 5 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 10 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 4 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 7 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 8 * p, y + 17 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 18 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 19 * p, p, p);
-      ctx.fillStyle = '#f1f6f9';
-      ctx.fillRect(x + 24 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 25 * p, y + 4 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 11 * p, p, p);
-      ctx.fillRect(x + 19 * p, y + 13 * p, p, p);
-      ctx.fillRect(x + 17 * p, y + 15 * p, p, p);
-      ctx.fillRect(x + 16 * p, y + 16 * p, p, p);
-      ctx.fillStyle = '#2d3748';
-      ctx.fillRect(x + 26 * p, y + 3 * p, p, p);
-      ctx.fillRect(x + 0 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 1 * p, y + 6 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 7 * p, p, p);
-      ctx.fillRect(x + 27 * p, y + 8 * p, p, p);
-      ctx.fillRect(x + 26 * p, y + 9 * p, p, p);
-      ctx.fillRect(x + 20 * p, y + 16 * p, p, p);
-      ctx.fillRect(x + 11 * p, y + 21 * p, p, p);
-      ctx.fillRect(x + 12 * p, y + 21 * p, p, p);
-      ctx.fillRect(x + 18 * p, y + 21 * p, p, p);
-    }
-  }
-
-  function handleInput(e) {
-    if (e.type === 'keydown') {
-      if (e.code === 'Space' || e.code === 'ArrowUp') {
-        e.preventDefault();
-        jump();
-      }
-    } else {
-      e.preventDefault();
-      if (gameOver) {
-        resetGame();
-      } else {
-        jump();
-      }
-    }
-  }
-
-  // Background layers
-  let bgOffset1 = 0; // clouds
-  let bgOffset2 = 0; // mountains
-  let bgOffset3 = 0; // ground detail
-
-  function drawBackground(ctx) {
-    // Sky
-    ctx.fillStyle = '#dbeafe';
-    ctx.fillRect(0, 0, W, H);
-
-    // Clouds
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    const cloudPositions = [0, 200, 420, 620];
-    cloudPositions.forEach((cx) => {
-      const x = ((((cx - bgOffset1) % (W + 120)) + W + 120) % (W + 120)) - 60;
-      ctx.beginPath();
-      ctx.ellipse(x, 28, 30, 12, 0, 0, Math.PI * 2);
-      ctx.ellipse(x + 18, 22, 22, 14, 0, 0, Math.PI * 2);
-      ctx.ellipse(x - 14, 24, 18, 11, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Mountains
-    ctx.fillStyle = '#bfdbfe';
-    const mtnPositions = [80, 260, 440, 600];
-    mtnPositions.forEach((mx) => {
-      const x = ((((mx - bgOffset2) % (W + 200)) + W + 200) % (W + 200)) - 80;
-      ctx.beginPath();
-      ctx.moveTo(x - 70, GROUND + dino.h);
-      ctx.lineTo(x, GROUND + dino.h - 90);
-      ctx.lineTo(x + 70, GROUND + dino.h);
-      ctx.fill();
-    });
-
-    // Ground strip
-    ctx.fillStyle = '#6b8c42';
-    ctx.fillRect(0, GROUND + dino.h, W, 8);
-    ctx.fillStyle = '#8fb45a';
-    ctx.fillRect(0, GROUND + dino.h + 8, W, H - GROUND - dino.h - 8);
-
-    // Ground detail pixels
-    ctx.fillStyle = '#5a7a35';
-    const detailPositions = [0, 60, 130, 210, 290, 380, 470, 560];
-    detailPositions.forEach((dx) => {
-      const x = (((dx - bgOffset3) % (W + 40)) + W + 40) % (W + 40);
-      ctx.fillRect(x, GROUND + dino.h, 8, 4);
-    });
-  }
-
-  function drawObstacle(ctx, o) {
-    const p = 3;
-    const g = (px, py, pw, ph, color) => {
-      ctx.fillStyle = color;
-      ctx.fillRect(
-        o.x + px * p,
-        GROUND + dino.h - o.h + py * p,
-        pw * p,
-        ph * p
-      );
-    };
-
-    if (o.type === 'cactus') {
-      // Kaktus
-      g(3, 0, 3, 20, '#2d7a2d');
-      g(0, 5, 3, 2, '#2d7a2d');
-      g(0, 3, 2, 4, '#2d7a2d');
-      g(6, 6, 3, 2, '#2d7a2d');
-      g(7, 4, 2, 4, '#2d7a2d');
-      g(3, 0, 1, 2, '#1a5c1a');
-      g(0, 3, 2, 1, '#1a5c1a');
-      g(7, 4, 2, 1, '#1a5c1a');
-    } else if (o.type === 'cactus2') {
-      // Doppelkaktus
-      g(2, 0, 3, 16, '#2d7a2d');
-      g(0, 4, 2, 2, '#2d7a2d');
-      g(0, 2, 1, 4, '#2d7a2d');
-      g(5, 5, 2, 2, '#2d7a2d');
-      g(6, 3, 1, 4, '#2d7a2d');
-      g(8, 2, 3, 13, '#2d7a2d');
-      g(7, 5, 1, 2, '#2d7a2d');
-      g(11, 4, 1, 2, '#2d7a2d');
-    } else if (o.type === 'rock') {
-      // Fels
-      g(1, 0, 12, 3, '#888');
-      g(0, 3, 15, 7, '#888');
-      g(1, 1, 3, 2, '#aaa');
-      g(5, 0, 2, 2, '#aaa');
-      g(9, 1, 4, 2, '#aaa');
-      g(0, 4, 4, 3, '#999');
-      g(6, 4, 6, 3, '#999');
-    } else if (o.type === 'tree') {
-      // Baum
-      g(3, 0, 3, 26, '#5a3e1b');
-      g(0, 6, 9, 2, '#5a3e1b');
-      g(0, 0, 4, 8, '#3a9a3a');
-      g(5, 2, 4, 6, '#2d7a2d');
-      g(1, 0, 7, 4, '#4ab84a');
-    }
-  }
-
-  const obstacleTypes = ['cactus', 'cactus', 'cactus2', 'rock', 'tree'];
-  const obstacleHeights = { cactus: 60, cactus2: 48, rock: 30, tree: 78 };
-  const obstacleWidths = { cactus: 27, cactus2: 36, rock: 45, tree: 27 };
-
-  function startDino() {
-    initCanvas();
-    resetGame();
-    bgOffset1 = 0;
-    bgOffset2 = 0;
-    bgOffset3 = 0;
-    gameRunning = true;
-    document.addEventListener('keydown', handleInput);
-    dinoCanvas.addEventListener('touchstart', handleInput, { passive: false });
-    dinoCanvas.addEventListener('click', handleInput);
-
-    function loop() {
-      if (!gameRunning) return;
-      const ctx = getCtx();
-
-      // Scroll background
-      if (!gameOver) {
-        bgOffset1 += speed * 0.15;
-        bgOffset2 += speed * 0.3;
-        bgOffset3 += speed;
-      }
-
-      drawBackground(ctx);
-
-      // Physics
-      dino.vy += 0.7;
-      dino.y += dino.vy;
-      if (dino.y >= GROUND) {
-        dino.y = GROUND;
-        dino.vy = 0;
-        dino.onGround = true;
-      }
-
-      // Dino
-      drawDino(ctx, dino.x, dino.y, dino.onGround, frameCount);
-
-      // Obstacles
-      if (!gameOver) frameCount++;
-      speed = 5.5 + Math.floor(score / 300) * 0.6;
-      const interval = Math.max(45, 80 - Math.floor(score / 150));
-      if (!gameOver && frameCount % interval === 0) {
-        const type =
-          obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
-        const h = obstacleHeights[type];
-        const w = obstacleWidths[type];
-        obstacles.push({ x: W, w, h, type });
-        if (score > 300 && Math.random() < 0.25) {
-          const type2 =
-            obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
-          obstacles.push({
-            x: W + obstacleWidths[type] + 20,
-            w: obstacleWidths[type2],
-            h: obstacleHeights[type2],
-            type: type2,
-          });
-        }
-      }
-
-      for (let i = obstacles.length - 1; i >= 0; i--) {
-        const o = obstacles[i];
-        if (!gameOver) o.x -= speed;
-        drawObstacle(ctx, o);
-        if (
-          dino.x + 8 < o.x + o.w &&
-          dino.x + dino.w - 8 > o.x &&
-          dino.y + 10 < GROUND + dino.h &&
-          dino.y + dino.h > GROUND + dino.h - o.h
-        ) {
-          if (!gameOver) saveScore(score);
-          gameOver = true;
-        }
-        if (o.x + o.w < 0) {
-          obstacles.splice(i, 1);
-          if (!gameOver) score += 10;
-        }
-      }
-
-      // Score
-      ctx.fillStyle = '#1e40af';
-      ctx.font = 'bold 14px monospace';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${score}`, W - 60, 24);
-
-      if (gameOver) {
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 20px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('GAME OVER', W / 2, H / 2 - 12);
-        ctx.font = '13px monospace';
-        ctx.fillText('Tippen oder ↑ zum Neustart', W / 2, H / 2 + 14);
-        ctx.textAlign = 'left';
-      }
-
-      animFrame = requestAnimationFrame(loop);
-    }
-
-    animFrame = requestAnimationFrame(loop);
-  }
-
-  function stopDino() {
-    gameRunning = false;
-    if (animFrame) cancelAnimationFrame(animFrame);
-    document.removeEventListener('keydown', handleInput);
-    dinoCanvas.removeEventListener('touchstart', handleInput);
-    dinoCanvas.removeEventListener('click', handleInput);
-    dinoModal.classList.add('hidden');
-    getCtx().clearRect(0, 0, W, H);
-  }
-})();
+import { initDinoGame } from './dino.js';
+initDinoGame({ authFetch, escapeHtml });
 
 // ============================================================================
 // Passwort vergessen

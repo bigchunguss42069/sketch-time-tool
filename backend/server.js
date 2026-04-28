@@ -644,7 +644,7 @@ app.get(
 
     try {
       const monthLabel = makeMonthLabel(year, monthIndex);
-      const users = await listUsersFromDb();
+      const users = await listUsersFromDb({ role: 'user' });
 
       const rows = await Promise.all(
         users.map(async (user) => {
@@ -1045,7 +1045,7 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const users = await listUsersFromDb();
+      const users = await listUsersFromDb({ role: 'user' });
 
       const summaries = await Promise.all(
         users.map(async (user) => {

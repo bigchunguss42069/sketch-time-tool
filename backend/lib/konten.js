@@ -309,15 +309,29 @@ function createKontenService(db) {
           username: user.username,
           teamId: user.teamId || null,
         });
+
+        const empPctRes = await db.query(
+          `SELECT employment_pct FROM work_schedules
+           WHERE user_id = $1 ORDER BY valid_from DESC LIMIT 1`,
+          [ensured.userId]
+        );
+        const empPct = Number(empPctRes.rows[0]?.employment_pct) || 100;
+        const rawRequired =
+          Number(
+            getPayrollYearConfig(new Date().getFullYear()).vorarbeitRequired
+          ) || 0;
+        const vorarbeitRequired =
+          Math.round(rawRequired * (empPct / 100) * 10) / 10;
+
         return {
           username: user.username,
           teamId: user.teamId || null,
           konto: ensured.konto,
+          vorarbeitRequired,
         };
       })
     );
   }
-
   /**
    * Führt manuelle Konto-Anpassungen durch (Delta-System) mit Audit-Trail.
    *
@@ -543,8 +557,17 @@ function createKontenService(db) {
             vorarbeitBalance: 0,
           };
 
-      const vorarbeitRequired =
+      const rawVorarbeitRequired =
         Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
+      const empPctResult = await db.query(
+        `SELECT employment_pct FROM work_schedules
+   WHERE user_id = $1 AND valid_from <= $2
+   ORDER BY valid_from DESC LIMIT 1`,
+        [ensured.userId, `${year}-12-31`]
+      );
+      const empPct = Number(empPctResult.rows[0]?.employment_pct) || 100;
+      const vorarbeitRequired =
+        Math.round(rawVorarbeitRequired * (empPct / 100) * 10) / 10;
 
       const nextKonto = {
         ...ensured.konto,
@@ -775,7 +798,27 @@ function createKontenService(db) {
           teamId: req.user.teamId || null,
         });
         const transmittedMonths = await listKontenMonthKeys(req.user.username);
-        return res.json({ ok: true, konto: ensured.konto, transmittedMonths });
+
+        // Skaliertes Vorarbeitsziel berechnen
+        const empPctRes = await db.query(
+          `SELECT employment_pct FROM work_schedules
+           WHERE user_id = $1 ORDER BY valid_from DESC LIMIT 1`,
+          [ensured.userId]
+        );
+        const empPct = Number(empPctRes.rows[0]?.employment_pct) || 100;
+        const rawRequired =
+          Number(
+            getPayrollYearConfig(new Date().getFullYear()).vorarbeitRequired
+          ) || 0;
+        const vorarbeitRequired =
+          Math.round(rawRequired * (empPct / 100) * 10) / 10;
+
+        return res.json({
+          ok: true,
+          konto: ensured.konto,
+          transmittedMonths,
+          vorarbeitRequired,
+        });
       } catch (err) {
         console.error('Failed to load my konto', err);
         return res
@@ -791,7 +834,7 @@ function createKontenService(db) {
       requireAdmin,
       async (req, res) => {
         try {
-          const users = await listUsersFromDb();
+          const users = await listUsersFromDb({ role: 'user' });
           const rows = await listKontenRowsForUsers(users);
           return res.json({ ok: true, users: rows });
         } catch (err) {
