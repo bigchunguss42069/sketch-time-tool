@@ -310,24 +310,10 @@ function createKontenService(db) {
           teamId: user.teamId || null,
         });
 
-        const empPctRes = await db.query(
-          `SELECT employment_pct FROM work_schedules
-           WHERE user_id = $1 ORDER BY valid_from DESC LIMIT 1`,
-          [ensured.userId]
-        );
-        const empPct = Number(empPctRes.rows[0]?.employment_pct) || 100;
-        const rawRequired =
-          Number(
-            getPayrollYearConfig(new Date().getFullYear()).vorarbeitRequired
-          ) || 0;
-        const vorarbeitRequired =
-          Math.round(rawRequired * (empPct / 100) * 10) / 10;
-
         return {
           username: user.username,
           teamId: user.teamId || null,
           konto: ensured.konto,
-          vorarbeitRequired,
         };
       })
     );
@@ -513,7 +499,7 @@ function createKontenService(db) {
    * Aktualisiert das Konto nach einem Monats-Transmit.
    * Berechnet ÜZ1/Vorarbeit-Delta und schreibt Snapshot.
    *
-   * @param {{ username, teamId, year, monthIndex, totals, payload, updatedBy, computeMonthUeZ1AndVorarbeit }} params
+   * @param {{ username, teamId, year, monthIndex, totals, payload, updatedBy, computeMonthUeZ1 }} params
    * @returns {Promise<object>} Aktualisiertes Konto
    */
   async function updateKontenFromSubmission({
@@ -524,7 +510,7 @@ function createKontenService(db) {
     totals,
     payload,
     updatedBy,
-    computeMonthUeZ1AndVorarbeit,
+    computeMonthUeZ1,
   }) {
     if (!db) throw new Error('DATABASE_URL is not configured');
 
@@ -557,51 +543,23 @@ function createKontenService(db) {
             vorarbeitBalance: 0,
           };
 
-      const rawVorarbeitRequired =
-        Number(getPayrollYearConfig(year).vorarbeitRequired) || 39;
-      const empPctResult = await db.query(
-        `SELECT employment_pct FROM work_schedules
-   WHERE user_id = $1 AND valid_from <= $2
-   ORDER BY valid_from DESC LIMIT 1`,
-        [ensured.userId, `${year}-12-31`]
-      );
-      const empPct = Number(empPctResult.rows[0]?.employment_pct) || 100;
-      const vorarbeitRequired =
-        Math.round(rawVorarbeitRequired * (empPct / 100) * 10) / 10;
-
       const nextKonto = {
         ...ensured.konto,
         updatedAt: new Date().toISOString(),
         updatedBy: updatedBy || username,
       };
 
-      const prevMonthSnap = await client.query(
-        `SELECT vorarbeit_balance FROM konten_snapshots
-         WHERE user_id = $1 AND year = $2 AND month_index < $3
-         ORDER BY year DESC, month_index DESC LIMIT 1`,
-        [ensured.userId, year, monthIndex]
-      );
-
-      let vorarbeitBalance =
-        prevMonthSnap.rows.length > 0
-          ? round1(Number(prevMonthSnap.rows[0].vorarbeit_balance) || 0)
-          : 0;
-
       if (!nextKonto.creditedYears[yearStr]) {
         nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
         nextKonto.creditedYears[yearStr] = true;
-        vorarbeitBalance = 0;
       }
 
-      const { ueZ1: monthUeZ1, vorarbeitBalance: newVorarbeitBalance } =
-        await computeMonthUeZ1AndVorarbeit(
-          payload,
-          year,
-          monthIndex,
-          ensured.userId,
-          vorarbeitBalance,
-          vorarbeitRequired
-        );
+      const { ueZ1: monthUeZ1 } = await computeMonthUeZ1(
+        payload,
+        year,
+        monthIndex,
+        ensured.userId
+      );
 
       const deltaUeZ1 = round1(monthUeZ1 - prevSnap.ueZ1);
 
@@ -611,10 +569,7 @@ function createKontenService(db) {
         ueZ2: Number(totals?.pikett) || 0,
         ueZ3: Number(totals?.overtime3) || 0,
         vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
-        vorarbeitBalance: newVorarbeitBalance,
       };
-
-      nextKonto.vorarbeitBalance = newVorarbeitBalance;
       nextKonto.ueZ1 += deltaUeZ1;
       nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
       nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
@@ -623,13 +578,13 @@ function createKontenService(db) {
       await client.query(
         `INSERT INTO konten_snapshots
            (user_id, username, year, month_index, month_key, ue_z1, ue_z1_positive,
-            ue_z2, ue_z3, vac_used, vorarbeit_balance, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           ue_z2, ue_z3, vac_used, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (user_id, year, month_index) DO UPDATE SET
            username=EXCLUDED.username, month_key=EXCLUDED.month_key,
            ue_z1=EXCLUDED.ue_z1, ue_z1_positive=EXCLUDED.ue_z1_positive,
            ue_z2=EXCLUDED.ue_z2, ue_z3=EXCLUDED.ue_z3,
-           vac_used=EXCLUDED.vac_used, vorarbeit_balance=EXCLUDED.vorarbeit_balance,
+           vac_used=EXCLUDED.vac_used,
            updated_at=EXCLUDED.updated_at`,
         [
           ensured.userId,
@@ -642,21 +597,19 @@ function createKontenService(db) {
           nextSnap.ueZ2,
           nextSnap.ueZ3,
           nextSnap.vacUsed,
-          nextSnap.vorarbeitBalance,
           nextKonto.updatedAt,
         ]
       );
 
       await client.query(
-        `UPDATE konten SET ue_z1=$2, ue_z2=$3, ue_z3=$4, vorarbeit_balance=$5,
-         vacation_days=$6, credited_years=$7, updated_at=$8, updated_by=$9
+        `UPDATE konten SET ue_z1=$2, ue_z2=$3, ue_z3=$4,
+         vacation_days=$5, credited_years=$6, updated_at=$7, updated_by=$8
          WHERE user_id=$1`,
         [
           ensured.userId,
           nextKonto.ueZ1,
           nextKonto.ueZ2,
           nextKonto.ueZ3,
-          nextKonto.vorarbeitBalance,
           nextKonto.vacationDays,
           JSON.stringify(nextKonto.creditedYears),
           nextKonto.updatedAt,
@@ -799,26 +752,7 @@ function createKontenService(db) {
         });
         const transmittedMonths = await listKontenMonthKeys(req.user.username);
 
-        // Skaliertes Vorarbeitsziel berechnen
-        const empPctRes = await db.query(
-          `SELECT employment_pct FROM work_schedules
-           WHERE user_id = $1 ORDER BY valid_from DESC LIMIT 1`,
-          [ensured.userId]
-        );
-        const empPct = Number(empPctRes.rows[0]?.employment_pct) || 100;
-        const rawRequired =
-          Number(
-            getPayrollYearConfig(new Date().getFullYear()).vorarbeitRequired
-          ) || 0;
-        const vorarbeitRequired =
-          Math.round(rawRequired * (empPct / 100) * 10) / 10;
-
-        return res.json({
-          ok: true,
-          konto: ensured.konto,
-          transmittedMonths,
-          vorarbeitRequired,
-        });
+        return res.json({ ok: true, konto: ensured.konto, transmittedMonths });
       } catch (err) {
         console.error('Failed to load my konto', err);
         return res

@@ -199,14 +199,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
    * @param {number} vorarbeitRequired - Jahresziel für Vorarbeit
    * @returns {Promise<{ ueZ1: number, vorarbeitBalance: number }>}
    */
-  async function computeMonthUeZ1AndVorarbeit(
-    payload,
-    year,
-    monthIndex,
-    userId,
-    vorarbeitBalanceIn,
-    vorarbeitRequired
-  ) {
+  async function computeMonthUeZ1(payload, year, monthIndex, userId) {
     const daysObj =
       payload?.days && typeof payload.days === 'object' ? payload.days : {};
 
@@ -220,7 +213,6 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
     const cachedEmpStartKey = await fetchEmpStartKey(userId);
     let ueZ1 = 0;
-    let vorarbeit = vorarbeitBalanceIn;
 
     const cursor = new Date(year, monthIndex, 1);
     const end = new Date(year, monthIndex + 1, 0);
@@ -259,28 +251,10 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
         diff = Math.min(dayTotal + absHoursForDay, baseSoll) - baseSoll;
       }
 
-      if (diff <= 0) {
-        ueZ1 += diff;
-      } else {
-        const schwelle = 0.5;
-        const inVorarbeit = Math.min(diff, schwelle);
-        const inUeZ1 = round1(diff - inVorarbeit);
-
-        if (vorarbeit < vorarbeitRequired) {
-          const actual = round1(
-            Math.min(inVorarbeit, vorarbeitRequired - vorarbeit)
-          );
-          const leftover = round1(inVorarbeit - actual);
-          vorarbeit = round1(vorarbeit + actual);
-          ueZ1 += leftover;
-        } else {
-          ueZ1 += inVorarbeit;
-        }
-        ueZ1 += inUeZ1;
-      }
+      ueZ1 += diff;
     }
 
-    return { ueZ1: round1(ueZ1), vorarbeitBalance: round1(vorarbeit) };
+    return { ueZ1: round1(ueZ1) };
   }
 
   /**
@@ -295,14 +269,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
    * @param {number} vorarbeitRequired
    * @returns {Promise<{ ueZ1Raw: number, ueZ1Net: number, vorarbeitBalance: number }>}
    */
-  async function computeRangeUeZ1AndVorarbeit(
-    submission,
-    fromKey,
-    toKey,
-    userId,
-    vorarbeitBalanceIn,
-    vorarbeitRequired
-  ) {
+  async function computeRangeUeZ1(submission, fromKey, toKey, userId) {
     const daysObj =
       submission?.days && typeof submission.days === 'object'
         ? submission.days
@@ -317,7 +284,6 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
     const cachedEmpStartKey = await fetchEmpStartKey(userId);
     let ueZ1 = 0;
     let ueZ1Raw = 0;
-    let vorarbeit = vorarbeitBalanceIn;
 
     const cursor = new Date(fromKey + 'T00:00:00');
     const end = new Date(toKey + 'T00:00:00');
@@ -357,31 +323,12 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       }
 
       ueZ1Raw += diff;
-
-      if (diff <= 0) {
-        ueZ1 += diff;
-      } else {
-        const schwelle = 0.5;
-        const inVorarbeit = Math.min(diff, schwelle);
-        const inUeZ1 = round1(diff - inVorarbeit);
-
-        if (vorarbeit < vorarbeitRequired) {
-          const actual = round1(
-            Math.min(inVorarbeit, vorarbeitRequired - vorarbeit)
-          );
-          ueZ1 += round1(inVorarbeit - actual);
-          vorarbeit = round1(vorarbeit + actual);
-        } else {
-          ueZ1 += inVorarbeit;
-        }
-        ueZ1 += inUeZ1;
-      }
+      ueZ1 += diff;
     }
 
     return {
       ueZ1Raw: round1(ueZ1Raw),
       ueZ1Net: round1(ueZ1),
-      vorarbeitBalance: round1(vorarbeit),
     };
   }
 
@@ -481,8 +428,8 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
   }
 
   return {
-    computeMonthUeZ1AndVorarbeit,
-    computeRangeUeZ1AndVorarbeit,
+    computeMonthUeZ1,
+    computeRangeUeZ1,
     computePayrollPeriodOvertimeFromSubmission,
   };
 }

@@ -119,9 +119,6 @@ const modalEmploymentStart = document.getElementById('modalEmploymentStart');
 const overtimeYearUeZ1El = document.getElementById('overtimeYearUeZ1');
 const overtimeYearUeZ2El = document.getElementById('overtimeYearUeZ2');
 const overtimeYearUeZ3El = document.getElementById('overtimeYearUeZ3');
-const overtimeYearVorarbeitEl = document.getElementById(
-  'overtimeYearVorarbeit'
-);
 
 const overtimeYearSourceEl = document.getElementById('overtimeYearSource');
 
@@ -446,7 +443,6 @@ function renderAdminPayrollCards(rows) {
   rows.forEach((row) => {
     const totals = row?.totals || {};
     const overtime = row?.overtime || {};
-    const vorarbeit = row?.vorarbeit || {};
 
     const card = document.createElement('div');
     card.className = 'admin-payroll-card';
@@ -584,22 +580,6 @@ function renderAdminPayrollCards(rows) {
     overtimeMetrics.className =
       'admin-payroll-metrics admin-payroll-metrics--secondary';
 
-    overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ1 roh', formatPayrollSignedHours(overtime.ueZ1Raw))
-    );
-    overtimeMetrics.appendChild(
-      createPayrollMetric(
-        'Vorarbeit angerechnet',
-        formatPayrollSignedHours(overtime.vorarbeitApplied)
-      )
-    );
-    overtimeMetrics.appendChild(
-      createPayrollMetric(
-        'ÜZ1 nach Vorarbeit',
-        formatPayrollSignedHours(overtime.ueZ1AfterVorarbeit)
-      )
-    );
-
     if (overtime.ueZ1Correction !== 0) {
       overtimeMetrics.appendChild(
         createPayrollMetric(
@@ -650,30 +630,6 @@ function renderAdminPayrollCards(rows) {
       );
     }
 
-    const vorarbeitDivider = document.createElement('div');
-    vorarbeitDivider.className = 'admin-payroll-divider';
-
-    const vorarbeitTitle = document.createElement('div');
-    vorarbeitTitle.className = 'admin-payroll-subtitle';
-    vorarbeitTitle.textContent = `Vorarbeitszeit (${vorarbeit.year || '–'})`;
-
-    const vorarbeitMetrics = document.createElement('div');
-    vorarbeitMetrics.className =
-      'admin-payroll-metrics admin-payroll-metrics--secondary';
-
-    vorarbeitMetrics.appendChild(
-      createPayrollMetric(
-        'Stand per Periodenende',
-        formatPayrollCounterHours(vorarbeit.filled, vorarbeit.required)
-      )
-    );
-    vorarbeitMetrics.appendChild(
-      createPayrollMetric(
-        'Änderung im Zeitraum',
-        formatPayrollSignedHours(vorarbeit.changeInPeriod)
-      )
-    );
-
     card.appendChild(head);
     card.appendChild(metrics);
 
@@ -686,9 +642,6 @@ function renderAdminPayrollCards(rows) {
     card.appendChild(overtimeDivider);
     card.appendChild(overtimeTitle);
     card.appendChild(overtimeMetrics);
-    card.appendChild(vorarbeitDivider);
-    card.appendChild(vorarbeitTitle);
-    card.appendChild(vorarbeitMetrics);
 
     adminPayrollGridEl.appendChild(card);
   });
@@ -1012,7 +965,6 @@ async function loadMyKontoFromServer() {
     return {
       konto: data.konto,
       transmittedMonths: new Set(data.transmittedMonths || []),
-      vorarbeitRequired: data.vorarbeitRequired ?? 0,
     };
   } catch (e) {
     console.error('Failed to load konto from server:', e);
@@ -1198,34 +1150,26 @@ let dashboardMonthOffset = 0;
 // Hier kannst du später pro Jahr einstellen, wie viel Vorarbeit nötig ist,
 // und optional Startsaldi aus dem Vorjahr eintragen.
 const OVERTIME_YEAR_CONFIG = {
-  // Beispiel: für 2026 brauchen wir 39h Vorarbeit
   2026: {
-    vorarbeitRequired: 39,
-    ueZ1CarryIn: 0, // später: Überzeit 1-Startsaldo aus Vorjahr
-    ueZ2CarryIn: 0,
-    ueZ3CarryIn: 0,
-    vacationDaysPerYear: 21,
-    vacationCarryInDays: 0,
-  },
-
-  2025: {
-    vorarbeitRequired: 39,
     ueZ1CarryIn: 0,
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
     vacationDaysPerYear: 21,
     vacationCarryInDays: 0,
   },
-  // weitere Jahre kannst du einfach ergänzen:
-  // 2027: { vorarbeitRequired: 42, ueZ1CarryIn: 0, ueZ2CarryIn: 0, ueZ3CarryIn: 0 },
+  2025: {
+    ueZ1CarryIn: 0,
+    ueZ2CarryIn: 0,
+    ueZ3CarryIn: 0,
+    vacationDaysPerYear: 21,
+    vacationCarryInDays: 0,
+  },
 };
 
 function getYearConfig(year) {
   const cfg = OVERTIME_YEAR_CONFIG[year];
   if (cfg) return cfg;
-  // Default: keine Vorarbeit, keine Startsaldi
   return {
-    vorarbeitRequired: 0,
     ueZ1CarryIn: 0,
     ueZ2CarryIn: 0,
     ueZ3CarryIn: 0,
@@ -3034,35 +2978,21 @@ function renderAdminKontenGrid(rows) {
   // Use the same year context as the admin month navigation (so the admin can switch month/year)
   const { year: selectedYear } = getCurrentAdminMonthInfo();
   const yearCfg = getYearConfig(selectedYear);
-  rows.forEach(
-    ({ username, konto, vorarbeitRequired: rowVorarbeitRequired }) => {
-      const vorarbeitRequired =
-        rowVorarbeitRequired ??
-        Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
-      const rawUeZ1 = toNum(konto?.ueZ1, 0);
+  rows.forEach(({ username, konto }) => {
+    const rawUeZ1 = toNum(konto?.ueZ1, 0);
+    const card = document.createElement('div');
+    card.className = 'admin-konto-card';
 
-      // Backend already maintains this field per user for Vorarbeit logic:
-      // vorarbeitBalance wird direkt beim Transmit korrekt berechnet und gespeichert
-      const vorarbeitFilled = Math.min(
-        vorarbeitRequired,
-        Math.max(0, toNum(konto?.vorarbeitBalance, 0))
-      );
-      const ueZ1AfterVorarbeit = rawUeZ1; // konto.ueZ1 ist bereits netto — Vorarbeit wurde beim Transmit nie darin eingerechnet
+    const ueZ1Corr = toNum(konto?.ueZ1Correction, 0);
+    const ueZ2Corr = toNum(konto?.ueZ2Correction, 0);
+    const ueZ3Corr = toNum(konto?.ueZ3Correction, 0);
+    const ueZ1Display = formatHoursSigned(rawUeZ1 + ueZ1Corr);
+    const ueZ2Display = formatHoursSigned(toNum(konto?.ueZ2, 0) + ueZ2Corr);
+    const ueZ3Display = formatHoursSigned(toNum(konto?.ueZ3, 0) + ueZ3Corr);
+    const vacBalance = toNum(konto?.vacationDays, 0);
+    const vacPerYear = toNum(konto?.vacationDaysPerYear, 21);
 
-      const card = document.createElement('div');
-      card.className = 'admin-konto-card';
-
-      const ueZ1Corr = toNum(konto?.ueZ1Correction, 0);
-      const ueZ2Corr = toNum(konto?.ueZ2Correction, 0);
-      const ueZ3Corr = toNum(konto?.ueZ3Correction, 0);
-      const ueZ1Display = formatHoursSigned(rawUeZ1 + ueZ1Corr);
-      const ueZ2Display = formatHoursSigned(toNum(konto?.ueZ2, 0) + ueZ2Corr);
-      const ueZ3Display = formatHoursSigned(toNum(konto?.ueZ3, 0) + ueZ3Corr);
-      const vacBalance = toNum(konto?.vacationDays, 0);
-      const vacPerYear = toNum(konto?.vacationDaysPerYear, 21);
-      const vorarbeitBalance = toNum(konto?.vorarbeitBalance, 0);
-
-      card.innerHTML = `
+    card.innerHTML = `
       <div class="admin-konto-header">
         <div class="admin-konto-user">${escapeHtml(username)}</div>
       </div>
@@ -3080,10 +3010,7 @@ function renderAdminKontenGrid(rows) {
           <div class="admin-konto-metric-label">ÜZ3 Saldo</div>
           <div class="admin-konto-metric-value">${ueZ3Display}</div>
         </div>
-        <div class="admin-konto-metric-row">
-          <div class="admin-konto-metric-label">Vorarbeit (${selectedYear})</div>
-          <div class="admin-konto-metric-value">${formatHours(vorarbeitBalance)} / ${formatHours(vorarbeitRequired)}</div>
-        </div>
+        
         <div class="admin-konto-metric-row">
           <div class="admin-konto-metric-label">Ferien-Guthaben</div>
           <div class="admin-konto-metric-value">${formatDays(vacBalance)} / ${formatDays(vacPerYear)} Tage</div>
@@ -3128,95 +3055,94 @@ function renderAdminKontenGrid(rows) {
       </details>
     `;
 
-      adminKontenGridEl.appendChild(card);
-      card
-        .querySelector('.admin-konto-history')
-        ?.addEventListener('toggle', async (e) => {
-          if (!e.target.open) return;
-          const body = card.querySelector('.admin-konto-history-body');
-          if (!body || body.dataset.loaded) return;
+    adminKontenGridEl.appendChild(card);
+    card
+      .querySelector('.admin-konto-history')
+      ?.addEventListener('toggle', async (e) => {
+        if (!e.target.open) return;
+        const body = card.querySelector('.admin-konto-history-body');
+        if (!body || body.dataset.loaded) return;
 
-          async function loadKontoHistory() {
-            body.dataset.loaded = 'true';
-            body.innerHTML = '';
-            try {
-              const res = await authFetch(
-                `/api/admin/konten/adjustments/${encodeURIComponent(username)}`
-              );
-              const data = await res.json();
-              if (!data.ok) throw new Error(data.error);
-              if (!data.adjustments.length) {
-                body.innerHTML =
-                  '<div class="admin-konto-history-empty">Keine Änderungen.</div>';
-                return;
-              }
-              const fieldLabels = {
-                ueZ1Correction: 'ÜZ1 Anpassung',
-                ueZ2Correction: 'ÜZ2 Anpassung',
-                ueZ3Correction: 'ÜZ3 Anpassung',
-                vacationDays: 'Ferien-Guthaben',
-                vacationDaysPerYear: 'Ferien/Jahr',
-              };
-              data.adjustments.forEach((a, idx) => {
-                const row = document.createElement('div');
-                row.className = 'admin-konto-history-row';
-                const date = new Date(a.created_at).toLocaleString('de-CH', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
-                const label = fieldLabels[a.field] || a.field;
-                const delta = a.new_value - a.old_value;
-                const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1);
-                row.innerHTML = `
+        async function loadKontoHistory() {
+          body.dataset.loaded = 'true';
+          body.innerHTML = '';
+          try {
+            const res = await authFetch(
+              `/api/admin/konten/adjustments/${encodeURIComponent(username)}`
+            );
+            const data = await res.json();
+            if (!data.ok) throw new Error(data.error);
+            if (!data.adjustments.length) {
+              body.innerHTML =
+                '<div class="admin-konto-history-empty">Keine Änderungen.</div>';
+              return;
+            }
+            const fieldLabels = {
+              ueZ1Correction: 'ÜZ1 Anpassung',
+              ueZ2Correction: 'ÜZ2 Anpassung',
+              ueZ3Correction: 'ÜZ3 Anpassung',
+              vacationDays: 'Ferien-Guthaben',
+              vacationDaysPerYear: 'Ferien/Jahr',
+            };
+            data.adjustments.forEach((a, idx) => {
+              const row = document.createElement('div');
+              row.className = 'admin-konto-history-row';
+              const date = new Date(a.created_at).toLocaleString('de-CH', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const label = fieldLabels[a.field] || a.field;
+              const delta = a.new_value - a.old_value;
+              const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1);
+              row.innerHTML = `
             <div class="admin-konto-history-date">${date}</div>
             <div class="admin-konto-history-field">${label}</div>
             <div class="admin-konto-history-delta ${delta >= 0 ? 'positive' : 'negative'}">${deltaStr}</div>
             <div class="admin-konto-history-who">${escapeHtml(a.admin_username)}</div>
             ${a.reason ? `<div class="admin-konto-history-reason">${escapeHtml(a.reason)}</div>` : ''}
           `;
-                if (idx === 0) {
-                  const delBtn = document.createElement('button');
-                  delBtn.type = 'button';
-                  delBtn.className = 'admin-konto-history-delete';
-                  delBtn.title = 'Letzte Änderung rückgängig machen';
-                  delBtn.textContent = '↩';
-                  delBtn.addEventListener('click', async () => {
-                    if (
-                      !confirm(
-                        `Letzte Änderung (${label}: ${deltaStr}) für ${username} wirklich rückgängig machen?`
-                      )
+              if (idx === 0) {
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.className = 'admin-konto-history-delete';
+                delBtn.title = 'Letzte Änderung rückgängig machen';
+                delBtn.textContent = '↩';
+                delBtn.addEventListener('click', async () => {
+                  if (
+                    !confirm(
+                      `Letzte Änderung (${label}: ${deltaStr}) für ${username} wirklich rückgängig machen?`
                     )
-                      return;
-                    try {
-                      const r = await authFetch(
-                        `/api/admin/konten/adjustments/${encodeURIComponent(username)}/last?field=${encodeURIComponent(a.field)}`,
-                        { method: 'DELETE' }
-                      );
-                      const d = await r.json();
-                      if (!d.ok) throw new Error(d.error);
-                      showToast('Änderung rückgängig gemacht', 'success');
-                      loadAdminPersonnel();
-                      loadKontoHistory();
-                    } catch (err) {
-                      showToast(err.message || 'Fehler', 'error');
-                    }
-                  });
-                  row.appendChild(delBtn);
-                }
-                body.appendChild(row);
-              });
-            } catch (err) {
-              body.innerHTML = `<div class="admin-konto-history-empty">Fehler: ${err.message}</div>`;
-            }
+                  )
+                    return;
+                  try {
+                    const r = await authFetch(
+                      `/api/admin/konten/adjustments/${encodeURIComponent(username)}/last?field=${encodeURIComponent(a.field)}`,
+                      { method: 'DELETE' }
+                    );
+                    const d = await r.json();
+                    if (!d.ok) throw new Error(d.error);
+                    showToast('Änderung rückgängig gemacht', 'success');
+                    loadAdminPersonnel();
+                    loadKontoHistory();
+                  } catch (err) {
+                    showToast(err.message || 'Fehler', 'error');
+                  }
+                });
+                row.appendChild(delBtn);
+              }
+              body.appendChild(row);
+            });
+          } catch (err) {
+            body.innerHTML = `<div class="admin-konto-history-empty">Fehler: ${err.message}</div>`;
           }
+        }
 
-          loadKontoHistory();
-        });
-    }
-  );
+        loadKontoHistory();
+      });
+  });
 }
 /**
  * Absence helpers and yearly vacation calculations
@@ -3752,12 +3678,7 @@ async function syncMyAbsencesFromServer() {
  * Load and render the server-side overtime and Vorarbeit yearly summary for the current user.
  */
 async function updateOvertimeYearCard() {
-  if (
-    !overtimeYearUeZ1El ||
-    !overtimeYearUeZ2El ||
-    !overtimeYearUeZ3El ||
-    !overtimeYearVorarbeitEl
-  ) {
+  if (!overtimeYearUeZ1El || !overtimeYearUeZ2El || !overtimeYearUeZ3El) {
     return;
   }
 
@@ -3780,10 +3701,6 @@ async function updateOvertimeYearCard() {
       throw new Error('NO_KONTO_DATA');
     }
 
-    const vorarbeitRequired =
-      serverData?.vorarbeitRequired != null
-        ? serverData.vorarbeitRequired
-        : Number((getYearConfig(selectedYear) || {}).vorarbeitRequired) || 0;
     // vacationDaysPerYear kommt vom Server-Konto, nicht aus der lokalen Config
     const vacationDaysPerYear = Number(konto.vacationDaysPerYear) || 21;
     const officialUeZ1Raw =
@@ -3794,15 +3711,8 @@ async function updateOvertimeYearCard() {
       (Number(konto.ueZ3) || 0) + (Number(konto.ueZ3Correction) || 0);
     const officialVacationDays = Number(konto.vacationDays) || 0;
 
-    const vorarbeitFilled = Number(konto.vorarbeitBalance) || 0;
-    const officialUeZ1AfterVorarbeit = officialUeZ1Raw; // ÜZ1 ist bereits nach Vorarbeit
-
-    overtimeYearUeZ1El.textContent = formatHoursSigned(
-      officialUeZ1AfterVorarbeit
-    );
     overtimeYearUeZ2El.textContent = formatHours(officialUeZ2);
     overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
-    overtimeYearVorarbeitEl.textContent = `${formatHours(vorarbeitFilled)} / ${formatHours(vorarbeitRequired)}`;
 
     if (vacationYearSummaryEl) {
       vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
@@ -3832,7 +3742,6 @@ async function updateOvertimeYearCard() {
     overtimeYearUeZ1El.textContent = '–';
     overtimeYearUeZ2El.textContent = '–';
     overtimeYearUeZ3El.textContent = '–';
-    overtimeYearVorarbeitEl.textContent = '–';
 
     if (vacationYearSummaryEl) {
       vacationYearSummaryEl.textContent = '– / – Tage';

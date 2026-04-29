@@ -164,7 +164,7 @@ function createTransmitService(
     readWeekLocksFromDb,
     collectLockedDatesForMonth,
     updateKontenFromSubmission,
-    computeMonthUeZ1AndVorarbeit,
+    computeMonthUeZ1,
     readAnlagenIndex,
     readAnlagenLedger,
     readAnlagenSnapshot,
@@ -537,7 +537,7 @@ function createTransmitService(
           totals,
           payload: payloadToSave,
           updatedBy: strictUsername,
-          computeMonthUeZ1AndVorarbeit,
+          computeMonthUeZ1,
         });
       } catch (e) {
         console.error(

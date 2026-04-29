@@ -219,8 +219,8 @@ const {
 } = createKontenService(db);
 
 const {
-  computeMonthUeZ1AndVorarbeit,
-  computeRangeUeZ1AndVorarbeit,
+  computeMonthUeZ1,
+  computeRangeUeZ1,
   computePayrollPeriodOvertimeFromSubmission,
 } = createComputeAsyncService(getDailySoll, fetchEmpStartKey);
 
@@ -245,7 +245,7 @@ const {
 
 const { buildPayrollPeriodDataForUser, registerPayrollRoutes } =
   createPayrollService(db, {
-    computeRangeUeZ1AndVorarbeit,
+    computeRangeUeZ1,
     computePayrollPeriodOvertimeFromSubmission,
     loadLatestMonthSubmission,
     aggregatePayrollFromSubmission,
@@ -260,7 +260,7 @@ const { autoTransmitForUser, registerTransmitRoutes } = createTransmitService(
     readWeekLocksFromDb,
     collectLockedDatesForMonth,
     updateKontenFromSubmission,
-    computeMonthUeZ1AndVorarbeit,
+    computeMonthUeZ1,
     readAnlagenIndex,
     readAnlagenLedger,
     readAnlagenSnapshot,

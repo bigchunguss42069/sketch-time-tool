@@ -111,7 +111,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
 function createPayrollService(
   db,
   {
-    computeRangeUeZ1AndVorarbeit,
+    computeRangeUeZ1,
     computePayrollPeriodOvertimeFromSubmission,
     loadLatestMonthSubmission,
     aggregatePayrollFromSubmission,
@@ -158,54 +158,7 @@ function createPayrollService(
 
     const selectedYear = periodEnd.getFullYear();
     const yearCfg = getPayrollYearConfig(selectedYear);
-    const vorarbeitRequired = Number(yearCfg.vorarbeitRequired) || 0;
 
-    // Vorarbeit-Startsaldo
-    const dayBeforePeriod = new Date(periodStart);
-    dayBeforePeriod.setDate(dayBeforePeriod.getDate() - 1);
-    const dayBeforePeriodKey = formatDateKey(dayBeforePeriod);
-
-    const lastSnapRes = await db.query(
-      `SELECT year, month_index, vorarbeit_balance FROM konten_snapshots
-       WHERE username = $1 AND (year < $2 OR (year = $2 AND month_index < $3))
-       ORDER BY year DESC, month_index DESC LIMIT 1`,
-      [user.username, periodStart.getFullYear(), periodStart.getMonth()]
-    );
-    const lastSnap = lastSnapRes.rows[0];
-    let vorarbeitBalanceBeforePeriod = r1(
-      Number(lastSnap?.vorarbeit_balance) || 0
-    );
-
-    if (lastSnap) {
-      const snapMonthEnd = formatDateKey(
-        new Date(lastSnap.year, lastSnap.month_index + 1, 0)
-      );
-      if (snapMonthEnd < dayBeforePeriodKey) {
-        const partialSub = await loadLatestMonthSubmission(
-          user.username,
-          periodStart.getFullYear(),
-          periodStart.getMonth()
-        );
-        if (partialSub) {
-          const partialMonthStart = formatDateKey(
-            new Date(periodStart.getFullYear(), periodStart.getMonth(), 1)
-          );
-          const { vorarbeitBalance: vb } = await computeRangeUeZ1AndVorarbeit(
-            partialSub,
-            partialMonthStart,
-            dayBeforePeriodKey,
-            user.id,
-            vorarbeitBalanceBeforePeriod,
-            Number(
-              getPayrollYearConfig(periodStart.getFullYear()).vorarbeitRequired
-            ) || 0
-          );
-          vorarbeitBalanceBeforePeriod = vb;
-        }
-      }
-    }
-
-    let runningVorarbeit = vorarbeitBalanceBeforePeriod;
     let ueZ1Net = 0;
     let ueZ1RawTotal = 0;
 
@@ -251,22 +204,12 @@ function createPayrollService(
         user.id
       );
 
-      const {
-        ueZ1Raw: rangeRaw,
-        ueZ1Net: rangeNet,
-        vorarbeitBalance: newVorarbeit,
-      } = await computeRangeUeZ1AndVorarbeit(
-        submission,
-        clippedFrom,
-        clippedTo,
-        user.id,
-        runningVorarbeit,
-        Number(getPayrollYearConfig(month.year).vorarbeitRequired) || 0
+      const { ueZ1Raw: rangeRaw, ueZ1Net: rangeNet } = await computeRangeUeZ1(
+        monthSubmission.payload,
+        fromKey,
+        toKey,
+        userId
       );
-
-      ueZ1Net = r1(ueZ1Net + rangeNet);
-      ueZ1RawTotal = r1(ueZ1RawTotal + rangeRaw);
-      runningVorarbeit = newVorarbeit;
 
       totals.praesenzStunden += partial.praesenzStunden;
       totals.ueZ3Hours += partial.ueZ3Hours;
@@ -391,13 +334,6 @@ function createPayrollService(
     overtime.ueZ2 = r1(overtime.ueZ2);
     overtime.ueZ3 = r1(overtime.ueZ3);
 
-    const vorarbeitFilledAtPeriodEnd = r1(runningVorarbeit);
-    const vorarbeitFilledBeforePeriod = r1(vorarbeitBalanceBeforePeriod);
-    const vorarbeitAppliedInPeriod = r1(
-      Math.max(0, overtime.ueZ1Raw - ueZ1Net)
-    );
-    const ueZ1AfterVorarbeitInPeriod = r1(ueZ1Net);
-
     const auditRows = Array.from(auditRowMap.values())
       .map((row) => ({
         dateKey: row.dateKey,
@@ -469,8 +405,7 @@ function createPayrollService(
         ueZ1Raw: overtime.ueZ1Raw,
         ueZ1Correction,
         ueZ1Total: r1(overtime.ueZ1Raw + ueZ1Correction),
-        vorarbeitApplied: vorarbeitAppliedInPeriod,
-        ueZ1AfterVorarbeit: ueZ1AfterVorarbeitInPeriod,
+
         ueZ2: overtime.ueZ2,
         ueZ2Correction,
         ueZ2Total: r1(overtime.ueZ2 + ueZ2Correction),
@@ -478,14 +413,7 @@ function createPayrollService(
         ueZ3Correction,
         ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
       },
-      vorarbeit: {
-        year: selectedYear,
-        filled: vorarbeitFilledAtPeriodEnd,
-        required: vorarbeitRequired,
-        changeInPeriod: r1(
-          vorarbeitFilledAtPeriodEnd - vorarbeitFilledBeforePeriod
-        ),
-      },
+
       teamId: user.teamId || null,
       auditRows,
     };
@@ -841,14 +769,7 @@ function createPayrollService(
           sectionTitle('Überzeit in dieser Lohnperiode');
           const overtimeLines = [
             ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
-            [
-              'Vorarbeit angerechnet',
-              fmtSignedHours(row.overtime.vorarbeitApplied),
-            ],
-            [
-              'ÜZ1 nach Vorarbeit',
-              fmtSignedHours(row.overtime.ueZ1AfterVorarbeit),
-            ],
+            [],
             ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
             ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
           ];
@@ -883,18 +804,6 @@ function createPayrollService(
             ]);
           }
           writeMetricLines(overtimeLines);
-
-          sectionTitle(`Vorarbeitszeit (${row.vorarbeit.year || '–'})`);
-          writeMetricLines([
-            [
-              'Stand per Periodenende',
-              `${(Number(row.vorarbeit.filled) || 0).toFixed(1).replace('.', ',')} / ${(Number(row.vorarbeit.required) || 0).toFixed(1).replace('.', ',')} h`,
-            ],
-            [
-              'Änderung im Zeitraum',
-              fmtSignedHours(row.vorarbeit.changeInPeriod),
-            ],
-          ]);
 
           sectionTitle('Berücksichtigte Übertragungen');
           writeMetricLines([
