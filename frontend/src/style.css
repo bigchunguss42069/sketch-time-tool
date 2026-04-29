@@ -3589,8 +3589,8 @@ body.in-admin-view #view-admin {
 }
 
 .admin-user-week-row.locked {
-  border-color: rgba(99, 102, 241, 0.5);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
+  border-color: rgb(255, 26, 26);
+  box-shadow: 0 0 0 1px rgba(219, 134, 134, 0.945);
 }
 
 .admin-user-week-main {
@@ -3662,7 +3662,7 @@ body.in-admin-view #view-admin {
 }
 
 .admin-week-block.locked {
-  border-color: rgba(99, 102, 241, 0.5);
+  border-color: rgba(117, 12, 12, 0.874);
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
 }
 
@@ -3710,8 +3710,9 @@ body.in-admin-view #view-admin {
   color: var(--accent);
 }
 .admin-week-lock-btn.is-locked {
-  border-color: rgba(99, 102, 241, 0.6);
-  color: var(--accent);
+  border-color: rgba(141, 6, 6, 0.647);
+  color: rgba(17, 3, 3, 0.837);
+  font-weight: 600;
 }
 
 /* Admin day list */

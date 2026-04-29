@@ -237,6 +237,54 @@ function registerAuditPdfRoute(app, requireAuth, requireAdmin, db, TEAMS) {
                   .text('Keine Stempel in diesem Monat.');
               }
 
+              // Pikett-Einträge dieses Monats
+              const pikettEntries = Array.isArray(sub.payload?.pikett)
+                ? sub.payload.pikett.filter((p) => {
+                    if (!p?.date) return false;
+                    const d = new Date(p.date + 'T00:00:00');
+                    return (
+                      d.getFullYear() === sub.year &&
+                      d.getMonth() === sub.monthIndex
+                    );
+                  })
+                : [];
+
+              if (pikettEntries.length > 0) {
+                doc.moveDown(0.4);
+                doc
+                  .fontSize(9)
+                  .font('Helvetica-Bold')
+                  .fillColor('#334155')
+                  .text('Pikett-Einsätze:');
+                doc.moveDown(0.2);
+
+                pikettEntries.forEach((p) => {
+                  const d = new Date(p.date + 'T00:00:00');
+                  const dateLabel = d.toLocaleDateString('de-CH', {
+                    weekday: 'short',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                  });
+                  const zeitLabel = p.von && p.bis ? `${p.von}–${p.bis}` : '–';
+                  const stundenLabel =
+                    typeof p.hours === 'number' && p.hours > 0
+                      ? `${p.hours.toFixed(2).replace('.', ',')} h`
+                      : '–';
+                  const komLabel = p.komNr ? `Anlage: ${p.komNr}` : '';
+                  const noteLabel = p.note ? `· ${p.note}` : '';
+                  const ueZ3Label = p.isOvertime3 ? ' · ÜZ3 (150%)' : '';
+
+                  doc
+                    .fontSize(9)
+                    .font('Helvetica')
+                    .fillColor('#374151')
+                    .text(
+                      `${dateLabel}    ${zeitLabel}    ${stundenLabel}    ${komLabel}${noteLabel}${ueZ3Label}`
+                    );
+                });
+              }
+
               doc.moveDown(0.8);
             });
           }

@@ -898,8 +898,84 @@ function createKontenService(db) {
         }
       }
     );
-  }
 
+    // delet für die letzte änderung im audit trail
+    app.delete(
+      '/api/admin/konten/adjustments/:username/last',
+      requireAuth,
+      requireAdmin,
+      async (req, res) => {
+        const username = String(req.params.username || '');
+        const field = String(req.query.field || '');
+
+        const allowedFields = [
+          'ueZ1Correction',
+          'ueZ2Correction',
+          'ueZ3Correction',
+          'vacationDays',
+          'vacationDaysPerYear',
+        ];
+        if (!field || !allowedFields.includes(field)) {
+          return res.status(400).json({ ok: false, error: 'Ungültiges Feld' });
+        }
+
+        const client = await db.connect();
+        try {
+          await client.query('BEGIN');
+
+          // Letzte Änderung für dieses Feld holen
+          const adj = await client.query(
+            `SELECT id, old_value, new_value FROM konto_adjustments
+         WHERE username = $1 AND field = $2
+         ORDER BY created_at DESC LIMIT 1`,
+            [username, field]
+          );
+          if (!adj.rows.length) {
+            await client.query('ROLLBACK');
+            return res
+              .status(404)
+              .json({ ok: false, error: 'Keine Änderung gefunden' });
+          }
+
+          const { id, old_value, new_value } = adj.rows[0];
+          const delta = Number(new_value) - Number(old_value);
+
+          // DB-Feldname bestimmen
+          const dbFieldMap = {
+            ueZ1Correction: 'ue_z1_correction',
+            ueZ2Correction: 'ue_z2_correction',
+            ueZ3Correction: 'ue_z3_correction',
+            vacationDays: 'vacation_days',
+            vacationDaysPerYear: 'vacation_days_per_year',
+          };
+          const dbField = dbFieldMap[field];
+
+          // Delta umkehren im Konto
+          await client.query(
+            `UPDATE konten SET ${dbField} = ${dbField} - $1
+         WHERE username = $2`,
+            [delta, username]
+          );
+
+          // Adjustment-Zeile löschen
+          await client.query('DELETE FROM konto_adjustments WHERE id = $1', [
+            id,
+          ]);
+
+          await client.query('COMMIT');
+          return res.json({ ok: true });
+        } catch (err) {
+          await client.query('ROLLBACK');
+          console.error('Failed to delete adjustment', err);
+          return res
+            .status(500)
+            .json({ ok: false, error: 'Fehler beim Löschen' });
+        } finally {
+          client.release();
+        }
+      }
+    );
+  }
   // Alle Funktionen zurückgeben
   return {
     ensureKontenUserRecord,

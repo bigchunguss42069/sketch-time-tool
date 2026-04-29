@@ -791,14 +791,13 @@ let weekOffset = 0; // 0 = current week, -1 = previous, +1 = next, etc.
 // Wochenende → Montag als Fallback
 const _todayWeekday = new Date().getDay(); // 0=So, 1=Mo, ..., 6=Sa
 const _dayIdByWeekday = [
-  'montag',
-  'montag',
-  'montag',
-  'dienstag',
-  'mittwoch',
-  'donnerstag',
-  'freitag',
-  'montag',
+  'montag', // 0 = Sonntag → Fallback
+  'montag', // 1 = Montag
+  'dienstag', // 2 = Dienstag
+  'mittwoch', // 3 = Mittwoch
+  'donnerstag', // 4 = Donnerstag
+  'freitag', // 5 = Freitag
+  'montag', // 6 = Samstag → Fallback
 ];
 let currentDayId = _dayIdByWeekday[_todayWeekday] || 'montag';
 
@@ -1013,6 +1012,7 @@ async function loadMyKontoFromServer() {
     return {
       konto: data.konto,
       transmittedMonths: new Set(data.transmittedMonths || []),
+      vorarbeitRequired: data.vorarbeitRequired ?? 0,
     };
   } catch (e) {
     console.error('Failed to load konto from server:', e);
@@ -1170,6 +1170,8 @@ function createEmptyPikettEntry() {
   return {
     date: today,
     komNr: '',
+    von: '',
+    bis: '',
     hours: 0,
     note: '',
     isOvertime3: false,
@@ -1465,31 +1467,51 @@ function renderPikettList() {
     const body = document.createElement('div');
     body.className = 'pikett-card-body';
 
+    // Von / Bis
+    const timeGroup = document.createElement('div');
+    timeGroup.className = 'pikett-time-group';
+
+    const vonLabel = document.createElement('label');
+    vonLabel.className = 'pikett-label';
+    const vonSpan = document.createElement('span');
+    vonSpan.textContent = 'Von';
+    const vonInput = document.createElement('input');
+    vonInput.type = 'time';
+    vonInput.className = 'pikett-von';
+    vonInput.value = entry.von || '';
+    vonInput.disabled = locked;
+    vonLabel.appendChild(vonSpan);
+    vonLabel.appendChild(vonInput);
+
+    const bisLabel = document.createElement('label');
+    bisLabel.className = 'pikett-label';
+    const bisSpan = document.createElement('span');
+    bisSpan.textContent = 'Bis';
+    const bisInput = document.createElement('input');
+    bisInput.type = 'time';
+    bisInput.className = 'pikett-bis';
+    bisInput.value = entry.bis || '';
+    bisInput.disabled = locked;
+    bisLabel.appendChild(bisSpan);
+    bisLabel.appendChild(bisInput);
+
+    timeGroup.appendChild(vonLabel);
+    timeGroup.appendChild(bisLabel);
+
+    // Total Stunden (read only)
     const hoursLabel = document.createElement('label');
     hoursLabel.className = 'pikett-label';
-
     const hoursSpan = document.createElement('span');
-    hoursSpan.textContent = 'Pikett-Stunden';
-
-    const hoursInput = document.createElement('input');
-    hoursInput.type = 'number';
-    hoursInput.min = '0';
-    hoursInput.step = '0.25';
-    hoursInput.placeholder = '0,0';
-    hoursInput.className = 'pikett-hours';
-    hoursInput.disabled = locked;
-
-    if (
-      typeof entry.hours === 'number' &&
-      !Number.isNaN(entry.hours) &&
-      entry.hours !== 0
-    ) {
-      hoursInput.value = entry.hours.toString().replace('.', ',');
-    }
-
+    hoursSpan.textContent = 'Total Stunden';
+    const hoursDisplay = document.createElement('input');
+    hoursDisplay.type = 'text';
+    hoursDisplay.className = 'pikett-hours-display';
+    hoursDisplay.readOnly = true;
+    hoursDisplay.disabled = false;
+    hoursDisplay.value =
+      entry.hours > 0 ? entry.hours.toFixed(2).replace('.', ',') + ' h' : '–';
     hoursLabel.appendChild(hoursSpan);
-    hoursLabel.appendChild(hoursInput);
-
+    hoursLabel.appendChild(hoursDisplay);
     const noteLabel = document.createElement('label');
     noteLabel.className = 'pikett-label pikett-note-row';
 
@@ -1506,6 +1528,7 @@ function renderPikettList() {
     noteLabel.appendChild(noteSpan);
     noteLabel.appendChild(noteInput);
 
+    body.appendChild(timeGroup);
     body.appendChild(hoursLabel);
     body.appendChild(noteLabel);
 
@@ -1835,13 +1858,30 @@ document.addEventListener('input', (event) => {
     const normalized = normalizeKomNr(target.value);
     target.value = normalized;
     entry.komNr = normalized;
-  } else if (target.classList.contains('pikett-hours')) {
-    const raw = target.value.trim();
-    let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-    if (!Number.isNaN(num)) {
-      num = roundToQuarter(num);
+  } else if (
+    target.classList.contains('pikett-von') ||
+    target.classList.contains('pikett-bis')
+  ) {
+    if (target.classList.contains('pikett-von')) entry.von = target.value;
+    if (target.classList.contains('pikett-bis')) entry.bis = target.value;
+
+    // Stunden berechnen
+    if (entry.von && entry.bis) {
+      const [vonH, vonM] = entry.von.split(':').map(Number);
+      const [bisH, bisM] = entry.bis.split(':').map(Number);
+      let diffMin = bisH * 60 + bisM - (vonH * 60 + vonM);
+      if (diffMin <= 0) diffMin += 24 * 60; // über Mitternacht
+      entry.hours = Math.round((diffMin / 60) * 4) / 4; // auf 0.25h runden
+    } else {
+      entry.hours = 0;
     }
-    entry.hours = Number.isNaN(num) ? 0 : num;
+
+    // Display aktualisieren
+    const hoursDisplay = card.querySelector('.pikett-hours-display');
+    if (hoursDisplay) {
+      hoursDisplay.value =
+        entry.hours > 0 ? entry.hours.toFixed(2).replace('.', ',') + ' h' : '–';
+    }
   } else if (target.classList.contains('pikett-note')) {
     entry.note = target.value;
   } else {
@@ -2994,34 +3034,35 @@ function renderAdminKontenGrid(rows) {
   // Use the same year context as the admin month navigation (so the admin can switch month/year)
   const { year: selectedYear } = getCurrentAdminMonthInfo();
   const yearCfg = getYearConfig(selectedYear);
-  const vorarbeitRequired =
-    row.vorarbeitRequired ?? Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
+  rows.forEach(
+    ({ username, konto, vorarbeitRequired: rowVorarbeitRequired }) => {
+      const vorarbeitRequired =
+        rowVorarbeitRequired ??
+        Math.max(0, toNum(yearCfg?.vorarbeitRequired, 0));
+      const rawUeZ1 = toNum(konto?.ueZ1, 0);
 
-  rows.forEach(({ username, konto }) => {
-    const rawUeZ1 = toNum(konto?.ueZ1, 0);
+      // Backend already maintains this field per user for Vorarbeit logic:
+      // vorarbeitBalance wird direkt beim Transmit korrekt berechnet und gespeichert
+      const vorarbeitFilled = Math.min(
+        vorarbeitRequired,
+        Math.max(0, toNum(konto?.vorarbeitBalance, 0))
+      );
+      const ueZ1AfterVorarbeit = rawUeZ1; // konto.ueZ1 ist bereits netto — Vorarbeit wurde beim Transmit nie darin eingerechnet
 
-    // Backend already maintains this field per user for Vorarbeit logic:
-    // vorarbeitBalance wird direkt beim Transmit korrekt berechnet und gespeichert
-    const vorarbeitFilled = Math.min(
-      vorarbeitRequired,
-      Math.max(0, toNum(konto?.vorarbeitBalance, 0))
-    );
-    const ueZ1AfterVorarbeit = rawUeZ1; // konto.ueZ1 ist bereits netto — Vorarbeit wurde beim Transmit nie darin eingerechnet
+      const card = document.createElement('div');
+      card.className = 'admin-konto-card';
 
-    const card = document.createElement('div');
-    card.className = 'admin-konto-card';
+      const ueZ1Corr = toNum(konto?.ueZ1Correction, 0);
+      const ueZ2Corr = toNum(konto?.ueZ2Correction, 0);
+      const ueZ3Corr = toNum(konto?.ueZ3Correction, 0);
+      const ueZ1Display = formatHoursSigned(rawUeZ1 + ueZ1Corr);
+      const ueZ2Display = formatHoursSigned(toNum(konto?.ueZ2, 0) + ueZ2Corr);
+      const ueZ3Display = formatHoursSigned(toNum(konto?.ueZ3, 0) + ueZ3Corr);
+      const vacBalance = toNum(konto?.vacationDays, 0);
+      const vacPerYear = toNum(konto?.vacationDaysPerYear, 21);
+      const vorarbeitBalance = toNum(konto?.vorarbeitBalance, 0);
 
-    const ueZ1Corr = toNum(konto?.ueZ1Correction, 0);
-    const ueZ2Corr = toNum(konto?.ueZ2Correction, 0);
-    const ueZ3Corr = toNum(konto?.ueZ3Correction, 0);
-    const ueZ1Display = formatHoursSigned(rawUeZ1 + ueZ1Corr);
-    const ueZ2Display = formatHoursSigned(toNum(konto?.ueZ2, 0) + ueZ2Corr);
-    const ueZ3Display = formatHoursSigned(toNum(konto?.ueZ3, 0) + ueZ3Corr);
-    const vacBalance = toNum(konto?.vacationDays, 0);
-    const vacPerYear = toNum(konto?.vacationDaysPerYear, 21);
-    const vorarbeitBalance = toNum(konto?.vorarbeitBalance, 0);
-
-    card.innerHTML = `
+      card.innerHTML = `
       <div class="admin-konto-header">
         <div class="admin-konto-user">${escapeHtml(username)}</div>
       </div>
@@ -3087,62 +3128,96 @@ function renderAdminKontenGrid(rows) {
       </details>
     `;
 
-    adminKontenGridEl.appendChild(card);
-    card
-      .querySelector('.admin-konto-history')
-      ?.addEventListener('toggle', async (e) => {
-        if (!e.target.open) return;
-        const body = card.querySelector('.admin-konto-history-body');
-        if (!body || body.dataset.loaded) return;
-        body.dataset.loaded = 'true';
-        try {
-          const res = await authFetch(
-            `/api/admin/konten/adjustments/${encodeURIComponent(username)}`
-          );
-          const data = await res.json();
-          if (!data.ok) throw new Error(data.error);
-          body.innerHTML = '';
-          if (!data.adjustments.length) {
-            body.innerHTML =
-              '<div class="admin-konto-history-empty">Keine Änderungen.</div>';
-            return;
-          }
-          const fieldLabels = {
-            ueZ1Correction: 'ÜZ1 Anpassung',
-            ueZ2Correction: 'ÜZ2 Anpassung',
-            ueZ3Correction: 'ÜZ3 Anpassung',
-            vacationDays: 'Ferien-Guthaben',
-            vacationDaysPerYear: 'Ferien/Jahr',
-          };
-          data.adjustments.forEach((a) => {
-            const row = document.createElement('div');
-            row.className = 'admin-konto-history-row';
-            const date = new Date(a.created_at).toLocaleString('de-CH', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            });
-            const label = fieldLabels[a.field] || a.field;
-            const delta = a.new_value - a.old_value;
-            const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1);
-            row.innerHTML = `
+      adminKontenGridEl.appendChild(card);
+      card
+        .querySelector('.admin-konto-history')
+        ?.addEventListener('toggle', async (e) => {
+          if (!e.target.open) return;
+          const body = card.querySelector('.admin-konto-history-body');
+          if (!body || body.dataset.loaded) return;
+
+          async function loadKontoHistory() {
+            body.dataset.loaded = 'true';
+            body.innerHTML = '';
+            try {
+              const res = await authFetch(
+                `/api/admin/konten/adjustments/${encodeURIComponent(username)}`
+              );
+              const data = await res.json();
+              if (!data.ok) throw new Error(data.error);
+              if (!data.adjustments.length) {
+                body.innerHTML =
+                  '<div class="admin-konto-history-empty">Keine Änderungen.</div>';
+                return;
+              }
+              const fieldLabels = {
+                ueZ1Correction: 'ÜZ1 Anpassung',
+                ueZ2Correction: 'ÜZ2 Anpassung',
+                ueZ3Correction: 'ÜZ3 Anpassung',
+                vacationDays: 'Ferien-Guthaben',
+                vacationDaysPerYear: 'Ferien/Jahr',
+              };
+              data.adjustments.forEach((a, idx) => {
+                const row = document.createElement('div');
+                row.className = 'admin-konto-history-row';
+                const date = new Date(a.created_at).toLocaleString('de-CH', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                const label = fieldLabels[a.field] || a.field;
+                const delta = a.new_value - a.old_value;
+                const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1);
+                row.innerHTML = `
             <div class="admin-konto-history-date">${date}</div>
             <div class="admin-konto-history-field">${label}</div>
             <div class="admin-konto-history-delta ${delta >= 0 ? 'positive' : 'negative'}">${deltaStr}</div>
             <div class="admin-konto-history-who">${escapeHtml(a.admin_username)}</div>
             ${a.reason ? `<div class="admin-konto-history-reason">${escapeHtml(a.reason)}</div>` : ''}
           `;
-            body.appendChild(row);
-          });
-        } catch (err) {
-          body.innerHTML = `<div class="admin-konto-history-empty">Fehler: ${err.message}</div>`;
-        }
-      });
-  });
-}
+                if (idx === 0) {
+                  const delBtn = document.createElement('button');
+                  delBtn.type = 'button';
+                  delBtn.className = 'admin-konto-history-delete';
+                  delBtn.title = 'Letzte Änderung rückgängig machen';
+                  delBtn.textContent = '↩';
+                  delBtn.addEventListener('click', async () => {
+                    if (
+                      !confirm(
+                        `Letzte Änderung (${label}: ${deltaStr}) für ${username} wirklich rückgängig machen?`
+                      )
+                    )
+                      return;
+                    try {
+                      const r = await authFetch(
+                        `/api/admin/konten/adjustments/${encodeURIComponent(username)}/last?field=${encodeURIComponent(a.field)}`,
+                        { method: 'DELETE' }
+                      );
+                      const d = await r.json();
+                      if (!d.ok) throw new Error(d.error);
+                      showToast('Änderung rückgängig gemacht', 'success');
+                      loadAdminPersonnel();
+                      loadKontoHistory();
+                    } catch (err) {
+                      showToast(err.message || 'Fehler', 'error');
+                    }
+                  });
+                  row.appendChild(delBtn);
+                }
+                body.appendChild(row);
+              });
+            } catch (err) {
+              body.innerHTML = `<div class="admin-konto-history-empty">Fehler: ${err.message}</div>`;
+            }
+          }
 
+          loadKontoHistory();
+        });
+    }
+  );
+}
 /**
  * Absence helpers and yearly vacation calculations
  */
@@ -3706,15 +3781,11 @@ async function updateOvertimeYearCard() {
     }
 
     const vorarbeitRequired =
-      myKontoData?.vorarbeitRequired != null
-        ? myKontoData.vorarbeitRequired
+      serverData?.vorarbeitRequired != null
+        ? serverData.vorarbeitRequired
         : Number((getYearConfig(selectedYear) || {}).vorarbeitRequired) || 0;
     // vacationDaysPerYear kommt vom Server-Konto, nicht aus der lokalen Config
-    const vacationDaysPerYear =
-      Number(konto.vacationDaysPerYear) ||
-      Number(cfgSelected.vacationDaysPerYear) ||
-      21;
-
+    const vacationDaysPerYear = Number(konto.vacationDaysPerYear) || 21;
     const officialUeZ1Raw =
       (Number(konto.ueZ1) || 0) + (Number(konto.ueZ1Correction) || 0);
     const officialUeZ2 =
@@ -4508,7 +4579,6 @@ function updateUIForRole() {
 
     // Load admin data when switching to admin view
     loadAdminSummary();
-    startAdminSummaryPolling();
 
     return;
   }
@@ -8390,30 +8460,12 @@ if (stampModalSave) {
   });
 }
 
-let _adminSummaryPollTimer = null;
-
-function startAdminSummaryPolling() {
-  stopAdminSummaryPolling();
-  if (import.meta.env.DEV) return; // kein Polling in Dev
-  _adminSummaryPollTimer = setInterval(() => {
-    if (adminActiveInnerTab === 'overview') loadAdminSummary();
-  }, 60_000);
-}
-
-function stopAdminSummaryPolling() {
-  if (_adminSummaryPollTimer) {
-    clearInterval(_adminSummaryPollTimer);
-    _adminSummaryPollTimer = null;
-  }
-}
-
 adminInnerTabButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = btn.dataset.adminTab;
     if (!target) return;
 
     stopPraesenzPolling();
-    stopAdminSummaryPolling();
 
     adminActiveInnerTab = target;
 
@@ -8426,7 +8478,6 @@ adminInnerTabButtons.forEach((btn) => {
     });
     if (target === 'overview') {
       loadAdminSummary();
-      startAdminSummaryPolling();
     } else if (target === 'anlagen') {
       const previouslySelectedKomNr = selectedKomNr;
 
@@ -8471,6 +8522,16 @@ dayButtons.forEach((btn) => {
     applyWeekLockUI();
   });
 });
+
+// Beim Start den heutigen Tag aktivieren
+const todayBtn = document.querySelector(
+  `.day-button[data-day="${currentDayId}"]`
+);
+if (todayBtn) {
+  dayButtons.forEach((b) => b.classList.remove('active'));
+  todayBtn.classList.add('active');
+  showDay(currentDayId);
+}
 
 async function loadDraftFromServer() {
   try {

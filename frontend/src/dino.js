@@ -98,18 +98,37 @@ export function initDinoGame({ authFetch, escapeHtml }) {
     }
 
     function resetGame() {
-      dino = { x: 60, y: GROUND, w: 4, h: 58, vy: 0, onGround: true };
+      dino = { x: 60, y: GROUND, w: 55, h: 58, vy: 0, onGround: true };
       obstacles = [];
       score = 0;
       speed = 5.5;
       frameCount = 0;
       gameOver = false;
+      powerups = [];
+      ufo = null;
+      ufoDropCooldown = 0;
+      droppedRocks = [];
+      meteors = [];
+      meteorEventActive = false;
+      meteorEventTimer = 0;
+      meteorWarningTimer = 0;
+      shieldActive = false;
+      shieldTimer = 0;
+      doubleJumpReady = false;
+      inSpace = false;
+      spaceTimer = 0;
+      doubleJumpUsed = false;
     }
 
     function jump() {
       if (dino.onGround) {
         dino.vy = -13;
         dino.onGround = false;
+      } else if (doubleJumpReady && !doubleJumpUsed) {
+        dino.vy = -18;
+        doubleJumpUsed = true;
+        inSpace = true;
+        spaceTimer = 80;
       }
     }
 
@@ -986,15 +1005,75 @@ export function initDinoGame({ authFetch, escapeHtml }) {
       }
     }
 
+    let powerups = [];
+    let droppedRocks = [];
+    let meteors = [];
+    let meteorEventActive = false;
+    let meteorEventTimer = 0;
+    let meteorWarningTimer = 0;
+    let shieldActive = false;
+    let shieldTimer = 0;
+    let doubleJumpReady = false;
+    let ufo = null;
+    let ufoDropCooldown = 0;
+    let doubleJumpUsed = false;
+    let inSpace = false;
+    let spaceTimer = 0;
+
     // Background layers
-    let bgOffset1 = 0; // clouds
-    let bgOffset2 = 0; // mountains
-    let bgOffset3 = 0; // ground detail
+    let bgOffset1 = 0;
+    let bgOffset2 = 0;
+    let bgOffset3 = 0;
+    let dayNightProgress = 0; // 0=tag, 1=nacht
+    let isNight = false;
+    let dayNightTransitioning = false;
 
     function drawBackground(ctx) {
-      // Sky
-      ctx.fillStyle = '#dbeafe';
+      // Tag/Nacht Wechsel alle 600 Punkte
+      const targetNight = Math.floor(score / 600) % 2 === 1;
+      if (targetNight !== isNight) {
+        isNight = targetNight;
+      }
+      if (isNight) {
+        dayNightProgress = Math.min(1, dayNightProgress + 0.01);
+      } else {
+        dayNightProgress = Math.max(0, dayNightProgress - 0.01);
+      }
+      const t = dayNightProgress;
+      const skyDay = [219, 234, 254];
+      const skyNight = [15, 23, 60];
+      const r = Math.round(skyDay[0] + (skyNight[0] - skyDay[0]) * t);
+      const g = Math.round(skyDay[1] + (skyNight[1] - skyDay[1]) * t);
+      const b = Math.round(skyDay[2] + (skyNight[2] - skyDay[2]) * t);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(0, 0, W, H);
+
+      // Sterne (nur nachts)
+      if (t > 0.3) {
+        ctx.fillStyle = `rgba(255,255,255,${(t - 0.3) * 1.4})`;
+        [
+          [50, 15],
+          [120, 8],
+          [200, 20],
+          [300, 10],
+          [400, 18],
+          [500, 7],
+          [350, 25],
+        ].forEach(([sx, sy]) => {
+          ctx.fillRect(sx, sy, 2, 2);
+        });
+      }
+      // Mond (nur nachts)
+      if (t > 0.5) {
+        ctx.fillStyle = `rgba(255,240,180,${(t - 0.5) * 2})`;
+        ctx.beginPath();
+        ctx.arc(W - 60, 30, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(${r},${g},${b},${(t - 0.5) * 2})`;
+        ctx.beginPath();
+        ctx.arc(W - 54, 26, 11, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Clouds
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -1086,6 +1165,58 @@ export function initDinoGame({ authFetch, escapeHtml }) {
       }
     }
 
+    function drawPowerup(ctx, p) {
+      ctx.save();
+      ctx.fillStyle = p.type === 'shield' ? '#facc15' : '#a78bfa';
+      ctx.beginPath();
+      ctx.arc(p.x + 12, GROUND + dino.h - p.h + 12, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        p.type === 'shield' ? '🛡' : '⚡',
+        p.x + 12,
+        GROUND + dino.h - p.h + 17
+      );
+      ctx.restore();
+    }
+
+    function drawUfo(ctx, u) {
+      ctx.save();
+      ctx.fillStyle = '#a78bfa';
+      ctx.beginPath();
+      ctx.ellipse(u.x, u.y, 28, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#7c3aed';
+      ctx.beginPath();
+      ctx.ellipse(u.x, u.y - 6, 14, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(167,139,250,0.4)';
+      ctx.beginPath();
+      ctx.ellipse(u.x, u.y + 12, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Lichter
+      [-16, 0, 16].forEach((ox, i) => {
+        ctx.fillStyle = ['#facc15', '#f87171', '#34d399'][i];
+        ctx.beginPath();
+        ctx.arc(u.x + ox, u.y + 6, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    function drawDroppedRock(ctx, r) {
+      ctx.fillStyle = '#888';
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#aaa';
+      ctx.beginPath();
+      ctx.arc(r.x - 2, r.y - 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     const obstacleTypes = ['cactus', 'cactus', 'cactus2', 'rock', 'tree'];
     const obstacleHeights = { cactus: 60, cactus2: 48, rock: 30, tree: 78 };
     const obstacleWidths = { cactus: 27, cactus2: 36, rock: 45, tree: 27 };
@@ -1116,6 +1247,48 @@ export function initDinoGame({ authFetch, escapeHtml }) {
 
         drawBackground(ctx);
 
+        drawBackground(ctx);
+
+        // Weltraum-Overlay bei Doppelsprung
+        if (inSpace) {
+          spaceTimer--;
+          const alpha = Math.min(
+            1,
+            spaceTimer < 20 ? spaceTimer / 20 : (80 - spaceTimer) / 20 + 0.7
+          );
+          ctx.save();
+          ctx.fillStyle = `rgba(10,10,40,${Math.min(0.85, alpha)})`;
+          ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = 'white';
+          [
+            [30, 10],
+            [80, 25],
+            [150, 8],
+            [220, 35],
+            [310, 15],
+            [390, 28],
+            [470, 5],
+            [530, 20],
+          ].forEach(([sx, sy]) => {
+            ctx.fillRect(
+              sx,
+              sy,
+              Math.random() < 0.1 ? 3 : 2,
+              Math.random() < 0.1 ? 3 : 2
+            );
+          });
+          ctx.fillStyle = '#1d4ed8';
+          ctx.beginPath();
+          ctx.arc(W / 2, H + 60, 90, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#16a34a';
+          ctx.beginPath();
+          ctx.arc(W / 2 - 20, H + 50, 30, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          if (spaceTimer <= 0) inSpace = false;
+        }
+
         // Physics
         dino.vy += 0.7;
         dino.y += dino.vy;
@@ -1130,8 +1303,8 @@ export function initDinoGame({ authFetch, escapeHtml }) {
 
         // Obstacles
         if (!gameOver) frameCount++;
-        speed = 5.5 + Math.floor(score / 300) * 0.6;
-        const interval = Math.max(45, 80 - Math.floor(score / 150));
+        speed = 5.5 + Math.floor(score / 150) * 0.7;
+        const interval = Math.max(35, 80 - Math.floor(score / 80));
         if (!gameOver && frameCount % interval === 0) {
           const type =
             obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
@@ -1150,22 +1323,213 @@ export function initDinoGame({ authFetch, escapeHtml }) {
           }
         }
 
+        // Power-up spawnen alle ~400 frames
+        if (!gameOver && frameCount % 400 === 200) {
+          const type = Math.random() < 0.5 ? 'shield' : 'double';
+          powerups.push({ x: W, h: 40, type });
+        }
+
+        // Power-ups updaten
+        for (let i = powerups.length - 1; i >= 0; i--) {
+          const p = powerups[i];
+          if (!gameOver) p.x -= speed;
+          drawPowerup(ctx, p);
+          // Kollision mit Dino
+          if (
+            dino.x + 14 < p.x + 24 &&
+            dino.x + 30 > p.x &&
+            dino.y + 12 < GROUND + dino.h &&
+            dino.y + dino.h > GROUND + dino.h - p.h
+          ) {
+            if (p.type === 'shield') {
+              shieldActive = true;
+              shieldTimer = 300;
+            } else {
+              doubleJumpReady = true;
+              doubleJumpUsed = false;
+            }
+            powerups.splice(i, 1);
+            continue;
+          }
+          if (p.x + 24 < 0) powerups.splice(i, 1);
+        }
+
+        // Timers
+        if (shieldActive) {
+          shieldTimer--;
+          if (shieldTimer <= 0) shieldActive = false;
+        }
+
+        // Schild-Aura
+        if (shieldActive) {
+          ctx.save();
+          ctx.strokeStyle = `rgba(250,204,21,${0.4 + 0.3 * Math.sin(frameCount * 0.2)})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.ellipse(dino.x + 52, dino.y + 28, 36, 40, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
         for (let i = obstacles.length - 1; i >= 0; i--) {
           const o = obstacles[i];
           if (!gameOver) o.x -= speed;
           drawObstacle(ctx, o);
           if (
-            dino.x + 8 < o.x + o.w &&
-            dino.x + dino.w - 8 > o.x &&
-            dino.y + 10 < GROUND + dino.h &&
-            dino.y + dino.h > GROUND + dino.h - o.h
+            dino.x + 14 < o.x + o.w - 4 &&
+            dino.x + dino.w - 10 > o.x + 4 &&
+            dino.y + 12 < GROUND + dino.h &&
+            dino.y + dino.h > GROUND + dino.h - o.h + 4
           ) {
+            if (shieldActive) {
+              shieldActive = false;
+              shieldTimer = 0;
+              obstacles.splice(i, 1);
+              continue;
+            }
             if (!gameOver) saveScore(score);
             gameOver = true;
           }
           if (o.x + o.w < 0) {
             obstacles.splice(i, 1);
             if (!gameOver) score += 10;
+          }
+        }
+
+        // Meteor-Event alle 800 Punkte
+        if (
+          !gameOver &&
+          score > 0 &&
+          score % 800 < 10 &&
+          !meteorEventActive &&
+          meteorWarningTimer <= 0
+        ) {
+          meteorWarningTimer = 80;
+        }
+        if (meteorWarningTimer > 0) {
+          meteorWarningTimer--;
+          // Warnung anzeigen
+          ctx.save();
+          ctx.fillStyle = `rgba(239,68,68,${0.4 + 0.4 * Math.sin(frameCount * 0.3)})`;
+          ctx.font = 'bold 16px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('⚠ METEOR-REGEN ⚠', W / 2, 40);
+          ctx.restore();
+          if (meteorWarningTimer <= 0) {
+            meteorEventActive = true;
+            meteorEventTimer = 300;
+          }
+        }
+
+        // Meteor-Event
+        if (meteorEventActive && !gameOver) {
+          meteorEventTimer--;
+          if (meteorEventTimer <= 0) meteorEventActive = false;
+          // Meteore spawnen
+          if (frameCount % 18 === 0) {
+            meteors.push({
+              x: Math.random() * W,
+              y: -20,
+              vx: (Math.random() - 0.3) * 2,
+              vy: 5 + Math.random() * 3,
+              size: 6 + Math.random() * 8,
+            });
+          }
+        }
+
+        // Meteore zeichnen und bewegen
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          const m = meteors[i];
+          m.x += m.vx;
+          m.y += m.vy;
+          // Schweif
+          ctx.save();
+          ctx.strokeStyle = 'rgba(251,146,60,0.5)';
+          ctx.lineWidth = m.size * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(m.x, m.y);
+          ctx.lineTo(m.x - m.vx * 5, m.y - m.vy * 5);
+          ctx.stroke();
+          // Meteor
+          ctx.fillStyle = '#f97316';
+          ctx.beginPath();
+          ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fbbf24';
+          ctx.beginPath();
+          ctx.arc(
+            m.x - m.size * 0.3,
+            m.y - m.size * 0.3,
+            m.size * 0.4,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+          ctx.restore();
+
+          // Boden erreicht
+          if (m.y > GROUND + dino.h) {
+            meteors.splice(i, 1);
+            continue;
+          }
+          // Kollision mit Dino
+          if (
+            !shieldActive &&
+            Math.abs(m.x - (dino.x + 52)) < m.size + 16 &&
+            Math.abs(m.y - (dino.y + 28)) < m.size + 20
+          ) {
+            if (!gameOver) saveScore(score);
+            gameOver = true;
+          }
+        }
+
+        // UFO spawnen ab Score 300
+        if (!gameOver && score > 300 && !ufo && Math.random() < 0.002) {
+          ufo = { x: W + 30, y: 40, dir: -1, phase: 0 };
+        }
+
+        // UFO bewegen und zeichnen
+        if (ufo) {
+          ufo.x += ufo.dir * (speed * 0.5);
+          ufo.y = 40 + Math.sin(ufo.phase) * 12;
+          ufo.phase += 0.05;
+          drawUfo(getCtx(), ufo);
+
+          // UFO droppt Fels
+          if (
+            !gameOver &&
+            ufoDropCooldown <= 0 &&
+            ufo.x < W - 50 &&
+            ufo.x > 100
+          ) {
+            droppedRocks.push({ x: ufo.x, y: ufo.y });
+            ufoDropCooldown = 60;
+          }
+          if (ufoDropCooldown > 0) ufoDropCooldown--;
+
+          // UFO verschwindet wenn links raus
+          if (ufo.x < -60) ufo = null;
+        }
+
+        // Dropped rocks
+        for (let i = droppedRocks.length - 1; i >= 0; i--) {
+          const r = droppedRocks[i];
+          r.y += 4;
+          drawDroppedRock(getCtx(), r);
+          // Boden erreicht → wird zu Hindernis
+          if (r.y >= GROUND + dino.h - 15) {
+            obstacles.push({ x: r.x - 15, w: 30, h: 20, type: 'rock' });
+            droppedRocks.splice(i, 1);
+            continue;
+          }
+          // Kollision mit Dino in der Luft
+          if (
+            !shieldActive &&
+            Math.abs(r.x - (dino.x + 30)) < 20 &&
+            Math.abs(r.y - dino.y) < 20
+          ) {
+            if (!gameOver) saveScore(score);
+            gameOver = true;
           }
         }
 
