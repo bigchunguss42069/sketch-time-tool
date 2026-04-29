@@ -5,6 +5,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const argon2 = require('argon2');
 const PDFDocument = require('pdfkit');
 const { Pool } = require('pg');
 const exportPdfBody = express.json({ limit: '10mb' });
@@ -226,9 +227,7 @@ const {
 
 const {
   readWeekLocksFromDb,
-  readUserWeekLocksFromDb,
-  setWeekLockState,
-  clearWeekLockState,
+
   autoLockPreviousWeek,
   registerWeekLockRoutes,
 } = createWeekLocksService(db);
@@ -243,13 +242,12 @@ const {
   loadLatestMonthSubmission,
 } = createSubmissionsService(db, mapDbUser);
 
-const { buildPayrollPeriodDataForUser, registerPayrollRoutes } =
-  createPayrollService(db, {
-    computeRangeUeZ1,
-    computePayrollPeriodOvertimeFromSubmission,
-    loadLatestMonthSubmission,
-    aggregatePayrollFromSubmission,
-  });
+const { registerPayrollRoutes } = createPayrollService(db, {
+  computeRangeUeZ1,
+  computePayrollPeriodOvertimeFromSubmission,
+  loadLatestMonthSubmission,
+  aggregatePayrollFromSubmission,
+});
 
 const { autoTransmitForUser, registerTransmitRoutes } = createTransmitService(
   db,
@@ -1137,7 +1135,7 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
       [id, username, passwordHash, role, teamId || null, email || null]
     );
 
-    const user = await findUserById(id);
+    const user = await findUserById(db, id);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error('Failed to create user', err);

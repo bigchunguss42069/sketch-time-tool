@@ -476,7 +476,7 @@ function createKontenService(db) {
 
     const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = DAY_KEYS[weekday];
-    let baseSoll = 8.0;
+    let baseSoll = 8.3;
     let employmentPct = 100;
 
     if (result.rows.length > 0) {

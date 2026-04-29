@@ -498,15 +498,7 @@ function renderAdminPayrollCards(rows) {
     metrics.appendChild(
       createPayrollMetric('Präsenz', formatPayrollHours(totals.praesenzStunden))
     );
-    metrics.appendChild(
-      createPayrollMetric('Pikett', formatPayrollHours(totals.pikettHours))
-    );
-    metrics.appendChild(
-      createPayrollMetric(
-        'ÜZ3 Wochenende',
-        formatPayrollHours(totals.ueZ3Hours)
-      )
-    );
+
     metrics.appendChild(
       createPayrollMetric(
         'Morgenessen',
@@ -577,8 +569,11 @@ function renderAdminPayrollCards(rows) {
     overtimeTitle.textContent = 'Überzeit in dieser Lohnperiode';
 
     const overtimeMetrics = document.createElement('div');
-    overtimeMetrics.className =
-      'admin-payroll-metrics admin-payroll-metrics--secondary';
+    overtimeMetrics.className = 'admin-payroll-metrics';
+
+    overtimeMetrics.appendChild(
+      createPayrollMetric('ÜZ1', formatPayrollSignedHours(overtime.ueZ1Raw))
+    );
 
     if (overtime.ueZ1Correction !== 0) {
       overtimeMetrics.appendChild(
@@ -3215,7 +3210,7 @@ function computeAbsenceDaysForYear(request, year) {
 }
 
 function calculateUsedVacationDaysFromFlags(year) {
-  const DAILY_SOLL = 8.0;
+  const DAILY_SOLL = 8.3;
   let totalDays = 0;
 
   Object.entries(dayStore).forEach(([dateKey, dayData]) => {
@@ -3711,6 +3706,7 @@ async function updateOvertimeYearCard() {
       (Number(konto.ueZ3) || 0) + (Number(konto.ueZ3Correction) || 0);
     const officialVacationDays = Number(konto.vacationDays) || 0;
 
+    overtimeYearUeZ1El.textContent = formatHoursSigned(officialUeZ1Raw);
     overtimeYearUeZ2El.textContent = formatHours(officialUeZ2);
     overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
 
@@ -7498,7 +7494,7 @@ if (modalEmploymentPctEl) {
   modalEmploymentPctEl.addEventListener('input', () => {
     const pct = Number(modalEmploymentPctEl.value);
     if (!pct || pct < 10 || pct > 100) return;
-    const dailyHours = Math.round(((8 * pct) / 100) * 10) / 10; // auf 0.1 runden
+    const dailyHours = Math.round(((8.3 * pct) / 100) * 10) / 10;
     ['schedMon', 'schedTue', 'schedWed', 'schedThu', 'schedFri'].forEach(
       (id) => {
         const el = document.getElementById(id);

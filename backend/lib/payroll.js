@@ -11,7 +11,7 @@
  *
  * Abhängigkeiten:
  * - db (über Factory)
- * - computeRangeUeZ1AndVorarbeit, computePayrollPeriodOvertimeFromSubmission (compute-async.js)
+ * - computeRangeUeZ1, computePayrollPeriodOvertimeFromSubmission (compute-async.js)
  * - loadLatestMonthSubmission (submissions.js)
  * - createPdfHelpers, fmtHours, fmtSignedHours, fmtCount (pdf-helpers.js)
  *
@@ -105,7 +105,7 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
  * Erstellt alle Payroll-Funktionen mit DB-Zugriff.
  *
  * @param {import('pg').Pool} db
- * @param {{ computeRangeUeZ1AndVorarbeit, computePayrollPeriodOvertimeFromSubmission, loadLatestMonthSubmission, aggregatePayrollFromSubmission }} deps
+ * @param {{ computeRangeUeZ1, computePayrollPeriodOvertimeFromSubmission, loadLatestMonthSubmission, aggregatePayrollFromSubmission }} deps
  * @returns {object}
  */
 function createPayrollService(
@@ -205,11 +205,14 @@ function createPayrollService(
       );
 
       const { ueZ1Raw: rangeRaw, ueZ1Net: rangeNet } = await computeRangeUeZ1(
-        monthSubmission.payload,
-        fromKey,
-        toKey,
-        userId
+        submission,
+        clippedFrom,
+        clippedTo,
+        user.id
       );
+
+      ueZ1Net = r1(ueZ1Net + rangeNet);
+      ueZ1RawTotal = r1(ueZ1RawTotal + rangeRaw);
 
       totals.praesenzStunden += partial.praesenzStunden;
       totals.ueZ3Hours += partial.ueZ3Hours;
@@ -379,7 +382,11 @@ function createPayrollService(
       const type = String(row.type || '').toLowerCase();
       if (!absencesByType[type]) absencesByType[type] = { days: 0, hours: 0 };
       const days = computeAbsenceDaysInPeriod(
-        { from: row.from_date, to: row.to_date, days: row.days },
+        {
+          from: formatDateKey(new Date(row.from_date)),
+          to: formatDateKey(new Date(row.to_date)),
+          days: row.days,
+        },
         periodStart,
         periodEnd
       );
@@ -768,8 +775,7 @@ function createPayrollService(
 
           sectionTitle('Überzeit in dieser Lohnperiode');
           const overtimeLines = [
-            ['ÜZ1 roh', fmtSignedHours(row.overtime.ueZ1Raw)],
-            [],
+            ['ÜZ1', fmtSignedHours(row.overtime.ueZ1Raw)],
             ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
             ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
           ];
