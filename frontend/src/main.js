@@ -3091,8 +3091,8 @@ function renderAdminKontenGrid(rows) {
         <label>ÜZ3 Anpassung
           <input class="admin-konto-input" data-field="ueZ3Correction" type="number" step="0.1" value="0" placeholder="z.B. -2.0">
         </label>
-        <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${vacBalance}">
-         
+        <label>Ferien-Guthaben
+          <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${vacBalance}">
         </label>
         <label>Ferien/Jahr
           <input class="admin-konto-input" data-field="vacationDaysPerYear" type="number" step="1" value="${vacPerYear}">
@@ -4762,6 +4762,52 @@ if (adminTeamFilterAbsencesEl)
     adminActiveTeamFilterAbsences = e.target.value;
     loadAdminPersonnel();
   });
+
+document
+  .getElementById('exportAllPayrollBtn')
+  ?.addEventListener('click', async () => {
+    const { from, to } = getPayrollSelectedPeriod();
+    if (!from || !to) {
+      showToast('Bitte zuerst einen Zeitraum auswählen.', 'warning');
+      return;
+    }
+
+    const fromLabel = formatDateDisplayEU(from);
+    const toLabel = formatDateDisplayEU(to);
+
+    const confirmed = confirm(
+      `Alle Lohnabrechnungen exportieren?\n\nZeitraum: ${fromLabel} – ${toLabel}\n\nEs werden alle Teams exportiert.`
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('exportAllPayrollBtn');
+    btn.disabled = true;
+    btn.textContent = 'Exportiere…';
+
+    try {
+      const res = await authFetch('/api/payroll/export-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      });
+      if (!res.ok) throw new Error('Export fehlgeschlagen');
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lohnabrechnung_${from.slice(0, 7)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('ZIP erfolgreich exportiert', 'success');
+    } catch (err) {
+      showToast(err.message || 'Export fehlgeschlagen', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Alle exportieren (ZIP)';
+    }
+  });
+
 if (adminTeamFilterPayrollEl)
   adminTeamFilterPayrollEl.addEventListener('change', (e) => {
     adminActiveTeamFilterPayroll = e.target.value;
@@ -6267,6 +6313,14 @@ function loadAdminSummary() {
 
                 dayRight.appendChild(sdot);
                 dayRight.appendChild(stxt);
+
+                if (d.breakIssue) {
+                  const warn = document.createElement('span');
+                  warn.className = 'admin-break-warning';
+                  warn.title = 'Pausenzeit nicht eingehalten';
+                  warn.textContent = '⚠';
+                  dayRight.appendChild(warn);
+                }
 
                 row.appendChild(dayLeft);
                 row.appendChild(dayCenter);
@@ -8123,6 +8177,50 @@ function renderStampEditSection(dateKey) {
   updateDayTitleWithDate();
 }
 
+function checkBreakCompliance(stamps) {
+  // Alle abgeschlossenen Paare berechnen
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  let workMinutes = 0;
+  let breakMinutes = 0;
+  let lastIn = null;
+  let lastOut = null;
+
+  for (const s of sorted) {
+    if (s.type === 'in') {
+      if (lastOut !== null) {
+        // Pause zwischen letztem Out und diesem In
+        const [oh, om] = lastOut.split(':').map(Number);
+        const [ih, im] = s.time.split(':').map(Number);
+        breakMinutes += ih * 60 + im - (oh * 60 + om);
+      }
+      lastIn = s.time;
+    } else if (s.type === 'out' && lastIn !== null) {
+      const [ih, im] = lastIn.split(':').map(Number);
+      const [oh, om] = s.time.split(':').map(Number);
+      workMinutes += oh * 60 + om - (ih * 60 + im);
+      lastOut = s.time;
+      lastIn = null;
+    }
+  }
+
+  const workHours = workMinutes / 60;
+
+  // Erforderliche Pause
+  let requiredMinutes = 0;
+  if (workHours >= 9) requiredMinutes = 60;
+  else if (workHours >= 7) requiredMinutes = 30;
+  else if (workHours >= 5.5) requiredMinutes = 15;
+
+  if (requiredMinutes === 0) return null; // keine Pausenpflicht
+  if (breakMinutes >= requiredMinutes) return null; // Pause ok
+
+  return {
+    workHours: Math.round(workHours * 10) / 10,
+    breakMinutes,
+    requiredMinutes,
+  };
+}
+
 // Stamp Button
 if (stampBtn) {
   stampBtn.addEventListener('click', () => {
@@ -8135,9 +8233,33 @@ if (stampBtn) {
 
     saveToStorage();
     renderStampCard();
-    sendLiveStamp(todayKey, dayData.stamps); // ← NEU
+    sendLiveStamp(todayKey, dayData.stamps);
+
+    // Pausenkontrolle nur beim Ausstempeln
+    if (stamped) {
+      const issue = checkBreakCompliance(dayData.stamps);
+      if (issue) {
+        const workLabel = String(issue.workHours).replace('.', ',');
+        const breakLabel =
+          issue.breakMinutes < 60
+            ? `${issue.breakMinutes} Min`
+            : `${Math.floor(issue.breakMinutes / 60)}h ${issue.breakMinutes % 60}min`;
+        const requiredLabel = `${issue.requiredMinutes} Min`;
+        const modal = document.getElementById('breakWarningModal');
+        const text = document.getElementById('breakWarningText');
+        if (modal && text) {
+          text.textContent = `Arbeitszeit heute: ${workLabel}h\nErfasste Pause: ${breakLabel}\nGesetzlich erforderlich: ${requiredLabel}`;
+          modal.style.display = 'flex';
+        }
+      }
+    }
   });
 }
+
+document.getElementById('breakWarningOkBtn')?.addEventListener('click', () => {
+  const modal = document.getElementById('breakWarningModal');
+  if (modal) modal.style.display = 'none';
+});
 
 async function sendLiveStamp(todayKey, stamps) {
   try {

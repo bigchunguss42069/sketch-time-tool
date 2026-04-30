@@ -242,7 +242,11 @@ const {
   loadLatestMonthSubmission,
 } = createSubmissionsService(db, mapDbUser);
 
-const { registerPayrollRoutes } = createPayrollService(db, {
+const {
+  registerPayrollRoutes,
+  buildPayrollPeriodDataForUser,
+  generatePayrollPdfBuffer,
+} = createPayrollService(db, {
   computeRangeUeZ1,
   computePayrollPeriodOvertimeFromSubmission,
   loadLatestMonthSubmission,
@@ -374,6 +378,79 @@ registerTransmitRoutes(app, requireAuth, requireAdmin);
 
 registerAuditPdfRoute(app, requireAuth, requireAdmin, db, TEAMS);
 
+// POST /api/payroll/export-all — Alle Lohnabrechnungen als ZIP
+// POST /api/payroll/export-all
+app.post(
+  '/api/payroll/export-all',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { from, to } = req.body;
+      if (!from || !to)
+        return res.status(400).json({ ok: false, error: 'from/to fehlt' });
+
+      const archiver = require('archiver');
+      const { parseIsoDateOnly } = require('./lib/holidays');
+      const periodStart = parseIsoDateOnly(from);
+      const periodEnd = parseIsoDateOnly(to);
+      if (!periodStart || !periodEnd)
+        return res
+          .status(400)
+          .json({ ok: false, error: 'Ungültiger Zeitraum' });
+
+      const users = await listUsersFromDb({ role: 'user' });
+      const monthStr = from.slice(0, 7);
+      const zipName = `lohnabrechnung_${monthStr}.zip`;
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+      const archive = archiver('zip', { zlib: { level: 6 } });
+      archive.on('error', (err) => {
+        console.error('Archive error:', err);
+      });
+      archive.pipe(res);
+
+      for (const user of users) {
+        try {
+          const data = await buildPayrollPeriodDataForUser(
+            user,
+            periodStart,
+            periodEnd
+          );
+          if (!data) continue;
+          const pdfBuffer = await generatePayrollPdfBuffer(
+            data,
+            periodStart,
+            periodEnd,
+            req.user.username
+          );
+          const teamName = (
+            TEAMS.find((t) => t.id === user.teamId)?.name || 'Kein_Team'
+          )
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_\-]/gi, '');
+          const safeName = (user.username || 'user').replace(
+            /[^a-z0-9_\-]/gi,
+            '_'
+          );
+          archive.append(pdfBuffer, {
+            name: `${teamName}/${safeName}_${monthStr}.pdf`,
+          });
+        } catch (err) {
+          console.error(`PDF failed for ${user.username}:`, err.message);
+        }
+      }
+
+      await archive.finalize();
+    } catch (err) {
+      console.error('Export-all failed:', err);
+      if (!res.headersSent)
+        res.status(500).json({ ok: false, error: 'Export fehlgeschlagen' });
+    }
+  }
+);
 // ============================================================================
 // Admin transmission overview routes
 // ============================================================================

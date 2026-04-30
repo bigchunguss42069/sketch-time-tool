@@ -362,7 +362,7 @@ function createPayrollService(
     // Korrekturen aus Konten
     const kontoRes = await db.query(
       `SELECT ue_z1, ue_z1_correction, ue_z2, ue_z2_correction,
-              ue_z3, ue_z3_correction, vacation_days, vacation_days_correction
+              ue_z3, ue_z3_correction, vacation_days
        FROM konten WHERE username = $1`,
       [user.username]
     );
@@ -379,7 +379,6 @@ function createPayrollService(
     const ueZ3Saldo = r1(
       (Number(kontoRow.ue_z3) || 0) + (Number(kontoRow.ue_z3_correction) || 0)
     );
-    const ferienCorrection = r1(Number(kontoRow.vacation_days_correction) || 0);
     const ferienSaldo = r1(Number(kontoRow.vacation_days) || 0);
 
     // Absenzen direkt aus DB
@@ -439,7 +438,6 @@ function createPayrollService(
         ueZ3Correction,
         ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
         ferienVerbrauch: r1(totals.ferienDays),
-        ferienCorrection,
         ferienSaldo,
       },
 
@@ -616,6 +614,188 @@ function createPayrollService(
    * @param {Function} listUsersFromDb
    * @param {Function} findUserByUsername
    */
+
+  async function generatePayrollPdfBuffer(
+    row,
+    periodStart,
+    periodEnd,
+    exportedBy
+  ) {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({
+        margin: 42,
+        size: 'A4',
+        info: {
+          Title: `Lohnabrechnung ${row.displayName}`,
+          Author: 'Hours App',
+        },
+      });
+
+      const chunks = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const { ensurePdfSpace, sectionTitle, writeMetricLines } =
+        createPdfHelpers(doc);
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(16)
+        .text('Lohnabrechnung – Audit Export');
+      doc.moveDown(0.4);
+      doc.font('Helvetica').fontSize(9).text(`Mitarbeiter: ${row.displayName}`);
+      doc.text(
+        `Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`
+      );
+      doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
+      doc.text(`Exportiert von: ${exportedBy || 'admin'}`);
+      doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
+
+      sectionTitle('Lohndaten im Zeitraum');
+      writeMetricLines([
+        ['Präsenz Ist', fmtHours(row.totals.praesenzStunden)],
+        ['Präsenz Soll', fmtHours(row.overtime.sollTotal || 0)],
+        ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
+        ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
+        ['Abendessen', fmtCount(row.totals.abendessenCount)],
+        ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
+        ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
+      ]);
+
+      if (row.absencesByType && Object.keys(row.absencesByType).length > 0) {
+        sectionTitle('Absenzen im Zeitraum');
+        const TYPE_LABELS = {
+          ferien: 'Ferien',
+          krank: 'Krank / Arztbesuch',
+          unfall: 'Unfall',
+          militaer: 'Militär',
+          mutterschaft: 'Mutterschaft',
+          vaterschaft: 'Vaterschaftsurlaub',
+          bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+          sonstiges: 'Sonstiges',
+        };
+        const absLines = Object.entries(row.absencesByType)
+          .filter(([, d]) => d.days > 0 || d.hours > 0)
+          .map(([type, d]) => [
+            TYPE_LABELS[type] || type,
+            d.hours > 0 && d.days < 1
+              ? `${d.hours}h`
+              : d.hours > 0
+                ? `${d.days}d / ${d.hours}h`
+                : `${d.days}d`,
+          ]);
+        if (absLines.length > 0) writeMetricLines(absLines);
+      }
+
+      sectionTitle('Ferien');
+      writeMetricLines([
+        ['Verbrauch Periode', `${row.overtime.ferienVerbrauch}d`],
+        ['Saldo', `${row.overtime.ferienSaldo}d`],
+      ]);
+
+      sectionTitle('Veränderung in dieser Lohnperiode');
+      writeMetricLines([
+        ['ÜZ1', fmtSignedHours(row.overtime.ueZ1Raw)],
+        ['ÜZ2 (Pikett)', fmtSignedHours(row.overtime.ueZ2)],
+        ['ÜZ3 (Wochenend-Pikett)', fmtSignedHours(row.overtime.ueZ3)],
+      ]);
+
+      const hasCorrections =
+        row.overtime.ueZ1Correction !== 0 ||
+        row.overtime.ueZ2Correction !== 0 ||
+        row.overtime.ueZ3Correction !== 0;
+      if (hasCorrections) {
+        sectionTitle('Manuelle Korrekturen (Admin)');
+        const corrLines = [];
+        if (row.overtime.ueZ1Correction !== 0)
+          corrLines.push([
+            'ÜZ1 Korrektur',
+            fmtSignedHours(row.overtime.ueZ1Correction),
+          ]);
+        if (row.overtime.ueZ2Correction !== 0)
+          corrLines.push([
+            'ÜZ2 Korrektur',
+            fmtSignedHours(row.overtime.ueZ2Correction),
+          ]);
+        if (row.overtime.ueZ3Correction !== 0)
+          corrLines.push([
+            'ÜZ3 Korrektur',
+            fmtSignedHours(row.overtime.ueZ3Correction),
+          ]);
+        writeMetricLines(corrLines);
+      }
+
+      sectionTitle('Aktuelles Saldo');
+      writeMetricLines([
+        ['ÜZ1 Saldo', fmtSignedHours(row.overtime.ueZ1Saldo)],
+        ['ÜZ2 Saldo', fmtSignedHours(row.overtime.ueZ2Saldo)],
+        ['ÜZ3 Saldo', fmtSignedHours(row.overtime.ueZ3Saldo)],
+      ]);
+
+      sectionTitle('Berücksichtigte Übertragungen');
+      writeMetricLines([
+        [
+          'Monate berücksichtigt',
+          (row.coverage.transmittedMonths || []).join(', ') || '–',
+        ],
+        [
+          'Monate fehlend',
+          (row.coverage.missingMonths || []).join(', ') || '–',
+        ],
+      ]);
+
+      sectionTitle('Tagesdetails');
+      if (!row.auditRows.length) {
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .text('Keine relevanten Einträge im ausgewählten Zeitraum.');
+      } else {
+        row.auditRows.forEach((entry) => {
+          ensurePdfSpace(54);
+          doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+          if (entry.stamps && entry.stamps.length > 0) {
+            const pairs = [];
+            const sorted = [...entry.stamps];
+            for (let i = 0; i < sorted.length - 1; i++) {
+              if (sorted[i].type === 'in' && sorted[i + 1].type === 'out') {
+                pairs.push(`${sorted[i].time}–${sorted[i + 1].time}`);
+                i++;
+              }
+            }
+            doc
+              .font('Helvetica')
+              .fontSize(8)
+              .fillColor('#555555')
+              .text(`Stempel: ${pairs.length > 0 ? pairs.join('  |  ') : '–'}`)
+              .fillColor('#000000');
+          }
+          doc
+            .font('Helvetica')
+            .fontSize(8.5)
+            .text(
+              `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
+            )
+            .text(
+              `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
+            )
+            .text(
+              `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
+            )
+            .text(
+              `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
+            );
+          if (entry.absencesText)
+            doc.text(`Abwesenheiten: ${entry.absencesText}`);
+          doc.moveDown(0.35);
+        });
+      }
+
+      doc.end();
+    });
+  }
+
   function registerPayrollRoutes(
     app,
     requireAuth,
@@ -730,187 +910,13 @@ function createPayrollService(
             `attachment; filename="${filename}"`
           );
 
-          const doc = new PDFDocument({
-            margin: 42,
-            size: 'A4',
-            info: {
-              Title: `Lohnabrechnung ${targetUser.username}`,
-              Author: 'Hours App',
-            },
-          });
-          doc.pipe(res);
-
-          const { ensurePdfSpace, sectionTitle, writeMetricLines } =
-            createPdfHelpers(doc);
-
-          doc
-            .font('Helvetica-Bold')
-            .fontSize(16)
-            .text('Lohnabrechnung – Audit Export');
-          doc.moveDown(0.4);
-          doc
-            .font('Helvetica')
-            .fontSize(9)
-            .text(`Mitarbeiter: ${row.displayName}`);
-          doc.text(
-            `Zeitraum: ${formatDateDisplayEU(formatDateKey(periodStart))} – ${formatDateDisplayEU(formatDateKey(periodEnd))}`
+          const pdfBuffer = await generatePayrollPdfBuffer(
+            row,
+            periodStart,
+            periodEnd,
+            req.user.username
           );
-          doc.text(`Exportiert am: ${new Date().toLocaleString('de-DE')}`);
-          doc.text(`Exportiert von: ${req.user.username}`);
-          doc.text('Hinweis: Nur übertragene Daten berücksichtigt.');
-
-          sectionTitle('Lohndaten im Zeitraum');
-          writeMetricLines([
-            ['Präsenz Ist', fmtHours(row.totals.praesenzStunden)],
-            ['Präsenz Soll', fmtHours(row.overtime.sollTotal || 0)],
-            ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
-            ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
-            ['Abendessen', fmtCount(row.totals.abendessenCount)],
-            ['Schmutzzulage', fmtCount(row.totals.schmutzzulageCount)],
-            ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
-          ]);
-
-          if (
-            row.absencesByType &&
-            Object.keys(row.absencesByType).length > 0
-          ) {
-            sectionTitle('Absenzen im Zeitraum');
-            const TYPE_LABELS = {
-              ferien: 'Ferien',
-              krank: 'Krank / Arztbesuch',
-              unfall: 'Unfall',
-              militaer: 'Militär',
-              mutterschaft: 'Mutterschaft',
-              vaterschaft: 'Vaterschaftsurlaub',
-              bezahlteabwesenheit: 'Bezahlte Abwesenheit',
-              sonstiges: 'Sonstiges',
-            };
-            const absLines = Object.entries(row.absencesByType)
-              .filter(([, d]) => d.days > 0 || d.hours > 0)
-              .map(([type, d]) => [
-                TYPE_LABELS[type] || type,
-                d.hours > 0 && d.days < 1
-                  ? `${d.hours}h`
-                  : d.hours > 0
-                    ? `${d.days}d / ${d.hours}h`
-                    : `${d.days}d`,
-              ]);
-            if (absLines.length > 0) writeMetricLines(absLines);
-          }
-
-          sectionTitle('Ferien');
-          writeMetricLines([
-            ['Verbrauch Periode', `${row.overtime.ferienVerbrauch}d`],
-            ['Saldo', `${row.overtime.ferienSaldo}d`],
-          ]);
-
-          sectionTitle('Veränderung in dieser Lohnperiode');
-          const changeLines = [
-            ['ÜZ1', fmtSignedHours(row.overtime.ueZ1Raw)],
-            ['ÜZ2 (Pikett)', fmtSignedHours(row.overtime.ueZ2)],
-            ['ÜZ3 (Wochenend-Pikett)', fmtSignedHours(row.overtime.ueZ3)],
-          ];
-          writeMetricLines(changeLines);
-
-          const hasCorrections =
-            row.overtime.ueZ1Correction !== 0 ||
-            row.overtime.ueZ2Correction !== 0 ||
-            row.overtime.ueZ3Correction !== 0;
-
-          if (hasCorrections) {
-            sectionTitle('Manuelle Korrekturen (Admin)');
-            const corrLines = [];
-            if (row.overtime.ueZ1Correction !== 0)
-              corrLines.push([
-                'ÜZ1 Korrektur',
-                fmtSignedHours(row.overtime.ueZ1Correction),
-              ]);
-            if (row.overtime.ueZ2Correction !== 0)
-              corrLines.push([
-                'ÜZ2 Korrektur',
-                fmtSignedHours(row.overtime.ueZ2Correction),
-              ]);
-            if (row.overtime.ueZ3Correction !== 0)
-              corrLines.push([
-                'ÜZ3 Korrektur',
-                fmtSignedHours(row.overtime.ueZ3Correction),
-              ]);
-
-            writeMetricLines(corrLines);
-          }
-
-          sectionTitle('Aktuelles Saldo');
-          writeMetricLines([
-            ['ÜZ1 Saldo', fmtSignedHours(row.overtime.ueZ1Saldo)],
-            ['ÜZ2 Saldo', fmtSignedHours(row.overtime.ueZ2Saldo)],
-            ['ÜZ3 Saldo', fmtSignedHours(row.overtime.ueZ3Saldo)],
-          ]);
-
-          sectionTitle('Berücksichtigte Übertragungen');
-          writeMetricLines([
-            [
-              'Monate berücksichtigt',
-              (row.coverage.transmittedMonths || []).join(', ') || '–',
-            ],
-            [
-              'Monate fehlend',
-              (row.coverage.missingMonths || []).join(', ') || '–',
-            ],
-          ]);
-
-          sectionTitle('Tagesdetails');
-          if (!row.auditRows.length) {
-            doc
-              .font('Helvetica')
-              .fontSize(9)
-              .text('Keine relevanten Einträge im ausgewählten Zeitraum.');
-          } else {
-            row.auditRows.forEach((entry) => {
-              ensurePdfSpace(54);
-              doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
-
-              if (entry.stamps && entry.stamps.length > 0) {
-                const pairs = [];
-                const sorted = [...entry.stamps];
-                for (let i = 0; i < sorted.length - 1; i++) {
-                  if (sorted[i].type === 'in' && sorted[i + 1].type === 'out') {
-                    pairs.push(`${sorted[i].time}–${sorted[i + 1].time}`);
-                    i++;
-                  }
-                }
-                doc
-                  .font('Helvetica')
-                  .fontSize(8)
-                  .fillColor('#555555')
-                  .text(
-                    `Stempel: ${pairs.length > 0 ? pairs.join('  |  ') : '–'}`
-                  )
-                  .fillColor('#000000');
-              }
-
-              doc
-                .font('Helvetica')
-                .fontSize(8.5)
-                .text(
-                  `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
-                )
-                .text(
-                  `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
-                )
-                .text(
-                  `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
-                )
-                .text(
-                  `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
-                );
-
-              if (entry.absencesText)
-                doc.text(`Abwesenheiten: ${entry.absencesText}`);
-              doc.moveDown(0.35);
-            });
-          }
-
-          doc.end();
+          res.end(pdfBuffer);
         } catch (err) {
           console.error('Failed to export payroll PDF', err);
           return res
@@ -921,7 +927,11 @@ function createPayrollService(
     );
   }
 
-  return { buildPayrollPeriodDataForUser, registerPayrollRoutes };
+  return {
+    buildPayrollPeriodDataForUser,
+    registerPayrollRoutes,
+    generatePayrollPdfBuffer,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

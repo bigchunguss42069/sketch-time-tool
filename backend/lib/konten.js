@@ -346,7 +346,7 @@ function createKontenService(db) {
         'ueZ2Correction',
         'ueZ3Correction',
       ];
-      const absoluteFields = ['vacationDaysPerYear'];
+      const absoluteFields = ['vacationDays', 'vacationDaysPerYear'];
       const auditEntries = [];
 
       for (const field of correctionFields) {

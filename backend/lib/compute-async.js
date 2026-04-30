@@ -96,6 +96,38 @@ function buildMonthOverviewFromSubmission(
         ? computeNetWorkingHoursFromStamps(dayData.stamps)
         : null;
 
+    // Pausenkontrolle
+    let breakIssue = false;
+    if (Array.isArray(dayData?.stamps) && dayData.stamps.length >= 2) {
+      const sorted = [...dayData.stamps].sort((a, b) =>
+        a.time.localeCompare(b.time)
+      );
+      let workMin = 0;
+      let breakMin = 0;
+      let lastIn = null;
+      let lastOut = null;
+      for (const s of sorted) {
+        if (s.type === 'in') {
+          if (lastOut !== null) {
+            const [oh, om] = lastOut.split(':').map(Number);
+            const [ih, im] = s.time.split(':').map(Number);
+            breakMin += ih * 60 + im - (oh * 60 + om);
+          }
+          lastIn = s.time;
+        } else if (s.type === 'out' && lastIn !== null) {
+          const [ih, im] = lastIn.split(':').map(Number);
+          const [oh, om] = s.time.split(':').map(Number);
+          workMin += oh * 60 + om - (ih * 60 + im);
+          lastOut = s.time;
+          lastIn = null;
+        }
+      }
+      const workH = workMin / 60;
+      const required =
+        workH >= 9 ? 60 : workH >= 7 ? 30 : workH >= 5.5 ? 15 : 0;
+      if (required > 0 && breakMin < required) breakIssue = true;
+    }
+
     const hoursForTotal =
       stampHours !== null ? stampHours + pikett : totalHours;
     monthTotalHours += hoursForTotal;
@@ -146,6 +178,7 @@ function buildMonthOverviewFromSubmission(
         stampHours,
         distributedHours: Math.round(nonPikett * 10) / 10,
         status,
+        breakIssue,
       });
     }
 
