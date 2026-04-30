@@ -255,7 +255,8 @@ function createKontenService(db) {
            ue_z1_positive_by_year=$7::jsonb, vacation_days=$8,
            vacation_days_per_year=$9, credited_years=$10::jsonb,
            updated_at=$11, updated_by=$12, vorarbeit_balance=$13,
-           ue_z1_correction=$14, ue_z2_correction=$15, ue_z3_correction=$16
+           ue_z1_correction=$14, ue_z2_correction=$15, ue_z3_correction=$16,
+           vacation_days_correction=$17
        WHERE user_id=$1`,
       [
         userId,
@@ -274,6 +275,7 @@ function createKontenService(db) {
         Number(konto.ueZ1Correction) || 0,
         Number(konto.ueZ2Correction) || 0,
         Number(konto.ueZ3Correction) || 0,
+        Number(konto.vacationDaysCorrection) || 0,
       ]
     );
   }
@@ -344,7 +346,7 @@ function createKontenService(db) {
         'ueZ2Correction',
         'ueZ3Correction',
       ];
-      const absoluteFields = ['vacationDays', 'vacationDaysPerYear'];
+      const absoluteFields = ['vacationDaysPerYear'];
       const auditEntries = [];
 
       for (const field of correctionFields) {
@@ -850,6 +852,7 @@ function createKontenService(db) {
           'vacationDays',
           'vacationDaysPerYear',
         ];
+
         if (!field || !allowedFields.includes(field)) {
           return res.status(400).json({ ok: false, error: 'Ungültiges Feld' });
         }

@@ -362,7 +362,7 @@ function createPayrollService(
     // Korrekturen aus Konten
     const kontoRes = await db.query(
       `SELECT ue_z1, ue_z1_correction, ue_z2, ue_z2_correction,
-              ue_z3, ue_z3_correction, vacation_days
+              ue_z3, ue_z3_correction, vacation_days, vacation_days_correction
        FROM konten WHERE username = $1`,
       [user.username]
     );
@@ -379,6 +379,7 @@ function createPayrollService(
     const ueZ3Saldo = r1(
       (Number(kontoRow.ue_z3) || 0) + (Number(kontoRow.ue_z3_correction) || 0)
     );
+    const ferienCorrection = r1(Number(kontoRow.vacation_days_correction) || 0);
     const ferienSaldo = r1(Number(kontoRow.vacation_days) || 0);
 
     // Absenzen direkt aus DB
@@ -438,6 +439,7 @@ function createPayrollService(
         ueZ3Correction,
         ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
         ferienVerbrauch: r1(totals.ferienDays),
+        ferienCorrection,
         ferienSaldo,
       },
 
@@ -833,6 +835,7 @@ function createPayrollService(
                 'ÜZ3 Korrektur',
                 fmtSignedHours(row.overtime.ueZ3Correction),
               ]);
+
             writeMetricLines(corrLines);
           }
 

@@ -3091,8 +3091,8 @@ function renderAdminKontenGrid(rows) {
         <label>ÜZ3 Anpassung
           <input class="admin-konto-input" data-field="ueZ3Correction" type="number" step="0.1" value="0" placeholder="z.B. -2.0">
         </label>
-        <label>Ferien-Guthaben
-          <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${vacBalance}">
+        <input class="admin-konto-input" data-field="vacationDays" type="number" step="0.25" value="${vacBalance}">
+         
         </label>
         <label>Ferien/Jahr
           <input class="admin-konto-input" data-field="vacationDaysPerYear" type="number" step="1" value="${vacPerYear}">
