@@ -495,8 +495,12 @@ function renderAdminPayrollCards(rows) {
     metrics.className = 'admin-payroll-metrics';
 
     // Hauptmetriken
+    const sollTotal = row.overtime?.sollTotal || 0;
     metrics.appendChild(
-      createPayrollMetric('Präsenz', formatPayrollHours(totals.praesenzStunden))
+      createPayrollMetric(
+        'Präsenz (Ist / Soll)',
+        `${formatPayrollHours(totals.praesenzStunden)} / ${formatPayrollHours(sollTotal)}`
+      )
     );
 
     metrics.appendChild(
@@ -557,73 +561,115 @@ function renderAdminPayrollCards(rows) {
       if (data.days <= 0 && data.hours <= 0) return;
       const label = TYPE_LABELS[type] || type;
       const value =
-        data.hours > 0 ? `${data.days}d / ${data.hours}h` : `${data.days}d`;
+        data.hours > 0 && data.days < 1
+          ? `${data.hours}h`
+          : data.hours > 0
+            ? `${data.days}d / ${data.hours}h`
+            : `${data.days}d`;
       absMetrics.appendChild(createPayrollMetric(label, value));
     });
 
+    const ferienDivider = document.createElement('div');
+    ferienDivider.className = 'admin-payroll-divider';
+    const ferienTitle = document.createElement('div');
+    ferienTitle.className = 'admin-payroll-subtitle';
+    ferienTitle.textContent = 'Ferien';
+    const ferienMetrics = document.createElement('div');
+    ferienMetrics.className =
+      'admin-payroll-metrics admin-payroll-metrics--secondary';
+    ferienMetrics.appendChild(
+      createPayrollMetric(
+        'Verbrauch Periode',
+        `${overtime.ferienVerbrauch || 0}d`
+      )
+    );
+    ferienMetrics.appendChild(
+      createPayrollMetric('Saldo', `${overtime.ferienSaldo || 0}d`)
+    );
+
     const overtimeDivider = document.createElement('div');
     overtimeDivider.className = 'admin-payroll-divider';
-
     const overtimeTitle = document.createElement('div');
     overtimeTitle.className = 'admin-payroll-subtitle';
-    overtimeTitle.textContent = 'Überzeit in dieser Lohnperiode';
-
+    overtimeTitle.textContent = 'Veränderung in dieser Lohnperiode';
     const overtimeMetrics = document.createElement('div');
     overtimeMetrics.className = 'admin-payroll-metrics';
-
     overtimeMetrics.appendChild(
       createPayrollMetric('ÜZ1', formatPayrollSignedHours(overtime.ueZ1Raw))
     );
+    overtimeMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ2 (Pikett)',
+        formatPayrollSignedHours(overtime.ueZ2)
+      )
+    );
+    overtimeMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ3 (Wochenend-Pikett)',
+        formatPayrollSignedHours(overtime.ueZ3)
+      )
+    );
 
-    if (overtime.ueZ1Correction !== 0) {
-      overtimeMetrics.appendChild(
+    // Manuelle Korrekturen (nur wenn vorhanden)
+    const hasCorrections =
+      overtime.ueZ1Correction !== 0 ||
+      overtime.ueZ2Correction !== 0 ||
+      overtime.ueZ3Correction !== 0;
+
+    const corrDivider = document.createElement('div');
+    corrDivider.className = 'admin-payroll-divider';
+    const corrTitle = document.createElement('div');
+    corrTitle.className = 'admin-payroll-subtitle';
+    corrTitle.textContent = 'Manuelle Korrekturen (Admin)';
+    const corrMetrics = document.createElement('div');
+    corrMetrics.className = 'admin-payroll-metrics';
+    if (overtime.ueZ1Correction !== 0)
+      corrMetrics.appendChild(
         createPayrollMetric(
-          'ÜZ1 Korrektur (Admin)',
+          'ÜZ1 Korrektur',
           formatPayrollSignedHours(overtime.ueZ1Correction)
         )
       );
-      overtimeMetrics.appendChild(
+    if (overtime.ueZ2Correction !== 0)
+      corrMetrics.appendChild(
         createPayrollMetric(
-          'ÜZ1 Total',
-          formatPayrollSignedHours(overtime.ueZ1Total)
-        )
-      );
-    }
-
-    overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ2', formatPayrollSignedHours(overtime.ueZ2))
-    );
-    if (overtime.ueZ2Correction !== 0) {
-      overtimeMetrics.appendChild(
-        createPayrollMetric(
-          'ÜZ2 Korrektur (Admin)',
+          'ÜZ2 Korrektur',
           formatPayrollSignedHours(overtime.ueZ2Correction)
         )
       );
-      overtimeMetrics.appendChild(
+    if (overtime.ueZ3Correction !== 0)
+      corrMetrics.appendChild(
         createPayrollMetric(
-          'ÜZ2 Total',
-          formatPayrollSignedHours(overtime.ueZ2Total)
-        )
-      );
-    }
-    overtimeMetrics.appendChild(
-      createPayrollMetric('ÜZ3', formatPayrollSignedHours(overtime.ueZ3))
-    );
-    if (overtime.ueZ3Correction !== 0) {
-      overtimeMetrics.appendChild(
-        createPayrollMetric(
-          'ÜZ3 Korrektur (Admin)',
+          'ÜZ3 Korrektur',
           formatPayrollSignedHours(overtime.ueZ3Correction)
         )
       );
-      overtimeMetrics.appendChild(
-        createPayrollMetric(
-          'ÜZ3 Total',
-          formatPayrollSignedHours(overtime.ueZ3Total)
-        )
-      );
-    }
+
+    const saldoDivider = document.createElement('div');
+    saldoDivider.className = 'admin-payroll-divider';
+    const saldoTitle = document.createElement('div');
+    saldoTitle.className = 'admin-payroll-subtitle';
+    saldoTitle.textContent = 'Aktuelles Saldo';
+    const saldoMetrics = document.createElement('div');
+    saldoMetrics.className = 'admin-payroll-metrics';
+    saldoMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ1 Saldo',
+        formatPayrollSignedHours(overtime.ueZ1Saldo)
+      )
+    );
+    saldoMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ2 Saldo',
+        formatPayrollSignedHours(overtime.ueZ2Saldo)
+      )
+    );
+    saldoMetrics.appendChild(
+      createPayrollMetric(
+        'ÜZ3 Saldo',
+        formatPayrollSignedHours(overtime.ueZ3Saldo)
+      )
+    );
 
     card.appendChild(head);
     card.appendChild(metrics);
@@ -634,9 +680,23 @@ function renderAdminPayrollCards(rows) {
       card.appendChild(absMetrics);
     }
 
+    card.appendChild(ferienDivider);
+    card.appendChild(ferienTitle);
+    card.appendChild(ferienMetrics);
+
     card.appendChild(overtimeDivider);
     card.appendChild(overtimeTitle);
     card.appendChild(overtimeMetrics);
+
+    if (hasCorrections) {
+      card.appendChild(corrDivider);
+      card.appendChild(corrTitle);
+      card.appendChild(corrMetrics);
+    }
+
+    card.appendChild(saldoDivider);
+    card.appendChild(saldoTitle);
+    card.appendChild(saldoMetrics);
 
     adminPayrollGridEl.appendChild(card);
   });
@@ -2890,7 +2950,12 @@ function renderAdminAbsenceList(absences) {
     const displayDays = computeAbsenceDaysForYear(a, currentYear);
 
     const daysRow = document.createElement('div');
-    daysRow.textContent = `Tage: ${String(displayDays).replace('.', ',')}`;
+    const hoursVal =
+      typeof a.hours === 'number' && a.hours > 0 ? a.hours : null;
+    daysRow.textContent =
+      hoursVal && displayDays < 1
+        ? `Dauer: ${String(hoursVal).replace('.', ',')}h`
+        : `Tage: ${String(displayDays).replace('.', ',')}`;
 
     meta.appendChild(rangeRow);
     meta.appendChild(daysRow);

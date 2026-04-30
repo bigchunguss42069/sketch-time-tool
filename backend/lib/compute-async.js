@@ -284,6 +284,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
     const cachedEmpStartKey = await fetchEmpStartKey(userId);
     let ueZ1 = 0;
     let ueZ1Raw = 0;
+    let totalSoll = 0;
 
     const cursor = new Date(fromKey + 'T00:00:00');
     const end = new Date(toKey + 'T00:00:00');
@@ -302,6 +303,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
         cachedEmpStartKey
       );
       if (soll === 0) continue;
+      totalSoll += soll;
 
       const dayData = daysObj[dateKey] || null;
       const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
@@ -329,6 +331,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
     return {
       ueZ1Raw: round1(ueZ1Raw),
       ueZ1Net: round1(ueZ1),
+      totalSoll: round1(totalSoll),
     };
   }
 

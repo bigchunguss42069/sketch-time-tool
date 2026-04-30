@@ -193,6 +193,10 @@ async function ensureKontenTables(db) {
     `ALTER TABLE konten ADD COLUMN IF NOT EXISTS ue_z3_correction DOUBLE PRECISION NOT NULL DEFAULT 0`
   );
 
+  await db.query(
+    `ALTER TABLE konten ADD COLUMN IF NOT EXISTS vacation_days_correction DOUBLE PRECISION NOT NULL DEFAULT 0`
+  );
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS konto_adjustments (
       id SERIAL PRIMARY KEY,

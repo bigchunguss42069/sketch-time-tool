@@ -92,6 +92,7 @@ function mapKontenRow(row, fallback = {}) {
     ueZ3Correction: Number(row?.ue_z3_correction) || 0,
     ueZ1PositiveByYear: normalizeKontenObject(row?.ue_z1_positive_by_year),
     vacationDays: Number(row?.vacation_days) || 0,
+    vacationDaysCorrection: Number(row?.vacation_days_correction) || 0,
     vacationDaysPerYear: Number(row?.vacation_days_per_year) || 21,
     creditedYears: normalizeKontenObject(row?.credited_years),
     updatedAt:

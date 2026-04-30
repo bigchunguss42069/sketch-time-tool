@@ -161,6 +161,7 @@ function createPayrollService(
 
     let ueZ1Net = 0;
     let ueZ1RawTotal = 0;
+    let totalSoll = 0;
 
     const transmittedMonths = [];
     const missingMonths = [];
@@ -204,15 +205,17 @@ function createPayrollService(
         user.id
       );
 
-      const { ueZ1Raw: rangeRaw, ueZ1Net: rangeNet } = await computeRangeUeZ1(
+      const rangeResult = await computeRangeUeZ1(
         submission,
         clippedFrom,
         clippedTo,
         user.id
       );
+      const { ueZ1Raw: rangeRaw, ueZ1Net: rangeNet } = rangeResult;
 
       ueZ1Net = r1(ueZ1Net + rangeNet);
       ueZ1RawTotal = r1(ueZ1RawTotal + rangeRaw);
+      totalSoll = r1(totalSoll + (rangeResult.totalSoll || 0));
 
       totals.praesenzStunden += partial.praesenzStunden;
       totals.ueZ3Hours += partial.ueZ3Hours;
@@ -358,7 +361,8 @@ function createPayrollService(
 
     // Korrekturen aus Konten
     const kontoRes = await db.query(
-      `SELECT ue_z1_correction, ue_z2_correction, ue_z3_correction
+      `SELECT ue_z1, ue_z1_correction, ue_z2, ue_z2_correction,
+              ue_z3, ue_z3_correction, vacation_days
        FROM konten WHERE username = $1`,
       [user.username]
     );
@@ -366,6 +370,16 @@ function createPayrollService(
     const ueZ1Correction = r1(Number(kontoRow.ue_z1_correction) || 0);
     const ueZ2Correction = r1(Number(kontoRow.ue_z2_correction) || 0);
     const ueZ3Correction = r1(Number(kontoRow.ue_z3_correction) || 0);
+    const ueZ1Saldo = r1(
+      (Number(kontoRow.ue_z1) || 0) + (Number(kontoRow.ue_z1_correction) || 0)
+    );
+    const ueZ2Saldo = r1(
+      (Number(kontoRow.ue_z2) || 0) + (Number(kontoRow.ue_z2_correction) || 0)
+    );
+    const ueZ3Saldo = r1(
+      (Number(kontoRow.ue_z3) || 0) + (Number(kontoRow.ue_z3_correction) || 0)
+    );
+    const ferienSaldo = r1(Number(kontoRow.vacation_days) || 0);
 
     // Absenzen direkt aus DB
     const dbAbsResult = await db.query(
@@ -409,9 +423,13 @@ function createPayrollService(
       totals,
       absencesByType,
       overtime: {
+        sollTotal: totalSoll,
         ueZ1Raw: overtime.ueZ1Raw,
         ueZ1Correction,
         ueZ1Total: r1(overtime.ueZ1Raw + ueZ1Correction),
+        ueZ1Saldo,
+        ueZ2Saldo,
+        ueZ3Saldo,
 
         ueZ2: overtime.ueZ2,
         ueZ2Correction,
@@ -419,6 +437,8 @@ function createPayrollService(
         ueZ3: overtime.ueZ3,
         ueZ3Correction,
         ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
+        ferienVerbrauch: r1(totals.ferienDays),
+        ferienSaldo,
       },
 
       teamId: user.teamId || null,
@@ -739,9 +759,8 @@ function createPayrollService(
 
           sectionTitle('Lohndaten im Zeitraum');
           writeMetricLines([
-            ['Präsenz', fmtHours(row.totals.praesenzStunden)],
-            ['Pikett', fmtHours(row.totals.pikettHours)],
-            ['ÜZ3 Wochenende', fmtHours(row.totals.ueZ3Hours)],
+            ['Präsenz Ist', fmtHours(row.totals.praesenzStunden)],
+            ['Präsenz Soll', fmtHours(row.overtime.sollTotal || 0)],
             ['Morgenessen', fmtCount(row.totals.morgenessenCount)],
             ['Mittagessen', fmtCount(row.totals.mittagessenCount)],
             ['Abendessen', fmtCount(row.totals.abendessenCount)],
@@ -768,48 +787,61 @@ function createPayrollService(
               .filter(([, d]) => d.days > 0 || d.hours > 0)
               .map(([type, d]) => [
                 TYPE_LABELS[type] || type,
-                d.hours > 0 ? `${d.days}d / ${d.hours}h` : `${d.days}d`,
+                d.hours > 0 && d.days < 1
+                  ? `${d.hours}h`
+                  : d.hours > 0
+                    ? `${d.days}d / ${d.hours}h`
+                    : `${d.days}d`,
               ]);
             if (absLines.length > 0) writeMetricLines(absLines);
           }
 
-          sectionTitle('Überzeit in dieser Lohnperiode');
-          const overtimeLines = [
+          sectionTitle('Ferien');
+          writeMetricLines([
+            ['Verbrauch Periode', `${row.overtime.ferienVerbrauch}d`],
+            ['Saldo', `${row.overtime.ferienSaldo}d`],
+          ]);
+
+          sectionTitle('Veränderung in dieser Lohnperiode');
+          const changeLines = [
             ['ÜZ1', fmtSignedHours(row.overtime.ueZ1Raw)],
-            ['ÜZ2', fmtSignedHours(row.overtime.ueZ2)],
-            ['ÜZ3', fmtSignedHours(row.overtime.ueZ3)],
+            ['ÜZ2 (Pikett)', fmtSignedHours(row.overtime.ueZ2)],
+            ['ÜZ3 (Wochenend-Pikett)', fmtSignedHours(row.overtime.ueZ3)],
           ];
-          if (row.overtime.ueZ1Correction !== 0) {
-            overtimeLines.push([
-              'ÜZ1 Korrektur (Admin)',
-              fmtSignedHours(row.overtime.ueZ1Correction),
-            ]);
-            overtimeLines.push([
-              'ÜZ1 Total (inkl. Korrektur)',
-              fmtSignedHours(row.overtime.ueZ1Total),
-            ]);
+          writeMetricLines(changeLines);
+
+          const hasCorrections =
+            row.overtime.ueZ1Correction !== 0 ||
+            row.overtime.ueZ2Correction !== 0 ||
+            row.overtime.ueZ3Correction !== 0;
+
+          if (hasCorrections) {
+            sectionTitle('Manuelle Korrekturen (Admin)');
+            const corrLines = [];
+            if (row.overtime.ueZ1Correction !== 0)
+              corrLines.push([
+                'ÜZ1 Korrektur',
+                fmtSignedHours(row.overtime.ueZ1Correction),
+              ]);
+            if (row.overtime.ueZ2Correction !== 0)
+              corrLines.push([
+                'ÜZ2 Korrektur',
+                fmtSignedHours(row.overtime.ueZ2Correction),
+              ]);
+            if (row.overtime.ueZ3Correction !== 0)
+              corrLines.push([
+                'ÜZ3 Korrektur',
+                fmtSignedHours(row.overtime.ueZ3Correction),
+              ]);
+            writeMetricLines(corrLines);
           }
-          if (row.overtime.ueZ2Correction !== 0) {
-            overtimeLines.push([
-              'ÜZ2 Korrektur (Admin)',
-              fmtSignedHours(row.overtime.ueZ2Correction),
-            ]);
-            overtimeLines.push([
-              'ÜZ2 Total',
-              fmtSignedHours(row.overtime.ueZ2Total),
-            ]);
-          }
-          if (row.overtime.ueZ3Correction !== 0) {
-            overtimeLines.push([
-              'ÜZ3 Korrektur (Admin)',
-              fmtSignedHours(row.overtime.ueZ3Correction),
-            ]);
-            overtimeLines.push([
-              'ÜZ3 Total',
-              fmtSignedHours(row.overtime.ueZ3Total),
-            ]);
-          }
-          writeMetricLines(overtimeLines);
+
+          sectionTitle('Aktuelles Saldo');
+          writeMetricLines([
+            ['ÜZ1 Saldo', fmtSignedHours(row.overtime.ueZ1Saldo)],
+            ['ÜZ2 Saldo', fmtSignedHours(row.overtime.ueZ2Saldo)],
+            ['ÜZ3 Saldo', fmtSignedHours(row.overtime.ueZ3Saldo)],
+          ]);
 
           sectionTitle('Berücksichtigte Übertragungen');
           writeMetricLines([
