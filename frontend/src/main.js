@@ -560,12 +560,16 @@ function renderAdminPayrollCards(rows) {
     Object.entries(absMap).forEach(([type, data]) => {
       if (data.days <= 0 && data.hours <= 0) return;
       const label = TYPE_LABELS[type] || type;
-      const value =
-        data.hours > 0 && data.days < 1
-          ? `${data.hours}h`
-          : data.hours > 0
-            ? `${data.days}d / ${data.hours}h`
-            : `${data.days}d`;
+      const fullDays = Math.floor(data.days);
+      const hasPartialDay = data.days % 1 > 0;
+      let value;
+      if (fullDays > 0 && data.hours > 0) {
+        value = `${fullDays}d + ${data.hours}h`;
+      } else if (fullDays > 0) {
+        value = `${data.days}d`;
+      } else {
+        value = `${data.hours}h`;
+      }
       absMetrics.appendChild(createPayrollMetric(label, value));
     });
 

@@ -679,11 +679,12 @@ function createPayrollService(
           .filter(([, d]) => d.days > 0 || d.hours > 0)
           .map(([type, d]) => [
             TYPE_LABELS[type] || type,
-            d.hours > 0 && d.days < 1
-              ? `${d.hours}h`
-              : d.hours > 0
-                ? `${d.days}d / ${d.hours}h`
-                : `${d.days}d`,
+            (() => {
+              const full = Math.floor(d.days);
+              if (full > 0 && d.hours > 0) return `${full}d + ${d.hours}h`;
+              if (full > 0) return `${d.days}d`;
+              return `${d.hours}h`;
+            })(),
           ]);
         if (absLines.length > 0) writeMetricLines(absLines);
       }
