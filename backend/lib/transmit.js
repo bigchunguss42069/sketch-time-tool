@@ -299,11 +299,27 @@ function createTransmitService(
       payload: submission,
     });
 
-    console.log(
-      `[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`
-    );
+    try {
+      await updateKontenFromSubmission({
+        username: user.username,
+        teamId: user.teamId || null,
+        year,
+        monthIndex,
+        totals,
+        payload: submission,
+        updatedBy: 'auto-transmit',
+        computeMonthUeZ1,
+      });
+      console.log(
+        `[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`
+      );
+    } catch (err) {
+      console.error(
+        `[AutoTransmit] Konto-Update fehlgeschlagen für ${user.username}:`,
+        err.message
+      );
+    }
   }
-
   // ─────────────────────────────────────────────────────────────────────────
   // Routes
   // ─────────────────────────────────────────────────────────────────────────
