@@ -20,6 +20,7 @@
  */
 
 const crypto = require('crypto');
+const { sendAbsenceRequestAlert } = require('./cron');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mapping-Helpers
@@ -391,6 +392,23 @@ function registerAbsenceRoutes(
         decidedBy: isKrank ? 'system' : null,
       });
 
+      // Email-Alert — nur für pending Anfragen (nicht für krank/auto-accepted)
+      if (!isKrank) {
+        sendAbsenceRequestAlert({
+          username,
+          teamId: teamId || '',
+          type,
+          fromDate: from,
+          toDate: to,
+          days: Number(days) || 0,
+          hours: Number(hours) || 0,
+          comment,
+        }).catch(() => {});
+      }
+
+      console.log(
+        `[AUDIT] ABSENCE_REQUEST user=${username} team=${teamId} type=${type} from=${from} to=${to}`
+      );
       return res.json({ ok: true, absence });
     } catch (err) {
       console.error('Failed to create absence', err);

@@ -1213,6 +1213,9 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
     );
 
     const user = await findUserById(db, id);
+    console.log(
+      `[AUDIT] USER_CREATED username=${username} role=${role} by=${req.user.username} ip=${req.ip}`
+    );
     return res.json({ ok: true, user });
   } catch (err) {
     console.error('Failed to create user', err);
@@ -1351,7 +1354,11 @@ app.post(
     }
 
     try {
+      const delUser = await findUserById(db, id);
       await db.query(`DELETE FROM users WHERE id = $1`, [id]);
+      console.log(
+        `[AUDIT] USER_DELETED username=${delUser?.username || id} by=${req.user.username} ip=${req.ip}`
+      );
       return res.json({ ok: true });
     } catch (err) {
       console.error('Failed to delete user', err);

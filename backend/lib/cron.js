@@ -196,6 +196,73 @@ function registerCronJobs(
   });
 }
 
+async function sendAbsenceRequestAlert({
+  username,
+  teamId,
+  type,
+  fromDate,
+  toDate,
+  days,
+  hours,
+  comment,
+}) {
+  const teamEmailMap = {
+    montage: process.env.ALERT_EMAIL_MONTAGE,
+    service: process.env.ALERT_EMAIL_SERVICE,
+    werkstatt: process.env.ALERT_EMAIL_WERKSTATT,
+    büro: process.env.ALERT_EMAIL_BUERO,
+  };
+
+  const to = teamEmailMap[teamId];
+  if (!to) return; // kein Alert für dieses Team konfiguriert
+
+  const TYPE_LABELS = {
+    ferien: 'Ferien',
+    krank: 'Krank / Arztbesuch',
+    unfall: 'Unfall',
+    militaer: 'Militär',
+    mutterschaft: 'Mutterschaft',
+    vaterschaft: 'Vaterschaftsurlaub',
+    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+    sonstiges: 'Sonstiges',
+  };
+  const typeLabel = TYPE_LABELS[type] || type;
+  const durationLabel =
+    hours > 0 && days < 1
+      ? `${hours}h`
+      : hours > 0
+        ? `${days}d / ${hours}h`
+        : `${days}d`;
+
+  try {
+    const transporter = createMailTransporter();
+    await transporter.sendMail({
+      from: process.env.SMTP_USER,
+      to,
+      subject: `Neue Absenz-Anfrage: ${username} — ${typeLabel}`,
+      text: [
+        `Mitarbeiter: ${username}`,
+        `Typ: ${typeLabel}`,
+        `Zeitraum: ${fromDate} – ${toDate}`,
+        `Dauer: ${durationLabel}`,
+        comment ? `Kommentar: ${comment}` : '',
+        '',
+        `Bitte in der App unter Konten/Absenzen genehmigen oder ablehnen.`,
+        process.env.APP_URL || '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+    console.log(
+      `[AUDIT] ABSENCE_ALERT_SENT user=${username} team=${teamId} type=${type} to=${to}`
+    );
+  } catch (err) {
+    console.error(
+      `[AUDIT] ABSENCE_ALERT_FAILED user=${username} team=${teamId} error=${err.message}`
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,4 +271,5 @@ module.exports = {
   createMailTransporter,
   checkAndSendStampAlerts,
   registerCronJobs,
+  sendAbsenceRequestAlert,
 };

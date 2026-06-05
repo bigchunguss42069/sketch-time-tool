@@ -244,12 +244,10 @@ function createRequireAuth(db) {
       const [scheme, token] = header.split(' ');
 
       if (scheme !== 'Bearer' || !token) {
-        return res
-          .status(401)
-          .json({
-            ok: false,
-            error: 'Missing or invalid Authorization header',
-          });
+        return res.status(401).json({
+          ok: false,
+          error: 'Missing or invalid Authorization header',
+        });
       }
 
       const userId = await getSessionUserId(db, token);
@@ -329,6 +327,7 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
 
       const user = await findUserByCredentials(db, username, password);
       if (!user) {
+        console.log(`[AUDIT] LOGIN_FAILED user=${username} ip=${req.ip}`);
         return res
           .status(401)
           .json({ ok: false, error: 'Ungültige Zugangsdaten' });
@@ -337,6 +336,7 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
       const token = createToken();
       await createSessionRecord(db, { token, userId: user.id });
 
+      console.log(`[AUDIT] LOGIN_SUCCESS user=${user.username} ip=${req.ip}`);
       return res.json({
         ok: true,
         token,
@@ -458,6 +458,10 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
         [token]
       );
 
+      const resetUser = await findUserById(db, userId);
+      console.log(
+        `[AUDIT] PASSWORD_RESET user=${resetUser?.username || userId} ip=${req.ip}`
+      );
       return res.json({ ok: true });
     } catch (err) {
       console.error('Reset password error:', err);

@@ -133,8 +133,7 @@ function buildMonthOverviewFromSubmission(
     monthTotalHours += hoursForTotal;
 
     const hasAcceptedAbsence = acceptedAbsenceDays.has(dateKey);
-    const hasStamps =
-      Array.isArray(dayData?.stamps) && dayData.stamps.length > 0;
+    const hasStamps = stampHours !== null && stampHours > 0;
 
     let status = 'missing';
     if (ferien) status = 'ferien';
