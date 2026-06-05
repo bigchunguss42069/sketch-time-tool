@@ -23,7 +23,12 @@
  *   → Arzt/Krank deckt Fehlzeit aber generiert keine ÜZ
  */
 
-const { formatDateKey, getISOWeekInfo } = require('./holidays');
+const {
+  formatDateKey,
+  getISOWeekInfo,
+  isBernHolidayKey,
+  isCompanyBridgeDay,
+} = require('./holidays');
 const {
   round1,
   toNumber,
@@ -136,11 +141,12 @@ function buildMonthOverviewFromSubmission(
     const hasStamps = stampHours !== null && stampHours > 0;
 
     let status = 'missing';
-    if (ferien) status = 'ferien';
+    if (isBernHolidayKey(dateKey)) status = 'holiday';
+    else if (isCompanyBridgeDay(dateKey)) status = 'bridge';
+    else if (ferien) status = 'ferien';
     else if (hasAcceptedAbsence) status = 'absence';
     else if (hasStamps) status = 'ok';
-    else if (nonPikett > 0) status = 'ok'; // Tagesstunden/Kommission ohne Stempel
-    // Nur Pikett → bleibt 'missing'
+    else if (nonPikett > 0) status = 'ok';
 
     const { week, year: weekYear } = getISOWeekInfo(cursor);
     const wk = `${weekYear}-W${week}`;

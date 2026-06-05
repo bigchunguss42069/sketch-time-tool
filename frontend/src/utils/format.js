@@ -345,11 +345,14 @@ export function statusLabel(s) {
  * @param {string} status
  * @returns {string}
  */
+
 export function adminStatusText(status) {
   if (status === 'ok') return 'OK';
   if (status === 'ok-unverteilt') return 'Unverteilt';
   if (status === 'ferien') return 'Ferien';
   if (status === 'absence') return 'Absenz';
+  if (status === 'holiday') return 'Feiertag';
+  if (status === 'bridge') return 'Brückentag';
   return 'Fehlt';
 }
 

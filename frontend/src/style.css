@@ -3810,6 +3810,15 @@ body.in-admin-view #view-admin {
 .admin-status.ok .admin-status-dot {
   background: var(--success);
 }
+
+.admin-status.holiday .admin-status-dot,
+.admin-status.bridge .admin-status-dot {
+  background: #a78bfa;
+}
+.admin-status.holiday,
+.admin-status.bridge {
+  color: #7c3aed;
+}
 .admin-status.ferien .admin-status-dot,
 .admin-status.absence .admin-status-dot {
   background: var(--accent);
