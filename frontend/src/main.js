@@ -2964,6 +2964,25 @@ function renderAdminAbsenceList(absences) {
     meta.appendChild(rangeRow);
     meta.appendChild(daysRow);
 
+    if (a.decidedBy && a.status !== 'pending') {
+      const decidedRow = document.createElement('div');
+      const decidedLabel =
+        a.status === 'accepted'
+          ? 'Bewilligt von'
+          : a.status === 'rejected'
+            ? 'Abgelehnt von'
+            : 'Entschieden von';
+      const decidedDate = a.decidedAt
+        ? new Date(a.decidedAt).toLocaleDateString('de-CH', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          })
+        : '';
+      decidedRow.textContent = `${decidedLabel}: ${escapeHtml(a.decidedBy)}${decidedDate ? ' · ' + decidedDate : ''}`;
+      meta.appendChild(decidedRow);
+    }
+
     const comment = document.createElement('div');
     comment.className = 'admin-absence-comment';
     comment.textContent = a.comment
@@ -4746,6 +4765,11 @@ if (adminAbsenceSearchEl) {
 }
 
 const adminTeamFilterEl = document.getElementById('adminTeamFilter');
+const TEAM_FILTER_KEY = 'adminTeamFilterValue';
+if (adminTeamFilterEl) {
+  const saved = localStorage.getItem(TEAM_FILTER_KEY);
+  if (saved) adminTeamFilterEl.value = saved;
+}
 const adminTeamFilterAbsencesEl = document.getElementById(
   'adminTeamFilterAbsences'
 );
@@ -4755,6 +4779,10 @@ const adminTeamFilterPayrollEl = document.getElementById(
 let adminActiveTeamFilter = '';
 let adminActiveTeamFilterAbsences = '';
 let adminActiveTeamFilterPayroll = '';
+
+adminTeamFilterEl?.addEventListener('change', () => {
+  localStorage.setItem(TEAM_FILTER_KEY, adminTeamFilterEl.value);
+});
 
 if (adminTeamFilterEl)
   adminTeamFilterEl.addEventListener('change', (e) => {
