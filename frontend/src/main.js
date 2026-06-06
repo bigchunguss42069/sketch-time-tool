@@ -1000,14 +1000,22 @@ function authFetch(path, options = {}) {
   return fetch(`${BACKEND_BASE_URL}${path}`, {
     ...options,
     headers,
-  }).then((res) => {
-    // Wenn Token ungültig → Session löschen und Login anzeigen
-    if (res.status === 401) {
-      clearAuthSession();
-      showLogin();
-    }
-    return res;
-  });
+  })
+    .then((res) => {
+      // Nur bei echtem 401 (Server sagt Token ungültig) ausloggen
+      // Nicht bei Netzwerkfehlern
+      if (res.status === 401) {
+        clearAuthSession();
+        showLogin();
+      }
+      return res;
+    })
+    .catch((err) => {
+      // Netzwerkfehler → nicht ausloggen, einfach weitermachen
+      // Der Draft-Sync holt alles nach wenn Verbindung zurück ist
+      console.warn('[Offline] Netzwerkfehler, Request übersprungen:', path);
+      return new Response(null, { status: 0 });
+    });
 }
 
 // Fetch official konto values and transmitted months from server
