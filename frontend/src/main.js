@@ -1803,7 +1803,7 @@ function countAbsenceWorkdays(from, to) {
   const end = new Date(to + 'T00:00:00');
   while (cursor <= end) {
     const wd = cursor.getDay();
-    const key = cursor.toISOString().slice(0, 10);
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
     const year = cursor.getFullYear();
     const holidays = BERN_HOLIDAYS_CLIENT[year] || new Set();
     if (wd >= 1 && wd <= 5 && !holidays.has(key) && !BRIDGE_DAYS.has(key))
@@ -1846,6 +1846,10 @@ absenceTypeEl?.addEventListener('change', () => {
   updateAbsenceFormForType();
   updateAbsenceCalcBadge();
 });
+
+// Initialisierung beim Start
+updateAbsenceFormForType();
+
 absenceFromEl?.addEventListener('change', updateAbsenceCalcBadge);
 absenceToEl?.addEventListener('change', updateAbsenceCalcBadge);
 document
