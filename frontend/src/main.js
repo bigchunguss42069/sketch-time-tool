@@ -1842,7 +1842,10 @@ function updateAbsenceCalcBadge() {
   }
 }
 
-absenceTypeEl?.addEventListener('change', updateAbsenceFormForType);
+absenceTypeEl?.addEventListener('change', () => {
+  updateAbsenceFormForType();
+  updateAbsenceCalcBadge();
+});
 absenceFromEl?.addEventListener('change', updateAbsenceCalcBadge);
 absenceToEl?.addEventListener('change', updateAbsenceCalcBadge);
 document

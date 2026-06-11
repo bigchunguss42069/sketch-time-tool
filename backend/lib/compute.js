@@ -18,7 +18,11 @@
  * - Anlagen-Utilities (addNum, subNum, normalizeKomNr, cleanupZeroish, deepCloneJson)
  */
 
-const { formatDateKey, isBernHolidayKey } = require('./holidays');
+const {
+  isBernHolidayKey,
+  isCompanyBridgeDay,
+  formatDateKey,
+} = require('./holidays');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Zahlen-Utilities
@@ -309,31 +313,49 @@ function computeAbsenceDaysInPeriod(absence, periodStart, periodEnd) {
  * @returns {number}
  */
 function computeVacationUsedDaysForMonth(payload, year, monthIndex) {
-  const DAILY_SOLL = 8.0;
-  const daysObj =
-    payload && payload.days && typeof payload.days === 'object'
-      ? payload.days
-      : {};
+  const monthStart = formatDateKey(new Date(year, monthIndex, 1));
+  const monthEnd = formatDateKey(new Date(year, monthIndex + 1, 0));
   let used = 0;
 
-  for (const [dateKey, dayData] of Object.entries(daysObj)) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+  // Ferien via Absenz-Anträge (accepted)
+  const absences = Array.isArray(payload?.absences) ? payload.absences : [];
+  for (const abs of absences) {
+    if (abs.type !== 'ferien') continue;
+    if (abs.status !== 'accepted') continue;
 
-    const d = new Date(dateKey + 'T00:00:00');
-    if (Number.isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+    // from/to können als 'YYYY-MM-DD' oder 'Mon May 18' vorliegen
+    const fromRaw = String(abs.from || '');
+    const toRaw = String(abs.to || '');
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(fromRaw)
+      ? fromRaw
+      : formatDateKey(new Date(fromRaw));
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(toRaw)
+      ? toRaw
+      : formatDateKey(new Date(toRaw));
+    if (!from || from === 'NaN-NaN-NaN' || !to || to === 'NaN-NaN-NaN')
+      continue;
 
-    const weekday = d.getDay();
-    if (weekday < 1 || weekday > 5) continue;
+    // Tage innerhalb dieses Monats zählen
+    const cursor = new Date(
+      Math.max(new Date(from + 'T00:00:00'), new Date(monthStart + 'T00:00:00'))
+    );
+    const end = new Date(
+      Math.min(new Date(to + 'T00:00:00'), new Date(monthEnd + 'T00:00:00'))
+    );
 
-    const ferien = !!(dayData && dayData.flags && dayData.flags.ferien);
-    if (!ferien) continue;
-
-    if (isBernHolidayKey(dateKey)) continue;
-
-    const worked = computeNonPikettHours(dayData);
-    const fraction = Math.max(0, 1 - worked / DAILY_SOLL);
-    used += Math.round(fraction * 4) / 4;
+    while (cursor <= end) {
+      const dateKey = formatDateKey(cursor);
+      const wd = cursor.getDay();
+      if (
+        wd >= 1 &&
+        wd <= 5 &&
+        !isBernHolidayKey(dateKey) &&
+        !isCompanyBridgeDay(dateKey)
+      ) {
+        used += 1;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
   }
 
   return Math.round(used * 100) / 100;
