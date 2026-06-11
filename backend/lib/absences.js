@@ -513,7 +513,15 @@ function registerAbsenceRoutes(
         );
 
         const filtered =
-          status === 'all' ? all : all.filter((a) => a && a.status === status);
+          status === 'all'
+            ? all
+            : status === 'open'
+              ? all.filter(
+                  (a) =>
+                    a &&
+                    (a.status === 'pending' || a.status === 'cancel_requested')
+                )
+              : all.filter((a) => a && a.status === status);
         filtered.sort((a, b) =>
           String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
         );
