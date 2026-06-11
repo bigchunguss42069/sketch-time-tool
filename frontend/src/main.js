@@ -5016,15 +5016,14 @@ function initAuthView() {
   // Optional: verify token against backend and refresh user info
   authFetch('/api/auth/me')
     .then((res) => {
-      if (!res.ok) {
-        throw new Error('Unauthorized');
-      }
+      // Status 0 = Netzwerkfehler (offline) → nicht ausloggen
+      if (res.status === 0) return null;
+      if (!res.ok) throw new Error('Unauthorized');
       return res.json();
     })
     .then((data) => {
-      if (!data.ok || !data.user) {
-        throw new Error('Invalid session');
-      }
+      if (!data) return; // offline → Session behalten
+      if (!data.ok || !data.user) throw new Error('Invalid session');
 
       const currentSession = getAuthSession();
       if (!currentSession || !currentSession.token) {
@@ -5037,7 +5036,6 @@ function initAuthView() {
         userDisplayEl.textContent = data.user.username || 'Unbekannt';
       }
 
-      // Role might have changed → re-apply UI
       updateUIForRole();
     })
     .catch((err) => {
