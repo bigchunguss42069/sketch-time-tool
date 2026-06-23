@@ -200,7 +200,6 @@ import {
   formatDayLabelFromKey,
   formatDateDE,
   formatDateInputValue,
-  roundToQuarter,
   statusLabel,
   adminStatusText,
   absenceTypeLabel,
@@ -1849,6 +1848,38 @@ absenceTypeEl?.addEventListener('change', () => {
 
 // Initialisierung beim Start
 updateAbsenceFormForType();
+
+// Nur Zahlen/Komma/Punkt in Stunden-Feldern erlauben
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (
+    !t.classList.contains('hours-input') &&
+    !t.classList.contains('day-hours-input') &&
+    !t.classList.contains('special-hours-input')
+  )
+    return;
+  const allowed = [
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    ',',
+    '.',
+    'Backspace',
+    'Delete',
+    'ArrowLeft',
+    'ArrowRight',
+    'Tab',
+    'Enter',
+  ];
+  if (!allowed.includes(e.key)) e.preventDefault();
+});
 
 absenceFromEl?.addEventListener('change', updateAbsenceCalcBadge);
 absenceToEl?.addEventListener('change', updateAbsenceCalcBadge);
@@ -6954,9 +6985,8 @@ function applyKomForCurrentDay() {
       optLabel.textContent = labelText;
 
       const input = document.createElement('input');
-      input.type = 'number';
-      input.min = '0';
-      input.step = '0.25';
+      input.type = 'text';
+      input.inputMode = 'decimal';
       input.className = 'hours-input';
       input.dataset.option = key;
       input.placeholder = '0,0';
@@ -7057,9 +7087,8 @@ function applySpecialEntriesForCurrentDay() {
     hoursLabel.textContent = 'Stunden';
 
     const hoursInput = document.createElement('input');
-    hoursInput.type = 'number';
-    hoursInput.min = '0';
-    hoursInput.step = '0.25';
+    hoursInput.type = 'text';
+    hoursInput.inputMode = 'decimal';
     hoursInput.placeholder = '0,0';
     hoursInput.className = 'special-hours-input';
 
@@ -7159,10 +7188,7 @@ document.addEventListener('input', (event) => {
     const optionKey = target.dataset.option;
     if (optionKey) {
       const raw = target.value.trim();
-      let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-      if (!Number.isNaN(num)) {
-        num = roundToQuarter(num);
-      }
+      const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
       entry.hours[optionKey] = Number.isNaN(num) ? 0 : num;
     }
 
@@ -7196,10 +7222,7 @@ document.addEventListener('input', (event) => {
     if (!key) return;
 
     const raw = target.value.trim();
-    let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-    if (!Number.isNaN(num)) {
-      num = roundToQuarter(num);
-    }
+    const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
     dayData.dayHours[key] = Number.isNaN(num) ? 0 : num;
 
     saveToStorage();
@@ -7243,10 +7266,7 @@ document.addEventListener('input', (event) => {
       special.komNr = normalized;
     } else if (target.classList.contains('special-hours-input')) {
       const raw = target.value.trim();
-      let num = raw ? parseFloat(raw.replace(',', '.')) : 0;
-      if (!Number.isNaN(num)) {
-        num = roundToQuarter(num);
-      }
+      const num = raw ? parseFloat(raw.replace(',', '.')) : 0;
       special.hours = Number.isNaN(num) ? 0 : num;
     } else if (target.classList.contains('special-detail-input')) {
       if (special.type === 'fehler') {
