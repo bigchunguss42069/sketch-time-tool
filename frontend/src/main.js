@@ -975,6 +975,16 @@ function clearAuthSession() {
   localStorage.removeItem(AUTH_SESSION_KEY);
 }
 
+// Wenn sich die Session in einem anderen Tab/Fenster ändert (z.B. Login als
+// anderer User im Browser während die PWA offen ist), sofort neu laden.
+// Verhindert dass die PWA mit einem fremden Token weiterläuft.
+window.addEventListener('storage', (e) => {
+  if (e.key === AUTH_SESSION_KEY) {
+    console.warn('[Auth] Session in anderem Tab geändert — lade neu');
+    window.location.reload();
+  }
+});
+
 function getAuthToken() {
   const session = getAuthSession();
   return session?.token || '';
