@@ -1735,6 +1735,7 @@ if (absenceSaveBtn) {
         absenceFromEl.value = '';
         absenceToEl.value = '';
         absenceCommentEl.value = '';
+        updateAbsenceCalcBadge();
         await syncMyAbsencesFromServer();
       } catch (e) {
         console.error(e);
@@ -4822,20 +4823,38 @@ if (adminAbsenceSearchEl) {
 
 const adminTeamFilterEl = document.getElementById('adminTeamFilter');
 const TEAM_FILTER_KEY = 'adminTeamFilterValue';
-if (adminTeamFilterEl) {
-  const saved = localStorage.getItem(TEAM_FILTER_KEY);
-  if (saved) adminTeamFilterEl.value = saved;
-}
 const adminTeamFilterAbsencesEl = document.getElementById(
   'adminTeamFilterAbsences'
 );
 const adminTeamFilterPayrollEl = document.getElementById(
   'adminTeamFilterPayroll'
 );
+const TEAM_FILTER_KEY_ABSENCES = 'adminTeamFilterAbsencesValue';
+const TEAM_FILTER_KEY_PAYROLL = 'adminTeamFilterPayrollValue';
 let adminActiveTeamFilter = '';
 let adminActiveTeamFilterAbsences = '';
 let adminActiveTeamFilterPayroll = '';
-
+if (adminTeamFilterEl) {
+  const saved = localStorage.getItem(TEAM_FILTER_KEY);
+  if (saved) {
+    adminTeamFilterEl.value = saved;
+    adminActiveTeamFilter = saved;
+  }
+}
+if (adminTeamFilterAbsencesEl) {
+  const saved = localStorage.getItem(TEAM_FILTER_KEY_ABSENCES);
+  if (saved) {
+    adminTeamFilterAbsencesEl.value = saved;
+    adminActiveTeamFilterAbsences = saved;
+  }
+}
+if (adminTeamFilterPayrollEl) {
+  const saved = localStorage.getItem(TEAM_FILTER_KEY_PAYROLL);
+  if (saved) {
+    adminTeamFilterPayrollEl.value = saved;
+    adminActiveTeamFilterPayroll = saved;
+  }
+}
 adminTeamFilterEl?.addEventListener('change', () => {
   localStorage.setItem(TEAM_FILTER_KEY, adminTeamFilterEl.value);
 });
@@ -4848,6 +4867,7 @@ if (adminTeamFilterEl)
 if (adminTeamFilterAbsencesEl)
   adminTeamFilterAbsencesEl.addEventListener('change', (e) => {
     adminActiveTeamFilterAbsences = e.target.value;
+    localStorage.setItem(TEAM_FILTER_KEY_ABSENCES, e.target.value);
     loadAdminPersonnel();
   });
 
@@ -4899,6 +4919,7 @@ document
 if (adminTeamFilterPayrollEl)
   adminTeamFilterPayrollEl.addEventListener('change', (e) => {
     adminActiveTeamFilterPayroll = e.target.value;
+    localStorage.setItem(TEAM_FILTER_KEY_PAYROLL, e.target.value);
     loadAdminPayroll();
   });
 /**
@@ -6438,7 +6459,9 @@ function loadAdminSummary() {
 
 let praesenzPollInterval = null;
 let stampEditMonthOffset = 0;
-let praesenzTeamFilter = 'all';
+const PRAESENZ_TEAM_FILTER_KEY = 'praesenzTeamFilterValue';
+let praesenzTeamFilter =
+  localStorage.getItem(PRAESENZ_TEAM_FILTER_KEY) || 'all';
 let praesenzEditFilter = 0; // 0 = alle, 10 = nur flagged
 let _liveStatusData = [];
 let _stampEditsData = [];
@@ -6467,8 +6490,8 @@ function renderPraesenzControls() {
   controls.innerHTML = `
     <div class="praesenz-controls-row">
       <select id="praesenzTeamFilter" class="praesenz-filter-select">
-        <option value="all">Alle Teams</option>
-        ${TEAMS.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}
+        <option value="all" ${praesenzTeamFilter === 'all' ? 'selected' : ''}>Alle Teams</option>
+        ${TEAMS.map((t) => `<option value="${t.id}" ${praesenzTeamFilter === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
       </select>
       <select id="praesenzEditFilter" class="praesenz-filter-select">
         <option value="0">Alle Mitarbeiter</option>
@@ -6489,6 +6512,7 @@ function renderPraesenzControls() {
     .getElementById('praesenzTeamFilter')
     ?.addEventListener('change', (e) => {
       praesenzTeamFilter = e.target.value;
+      localStorage.setItem(PRAESENZ_TEAM_FILTER_KEY, e.target.value);
       renderLiveStatusFromCache();
       renderStampEditLogFromCache();
     });

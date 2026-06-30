@@ -381,6 +381,22 @@ function createPayrollService(
     );
     const ferienSaldo = r1(Number(kontoRow.vacation_days) || 0);
 
+    // Jahresgutschriften (automatisch) im Zeitraum, fürs Audit-PDF
+    const vacationCreditRes = await db.query(
+      `SELECT old_value, new_value, reason, created_at
+       FROM konto_adjustments
+       WHERE username = $1 AND field = 'vacationDays'
+         AND admin_username = 'system' AND reason LIKE 'Jahresgutschrift%'
+         AND created_at::date >= $2 AND created_at::date <= $3
+       ORDER BY created_at ASC`,
+      [user.username, fromKey, toKey]
+    );
+    const vacationCredits = vacationCreditRes.rows.map((row) => ({
+      amount: r1(Number(row.new_value) - Number(row.old_value)),
+      reason: row.reason,
+      date: formatDateDisplayEU(formatDateKey(new Date(row.created_at))),
+    }));
+
     // Absenzen direkt aus DB
     const dbAbsResult = await db.query(
       `SELECT type, from_date, to_date, days, hours
@@ -439,8 +455,8 @@ function createPayrollService(
         ueZ3Total: r1(overtime.ueZ3 + ueZ3Correction),
         ferienVerbrauch: r1(totals.ferienDays),
         ferienSaldo,
+        vacationCredits,
       },
-
       teamId: user.teamId || null,
       auditRows,
     };
@@ -690,10 +706,18 @@ function createPayrollService(
       }
 
       sectionTitle('Ferien');
-      writeMetricLines([
+      const ferienLines = [];
+      for (const credit of row.overtime.vacationCredits || []) {
+        ferienLines.push([
+          `Jahresgutschrift (${credit.date})`,
+          `+${credit.amount}d`,
+        ]);
+      }
+      ferienLines.push(
         ['Verbrauch Periode', `${row.overtime.ferienVerbrauch}d`],
-        ['Saldo', `${row.overtime.ferienSaldo}d`],
-      ]);
+        ['Saldo', `${row.overtime.ferienSaldo}d`]
+      );
+      writeMetricLines(ferienLines);
 
       sectionTitle('Veränderung in dieser Lohnperiode');
       writeMetricLines([

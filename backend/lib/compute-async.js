@@ -29,16 +29,17 @@ const {
   isBernHolidayKey,
   isCompanyBridgeDay,
 } = require('./holidays');
+
 const {
   round1,
   toNumber,
   buildAcceptedAbsenceHoursMap,
+  buildAcceptedVacationDaysSet,
   buildPikettHoursByDate,
   computeNetWorkingHoursFromStamps,
   computeDailyWorkingHours,
   computeNonPikettHours,
 } = require('./compute');
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure Funktionen (keine DB-Abhängigkeit)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +82,11 @@ function buildMonthOverviewFromSubmission(
           monthStartKey,
           monthEndKey
         );
+  const vacationDaysSet = buildAcceptedVacationDaysSet(
+    submission?.absences,
+    monthStartKey,
+    monthEndKey
+  );
 
   let monthTotalHours = 0;
   const weekMap = new Map();
@@ -91,7 +97,7 @@ function buildMonthOverviewFromSubmission(
     const weekday = cursor.getDay();
 
     const dayData = daysObj[dateKey] || null;
-    const ferien = !!dayData?.flags?.ferien;
+    const ferien = vacationDaysSet.has(dateKey);
     const nonPikett = computeNonPikettHours(dayData);
     const pikett = pikettByDate.get(dateKey) || 0;
     const totalHours = nonPikett + pikett;
@@ -248,6 +254,11 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       monthStartKey,
       monthEndKey
     );
+    const vacationDaysSet = buildAcceptedVacationDaysSet(
+      payload?.absences,
+      monthStartKey,
+      monthEndKey
+    );
 
     const cachedEmpStartKey = await fetchEmpStartKey(userId);
     let ueZ1 = 0;
@@ -272,7 +283,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
       const dayData = daysObj[dateKey] || null;
       const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-      const isFerien = !!dayData?.flags?.ferien;
+      const isFerien = vacationDaysSet.has(dateKey);
 
       const absHoursForDay =
         typeof acceptedAbsenceDays.get(dateKey) === 'number'
@@ -318,6 +329,11 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       fromKey,
       toKey
     );
+    const vacationDaysSet = buildAcceptedVacationDaysSet(
+      submission?.absences,
+      fromKey,
+      toKey
+    );
 
     const cachedEmpStartKey = await fetchEmpStartKey(userId);
     let ueZ1 = 0;
@@ -345,7 +361,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
       const dayData = daysObj[dateKey] || null;
       const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-      const isFerien = !!dayData?.flags?.ferien;
+      const isFerien = vacationDaysSet.has(dateKey);
 
       const absHoursForDay =
         typeof acceptedAbsenceDays.get(dateKey) === 'number'
@@ -405,6 +421,11 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
       fromKey,
       toKey
     );
+    const vacationDaysSet = buildAcceptedVacationDaysSet(
+      submission?.absences,
+      fromKey,
+      toKey
+    );
 
     const cursor = new Date(fromKey + 'T00:00:00');
     const end = new Date(toKey + 'T00:00:00');
@@ -426,7 +447,7 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
 
       const dayData = daysObj[dateKey] || null;
       const dayTotal = dayData ? computeDailyWorkingHours(dayData) : 0;
-      const isFerien = !!dayData?.flags?.ferien;
+      const isFerien = vacationDaysSet.has(dateKey);
 
       const absHoursForDay =
         typeof acceptedAbsenceDays.get(dateKey) === 'number'

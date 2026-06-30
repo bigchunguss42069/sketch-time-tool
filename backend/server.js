@@ -342,7 +342,11 @@ registerAbsenceRoutes(
   requireAdmin,
   (username) => findUserByUsername(db, username),
   restoreVacationDaysForCancelledAbsence,
-  listUsersFromDb
+  listUsersFromDb,
+  loadLatestMonthSubmission,
+  updateKontenFromSubmission,
+  computeMonthUeZ1,
+  computeTransmissionTotals
 );
 
 registerAnlagenRoutes(

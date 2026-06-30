@@ -303,6 +303,79 @@ function findAcceptedAbsenceForDate(absences, dateKey) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Lädt für jeden von einer Absenz betroffenen Monat die zuletzt
+ * transmittierte Submission, ersetzt darin die Absenzen durch den
+ * aktuellen DB-Stand und stösst updateKontenFromSubmission erneut an.
+ * Best-effort: Monate ohne bisherige Submission werden übersprungen
+ * (der nächste reguläre Transmit holt das nach).
+ *
+ * @param {{ username, teamId, absence, loadLatestMonthSubmission,
+ *   updateKontenFromSubmission, computeMonthUeZ1, computeTransmissionTotals }} params
+ */
+async function retransmitAffectedMonths({
+  db,
+  username,
+  teamId,
+  absence,
+  loadLatestMonthSubmission,
+  updateKontenFromSubmission,
+  computeMonthUeZ1,
+  computeTransmissionTotals,
+}) {
+  if (!absence?.from || !absence?.to) return;
+
+  let fromDate = new Date(absence.from + 'T00:00:00');
+  let toDate = new Date(absence.to + 'T00:00:00');
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
+    return;
+  if (toDate < fromDate) {
+    const tmp = fromDate;
+    fromDate = toDate;
+    toDate = tmp;
+  }
+
+  const affectedMonths = new Set();
+  const cursor = new Date(fromDate);
+  while (cursor <= toDate) {
+    affectedMonths.add(`${cursor.getFullYear()}-${cursor.getMonth()}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+    cursor.setDate(1);
+  }
+
+  const currentAbsences = await listUserAbsencesFromDb(db, username);
+
+  for (const key of affectedMonths) {
+    const [yearStr, monthIndexStr] = key.split('-');
+    const year = Number(yearStr);
+    const monthIndex = Number(monthIndexStr);
+
+    const submission = await loadLatestMonthSubmission(
+      username,
+      year,
+      monthIndex
+    );
+    if (!submission) continue; // Monat noch nie transmittiert — nächster Transmit holt es nach
+
+    const updatedPayload = {
+      ...submission,
+      absences: currentAbsences,
+    };
+    const totals = computeTransmissionTotals(updatedPayload);
+
+    await updateKontenFromSubmission({
+      username,
+      teamId,
+      year,
+      monthIndex,
+      totals,
+      payload: updatedPayload,
+      updatedBy: 'absence-retransmit',
+      computeMonthUeZ1,
+    });
+  }
+}
+
+/**
  * Registriert alle Absenz-Routes.
  *
  * @param {import('express').Application} app
@@ -319,7 +392,11 @@ function registerAbsenceRoutes(
   requireAdmin,
   findUserByUsername,
   restoreVacationDaysForCancelledAbsence,
-  listUsersFromDb
+  listUsersFromDb,
+  loadLatestMonthSubmission,
+  updateKontenFromSubmission,
+  computeMonthUeZ1,
+  computeTransmissionTotals
 ) {
   // GET /api/absences
   app.get('/api/absences', requireAuth, async (req, res) => {
@@ -587,6 +664,26 @@ function registerAbsenceRoutes(
             absence: updated,
             updatedBy: req.user.username,
           });
+        }
+
+        if (status === 'accepted') {
+          try {
+            await retransmitAffectedMonths({
+              db,
+              username,
+              teamId: targetUser.teamId || null,
+              absence: updated,
+              loadLatestMonthSubmission,
+              updateKontenFromSubmission,
+              computeMonthUeZ1,
+              computeTransmissionTotals,
+            });
+          } catch (err) {
+            console.error(
+              `[AbsenceRetransmit] Fehler für ${username}:`,
+              err.message
+            );
+          }
         }
 
         return res.json({ ok: true, absence: updated, vacationRestored });

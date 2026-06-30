@@ -553,8 +553,25 @@ function createKontenService(db) {
       };
 
       if (!nextKonto.creditedYears[yearStr]) {
-        nextKonto.vacationDays += Number(nextKonto.vacationDaysPerYear) || 0;
+        const creditOldVal = nextKonto.vacationDays;
+        const creditAmount = Number(nextKonto.vacationDaysPerYear) || 0;
+        nextKonto.vacationDays += creditAmount;
         nextKonto.creditedYears[yearStr] = true;
+
+        await client.query(
+          `INSERT INTO konto_adjustments
+             (user_id, username, admin_username, field, old_value, new_value, reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            ensured.userId,
+            ensured.username,
+            'system',
+            'vacationDays',
+            creditOldVal,
+            nextKonto.vacationDays,
+            `Jahresgutschrift ${yearStr}`,
+          ]
+        );
       }
 
       const { ueZ1: monthUeZ1 } = await computeMonthUeZ1(

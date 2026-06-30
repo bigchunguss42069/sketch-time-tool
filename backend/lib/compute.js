@@ -249,6 +249,58 @@ function buildAcceptedAbsenceHoursMap(
 }
 
 /**
+ * Baut ein Set von Datums-Keys, die als akzeptierte Ferien-Tage gelten.
+ * Einzige Quelle der Wahrheit für "ist Ferien" in der Berechnung —
+ * ersetzt das frontend-synchronisierte `dayData.flags.ferien`.
+ * Nur Werktage (Mo–Fr), keine Feiertage/Brückentage.
+ *
+ * @param {Array} absencesArray - Absenzen aus dem Payload
+ * @param {string} rangeStartKey - YYYY-MM-DD
+ * @param {string} rangeEndKey - YYYY-MM-DD
+ * @returns {Set<string>}
+ */
+function buildAcceptedVacationDaysSet(
+  absencesArray,
+  rangeStartKey,
+  rangeEndKey
+) {
+  const set = new Set();
+  if (!Array.isArray(absencesArray)) return set;
+
+  absencesArray.forEach((a) => {
+    const type = String(a?.type || '').toLowerCase();
+    if (type !== 'ferien') return;
+    const st = String(a?.status || '').toLowerCase();
+    if (st !== 'accepted' && st !== 'cancel_requested') return;
+    if (!a.from || !a.to) return;
+
+    const startKey = a.from <= a.to ? a.from : a.to;
+    const endKey = a.from <= a.to ? a.to : a.from;
+    if (endKey < rangeStartKey || startKey > rangeEndKey) return;
+
+    const cursor = new Date(startKey + 'T00:00:00');
+    const end = new Date(endKey + 'T00:00:00');
+
+    while (cursor <= end) {
+      const k = formatDateKey(cursor);
+      const weekday = cursor.getDay();
+      if (
+        k >= rangeStartKey &&
+        k <= rangeEndKey &&
+        weekday >= 1 &&
+        weekday <= 5 &&
+        !isBernHolidayKey(k) &&
+        !isCompanyBridgeDay(k)
+      ) {
+        set.add(k);
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+
+  return set;
+}
+/**
  * Berechnet die Anzahl Absenztage einer Absenz innerhalb einer Periode.
  * Zählt nur Werktage (Mo–Fr). Verwendet `absence.days` wenn vorhanden
  * und die Absenz vollständig in der Periode liegt.
@@ -513,6 +565,7 @@ module.exports = {
 
   // Absenzen
   buildAcceptedAbsenceHoursMap,
+  buildAcceptedVacationDaysSet,
   computeAbsenceDaysInPeriod,
 
   // Ferien
