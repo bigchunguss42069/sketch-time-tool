@@ -1023,7 +1023,9 @@ function authFetch(path, options = {}) {
       // Netzwerkfehler → nicht ausloggen, einfach weitermachen
       // Der Draft-Sync holt alles nach wenn Verbindung zurück ist
       console.warn('[Offline] Netzwerkfehler, Request übersprungen:', path);
-      return new Response(null, { status: 0 });
+      // Hinweis: status 0 ist im Response-Konstruktor ungültig (RangeError) —
+      // 599 als reservierter "Netzwerkfehler"-Marker, von allen Callern erkannt
+      return new Response(null, { status: 599 });
     });
 }
 
@@ -5086,7 +5088,7 @@ function initAuthView() {
   authFetch('/api/auth/me')
     .then((res) => {
       // Status 0 = Netzwerkfehler (offline) → nicht ausloggen
-      if (res.status === 0) return null;
+      if (res.status === 599) return null;
       if (!res.ok) throw new Error('Unauthorized');
       return res.json();
     })
