@@ -1758,6 +1758,11 @@ if (absenceSaveBtn) {
             comment,
           }),
         });
+        if (res.status === 599) {
+          throw new Error(
+            'Kein Empfang — Antrag konnte nicht gesendet werden. Bitte erneut versuchen, sobald du Verbindung hast.'
+          );
+        }
         const data = await res.json();
         if (!res.ok || !data.ok) {
           throw new Error(
@@ -8199,20 +8204,34 @@ function renderStampLog(dateKey, logEl, editMode) {
       deleteAction.className = 'stamp-log-action-btn danger';
       deleteAction.textContent = 'Löschen';
       deleteAction.addEventListener('click', () => {
-        const sortedOriginal = [...dayData.stamps].sort((a, b) =>
+        // Per Wert suchen statt per Objekt-Referenz (dayStore-Objekte können
+        // nach einem Draft-Sync/Reload neu erzeugt worden sein, alte
+        // Referenzen aus dem Closure wären dann nicht mehr auffindbar).
+        const currentDayData = getOrCreateDayData(dateKey);
+        const sortedCurrent = [...currentDayData.stamps].sort((a, b) =>
           a.time.localeCompare(b.time)
         );
-        const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
+        const target = sortedCurrent[idx];
+        const realIdx = target
+          ? currentDayData.stamps.findIndex(
+              (s) => s.time === target.time && s.type === target.type
+            )
+          : -1;
         if (realIdx !== -1) {
-          logStampEdit(dateKey, 'deleted', sortedOriginal[idx], null);
-          dayData.stamps.splice(realIdx, 1);
+          logStampEdit(
+            dateKey,
+            'deleted',
+            currentDayData.stamps[realIdx],
+            null
+          );
+          currentDayData.stamps.splice(realIdx, 1);
         }
         saveToStorage();
-        if (dateKey === getTodayKey()) sendLiveStamp(dateKey, dayData.stamps);
+        if (dateKey === getTodayKey())
+          sendLiveStamp(dateKey, currentDayData.stamps);
         if (editMode) renderStampEditSection(dateKey);
         else renderStampCard();
       });
-
       actions.appendChild(editAction);
       actions.appendChild(deleteAction);
       entry.appendChild(actions);
