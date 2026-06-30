@@ -82,6 +82,7 @@ const {
   mapDbUser,
   findUserByUsername,
   findUserById,
+  getSessionUserId,
   createRequireAuth,
   requireAdmin,
   registerAuthRoutes,
@@ -286,13 +287,20 @@ if (db) {
 // ============================================================================
 // Global middleware
 // ============================================================================
+const corsOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN,
+    origin: corsOrigins,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   })
 );
+
 app.use(helmet());
 app.use(express.json({ limit: '25mb' }));
 
@@ -828,6 +836,51 @@ app.get(
     }
   }
 );
+
+// POST /api/draft/sync-beacon — wie /api/draft/sync, aber für navigator.sendBeacon()
+// beim beforeunload-Event (keine Custom-Header möglich, daher Token im Body).
+// sendBeacon() liefert keine Antwort an den Client — Fehler werden nur geloggt.
+app.post('/api/draft/sync-beacon', async (req, res) => {
+  try {
+    const { data, basedOn, token } = req.body || {};
+    if (!token) return res.status(401).end();
+
+    const userId = await getSessionUserId(db, token);
+    if (!userId) return res.status(401).end();
+
+    const user = await findUserById(db, userId);
+    if (!user) return res.status(401).end();
+
+    if (!data || typeof data !== 'object') return res.status(400).end();
+
+    if (basedOn) {
+      const current = await db.query(
+        'SELECT updated_at FROM user_drafts WHERE user_id = $1',
+        [user.id]
+      );
+      if (current.rows.length > 0) {
+        const serverTime = new Date(current.rows[0].updated_at).getTime();
+        const clientBase = new Date(basedOn).getTime();
+        if (serverTime > clientBase) return res.status(409).end();
+      }
+    }
+
+    await db.query(
+      `
+      INSERT INTO user_drafts (user_id, username, data, updated_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (user_id) DO UPDATE
+        SET data = $3, updated_at = NOW()
+    `,
+      [user.id, user.username, JSON.stringify(data)]
+    );
+
+    return res.status(204).end();
+  } catch (err) {
+    console.error('Draft beacon sync error', err);
+    return res.status(500).end();
+  }
+});
 
 // POST /api/draft/sync — Client speichert Draft
 app.post('/api/draft/sync', requireAuth, async (req, res) => {

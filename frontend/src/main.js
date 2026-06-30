@@ -789,8 +789,38 @@ topNavTabs.forEach((tab) => {
 });
 
 window.addEventListener('beforeunload', () => {
-  if (_draftLoadComplete) syncDraftToServer();
+  if (!_draftLoadComplete) return;
+  syncDraftViaBeacon();
 });
+
+// Beacon-Variante für beforeunload: fetch() wird vom Browser beim Page-Unload
+// abgebrochen (sichtbar als Netzwerkfehler), sendBeacon() übersteht das.
+// sendBeacon kann keine Header setzen, daher Token im Body statt im Header.
+function syncDraftViaBeacon() {
+  const user = getCurrentUser();
+  const token = getAuthToken();
+  if (!user || !token) return;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const savedAt = now.toISOString();
+
+  const monthData = {};
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      monthData[dateKey] = dayData;
+    }
+  });
+
+  const basedOn = localStorage.getItem(STORAGE_KEY + '_savedAt') || null;
+  const data = { dayStore: monthData, pikettStore, year, month, savedAt };
+
+  const payload = JSON.stringify({ data, basedOn, token });
+  const blob = new Blob([payload], { type: 'application/json' });
+  navigator.sendBeacon(`${BACKEND_BASE_URL}/api/draft/sync-beacon`, blob);
+}
 
 /**
  * Wochenplan runtime state
