@@ -234,20 +234,27 @@ async function sendAbsenceRequestAlert({
         ? `${days}d / ${hours}h`
         : `${days}d`;
 
+  // Datum von ISO (2026-05-04) auf CH-Format (04.05.2026) umformatieren
+  const formatDateCH = (iso) => {
+    if (!iso) return iso;
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  };
+
   try {
     const transporter = createMailTransporter();
     await transporter.sendMail({
-      from: process.env.SMTP_USER,
+      from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
       to,
       subject: `Neue Absenz-Anfrage: ${username} — ${typeLabel}`,
       text: [
         `Mitarbeiter: ${username}`,
         `Typ: ${typeLabel}`,
-        `Zeitraum: ${fromDate} – ${toDate}`,
+        `Zeitraum: ${formatDateCH(fromDate)} – ${formatDateCH(toDate)}`,
         `Dauer: ${durationLabel}`,
         comment ? `Kommentar: ${comment}` : '',
         '',
-        `Bitte in der App unter Konten/Absenzen genehmigen oder ablehnen.`,
+        `Bitte in der App unter Absenzen & Konten genehmigen oder ablehnen:`,
         process.env.APP_URL || '',
       ]
         .filter(Boolean)

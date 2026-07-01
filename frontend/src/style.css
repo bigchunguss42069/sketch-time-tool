@@ -2026,7 +2026,7 @@ body {
   border-radius: 10px;
   padding: 5px 12px;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
@@ -2287,7 +2287,7 @@ body {
   border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: 10px;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
 }
 
@@ -2910,7 +2910,7 @@ body {
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
-  color: #60676f;
+  color: #40454a;
   background: none;
   border: none;
   border-radius: 12px;

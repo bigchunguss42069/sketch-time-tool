@@ -608,7 +608,7 @@ function renderAdminPayrollCards(rows) {
     );
     overtimeMetrics.appendChild(
       createPayrollMetric(
-        'ÜZ3 (Wochenend-Pikett)',
+        'ÜZ3 (Wochenend ohne Pikett)',
         formatPayrollSignedHours(overtime.ueZ3)
       )
     );
@@ -1706,14 +1706,16 @@ function updatePikettMonthTotal() {
 }
 
 // Add new Pikett-Einsatz when clicking the button
-if (pikettAddBtn) {
-  pikettAddBtn.addEventListener('click', () => {
-    pikettStore.push(createEmptyPikettEntry());
-    savePikettStore();
-    renderPikettList();
-    updatePikettMonthTotal();
-  });
-}
+pikettAddBtn.addEventListener('click', () => {
+  if (isCurrentWeekLocked()) {
+    showToast('Diese Woche ist gesperrt — kein neuer Pikett-Einsatz möglich.');
+    return;
+  }
+  pikettStore.push(createEmptyPikettEntry());
+  savePikettStore();
+  renderPikettList();
+  updatePikettMonthTotal();
+});
 
 // Abwesenheits-Antrag speichern
 
@@ -2116,8 +2118,10 @@ document.addEventListener('click', (event) => {
   }
 
   // 2) Klick auf ✕ → Bestätigungszeile anzeigen
-  if (target.classList.contains('pikett-remove-btn')) {
-    const card = target.closest('.pikett-card');
+
+  const removeBtnTarget = target.closest('.pikett-remove-btn');
+  if (removeBtnTarget) {
+    const card = removeBtnTarget.closest('.pikett-card');
     if (!card) return;
 
     // Wenn Karte schon im Bestätigungsmodus ist, nichts tun
@@ -5544,15 +5548,15 @@ async function exportAnlagePdf(komNr) {
     Number(detailForPdf.totalHours || 0),
     {
       title: `Kom.-Nr. ${komNr}`,
-      width: 500, // ← Make it smaller and more square
-      height: 500, // ← Square = no warp in PDF
+      width: 500,
+      height: 500,
     }
   );
 
   const usersSvg = buildUsersBarsSvg(detailForPdf.users || [], {
     title: '',
-    width: 500, // ← Match donut chart width
-    height: 500, // ← Make it taller (square)
+    width: 500,
+    height: 500,
   });
 
   const donutPngDataUrl = await svgToPngDataUrl(donutSvg, 1000, 1000);
@@ -5596,8 +5600,6 @@ async function exportAnlagePdf(komNr) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// You can swap these colors to match your UI.
-// Keep it deterministic so PDF always looks the same.
 function exportOpColor(opKey) {
   const map = {
     option1: '#4E79A7',
@@ -5617,7 +5619,6 @@ function exportOpColor(opKey) {
   return map[opKey] || '#9AA0A6';
 }
 function exportOpLabel(opKey) {
-  // If you already have OPTION_LABELS in your file, reuse it safely:
   if (
     typeof OPTION_LABELS === 'object' &&
     OPTION_LABELS &&
@@ -8193,18 +8194,18 @@ function renderStampLog(dateKey, logEl, editMode) {
             const oldTime = dayData.stamps[realIdx]?.time;
             const oldType = dayData.stamps[realIdx]?.type;
             if (realIdx !== -1) {
-              dayData.stamps[realIdx].time = newTime;
-              dayData.stamps[realIdx].type = type;
+              logStampEdit(
+                dateKey,
+                'deleted',
+                currentDayData.stamps[realIdx],
+                null
+              );
+              currentDayData.stamps.splice(realIdx, 1);
             }
-            logStampEdit(
-              dateKey,
-              'edited',
-              { time: oldTime, type: oldType },
-              { time: newTime, type }
-            );
             saveToStorage();
+            if (_draftLoadComplete) syncDraftToServer();
             if (dateKey === getTodayKey())
-              sendLiveStamp(dateKey, dayData.stamps);
+              sendLiveStamp(dateKey, currentDayData.stamps);
             if (editMode) renderStampEditSection(dateKey);
             else renderStampCard();
           },
