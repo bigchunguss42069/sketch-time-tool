@@ -1494,7 +1494,7 @@ function renderPikettList() {
     const komInput = document.createElement('input');
     komInput.type = 'text';
     komInput.className = 'pikett-kom';
-    komInput.placeholder = 'z.B. 123456';
+    komInput.placeholder = 'z.B. 5226821';
     komInput.value = entry.komNr || '';
     komInput.disabled = locked;
 
@@ -7039,7 +7039,7 @@ function applyKomForCurrentDay() {
     const komInput = document.createElement('input');
     komInput.type = 'text';
     komInput.className = 'kom-input';
-    komInput.placeholder = 'z.B. 123456';
+    komInput.placeholder = 'z.B. 5226821';
     komInput.value = entry.komNr || '';
 
     label.appendChild(labelSpan);
@@ -7207,7 +7207,7 @@ function applySpecialEntriesForCurrentDay() {
     const komInput = document.createElement('input');
     komInput.type = 'text';
     komInput.className = 'special-kom-input';
-    komInput.placeholder = 'z.B. 123456';
+    komInput.placeholder = 'z.B. 5226821';
     komInput.value = entry.komNr || '';
 
     komField.appendChild(komLabel);
@@ -7818,9 +7818,31 @@ function renderAdminUsers(users) {
     return;
   }
 
-  adminUsersGrid.innerHTML = filtered
-    .map(
-      (u) => `
+  const admins = filtered.filter(
+    (u) => u.role === 'admin' && u.active !== false
+  );
+  const inactive = filtered.filter((u) => u.active === false);
+  const regularUsers = filtered.filter(
+    (u) => u.role !== 'admin' && u.active !== false
+  );
+
+  // Reguläre User nach Team gruppieren
+  const teamOrder = TEAMS.map((t) => t.id);
+  const byTeam = {};
+  teamOrder.forEach((tid) => {
+    byTeam[tid] = [];
+  });
+  byTeam['_none'] = [];
+  regularUsers.forEach((u) => {
+    const tid = u.teamId || '_none';
+    if (!byTeam[tid]) byTeam[tid] = [];
+    byTeam[tid].push(u);
+  });
+
+  const teamLabel = (tid) =>
+    TEAMS.find((t) => t.id === tid)?.name || 'Kein Team';
+
+  const renderUserCard = (u) => `
     <div class="admin-user-item">
       <div class="admin-user-item-header">
         <span class="admin-user-item-name">${escapeHtml(u.username)}</span>
@@ -7835,12 +7857,35 @@ function renderAdminUsers(users) {
       <div class="admin-user-item-actions">
         <button class="admin-user-btn" data-action="edit" data-id="${u.id}">Bearbeiten</button>
         <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
-        ${`<button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}" data-username="${u.username}">Löschen</button>`}
+        <button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}" data-username="${u.username}">Löschen</button>
       </div>
     </div>
-  `
-    )
-    .join('');
+  `;
+
+  const renderSectionHeader = (label) =>
+    `<div class="admin-users-section-header">${escapeHtml(label)}</div>`;
+
+  let html = '';
+
+  if (admins.length) {
+    html += renderSectionHeader('Administratoren');
+    html += admins.map(renderUserCard).join('');
+  }
+
+  const teamsWithUsers = [...teamOrder, '_none'].filter(
+    (tid) => byTeam[tid]?.length > 0
+  );
+  teamsWithUsers.forEach((tid) => {
+    html += renderSectionHeader(tid === '_none' ? 'Kein Team' : teamLabel(tid));
+    html += byTeam[tid].map(renderUserCard).join('');
+  });
+
+  if (inactive.length) {
+    html += renderSectionHeader('Inaktiv');
+    html += inactive.map(renderUserCard).join('');
+  }
+
+  adminUsersGrid.innerHTML = html;
 
   adminUsersGrid.querySelectorAll('.admin-user-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {

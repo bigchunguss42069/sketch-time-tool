@@ -736,8 +736,8 @@ body {
   width: 100%;
   padding: 14px;
   border-radius: 18px;
-  border: 2px dashed var(--border);
-  background: transparent;
+  border: 1px solid var(--border);
+  background: var(--panel-soft);
   color: var(--muted);
   font-size: 14px;
   font-weight: 700;
@@ -967,8 +967,8 @@ body {
   width: 100%;
   padding: 16px;
   border-radius: 16px;
-  border: 2px dashed #e2e8f0;
-  background: transparent;
+  border: 1px solid #e2e8f0;
+  background: var(--panel-soft);
   color: #64748b;
   font-size: 14px;
   font-weight: 700;
@@ -3614,8 +3614,8 @@ body.in-admin-view #view-admin {
 }
 
 .admin-user-week-row.locked {
-  border-color: rgb(255, 26, 26);
-  box-shadow: 0 0 0 1px rgba(219, 134, 134, 0.945);
+  border-color: rgb(238, 41, 41);
+  box-shadow: 0 0 0 1px rgba(200, 18, 18, 0.945);
 }
 
 .admin-user-week-main {
@@ -3687,7 +3687,7 @@ body.in-admin-view #view-admin {
 }
 
 .admin-week-block.locked {
-  border-color: rgba(117, 12, 12, 0.874);
+  border-color: rgba(255, 0, 0, 0.507);
   box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
 }
 
@@ -3735,7 +3735,7 @@ body.in-admin-view #view-admin {
   color: var(--accent);
 }
 .admin-week-lock-btn.is-locked {
-  border-color: rgba(141, 6, 6, 0.647);
+  border-color: rgba(251, 6, 6, 0.507);
   color: rgba(17, 3, 3, 0.837);
   font-weight: 600;
 }
@@ -4028,6 +4028,18 @@ body.in-admin-view #view-admin {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
+}
+
+.admin-users-section-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted, #94a3b8);
+  padding: 14px 0 6px 2px;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  margin-bottom: 8px;
+  grid-column: 1 / -1;
 }
 
 .admin-user-item {
