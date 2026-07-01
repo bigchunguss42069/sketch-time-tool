@@ -336,6 +336,24 @@ const resetPasswordLimiter = rateLimit({
  * @param {import('express').RequestHandler} requireAuth
  * @param {Function} createMailTransporter - Factory für Nodemailer-Transporter
  */
+async function logSecurityEvent(db, { eventType, username, ip, detail }) {
+  try {
+    await db.query(
+      `INSERT INTO security_events (event_type, username, ip, detail)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        eventType,
+        username || null,
+        ip || null,
+        detail ? JSON.stringify(detail) : null,
+      ]
+    );
+  } catch (err) {
+    // Logging-Fehler sollen nie die eigentliche Antwort blockieren
+    console.error('[SecurityLog] Fehler beim Schreiben:', err.message);
+  }
+}
+
 function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
   // POST /api/auth/login
   app.post('/api/auth/login', loginLimiter, async (req, res) => {
@@ -351,6 +369,11 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
       const user = await findUserByCredentials(db, username, password);
       if (!user) {
         console.log(`[AUDIT] LOGIN_FAILED user=${username} ip=${req.ip}`);
+        await logSecurityEvent(db, {
+          eventType: 'LOGIN_FAILED',
+          username,
+          ip: req.ip,
+        });
         return res
           .status(401)
           .json({ ok: false, error: 'Ungültige Zugangsdaten' });
@@ -360,6 +383,11 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
       await createSessionRecord(db, { token, userId: user.id });
 
       console.log(`[AUDIT] LOGIN_SUCCESS user=${user.username} ip=${req.ip}`);
+      await logSecurityEvent(db, {
+        eventType: 'LOGIN_SUCCESS',
+        username: user.username,
+        ip: req.ip,
+      });
       return res.json({
         ok: true,
         token,
@@ -460,8 +488,15 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
       const token = String(req.body?.token || '').trim();
       const password = String(req.body?.password || '');
 
-      if (!token || password.length < 6) {
-        return res.status(400).json({ ok: false, error: 'Ungültige Eingabe' });
+      const pwOk =
+        password.length >= 8 &&
+        /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+      if (!token || !pwOk) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            'Passwort muss mindestens 8 Zeichen und eine Zahl oder ein Sonderzeichen enthalten.',
+        });
       }
 
       try {
@@ -493,6 +528,11 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
         console.log(
           `[AUDIT] PASSWORD_RESET user=${resetUser?.username || userId} ip=${req.ip}`
         );
+        await logSecurityEvent(db, {
+          eventType: 'PASSWORD_RESET',
+          username: resetUser?.username || null,
+          ip: req.ip,
+        });
         return res.json({ ok: true });
       } catch (err) {
         console.error('Reset password error:', err);

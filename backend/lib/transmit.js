@@ -346,6 +346,19 @@ function createTransmitService(
         return res.status(400).json({ ok: false, error: 'Invalid payload' });
       }
 
+      // Zukunfts-Transmit verhindern — verhindert vorzeitige Jahresgutschriften
+      const transmitNow = new Date();
+      if (
+        payload.year > transmitNow.getFullYear() ||
+        (payload.year === transmitNow.getFullYear() &&
+          payload.monthIndex > transmitNow.getMonth())
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Zukünftige Monate können nicht übertragen werden.',
+        });
+      }
+
       const userId = req.user.username;
       let payloadToSave = payload;
 

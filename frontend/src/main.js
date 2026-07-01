@@ -2325,11 +2325,13 @@ if (dashboardTransmitBtn) {
     })
       .then((res) => {
         if (!res.ok) {
-          // differentiate 401 vs others (optional)
           if (res.status === 401) {
             throw new Error('UNAUTHORIZED');
           }
-          throw new Error('SERVER_ERROR');
+          // Server-Fehlermeldung auslesen statt generischen Fehler werfen
+          return res.json().then((data) => {
+            throw new Error(data?.error || 'SERVER_ERROR');
+          });
         }
         return res.json();
       })
@@ -2372,6 +2374,9 @@ if (dashboardTransmitBtn) {
           clearAuthSession();
           showLogin();
           showToast('Sitzung ist abgelaufen. Bitte neu einloggen.');
+        } else if (err.message && err.message !== 'SERVER_ERROR') {
+          // Spezifische Server-Fehlermeldung (z.B. "Zukünftige Monate...")
+          showToast(`Übertragung fehlgeschlagen: ${err.message}`);
         } else {
           showToast(
             'Übertragung fehlgeschlagen (Netzwerk oder Server nicht erreichbar).'
@@ -4260,6 +4265,7 @@ if (dashboardMonthPrevBtn) {
     dashboardMonthOffset -= 1;
     updateDashboardForCurrentMonth();
     updateOvertimeYearCard();
+    renderAbsenceListForCurrentYear();
   });
 }
 
@@ -4268,6 +4274,7 @@ if (dashboardMonthNextBtn) {
     dashboardMonthOffset += 1;
     updateDashboardForCurrentMonth();
     updateOvertimeYearCard();
+    renderAbsenceListForCurrentYear();
   });
 }
 
@@ -5213,6 +5220,8 @@ function operationLabel(opKey) {
   if (opKey === '_specialRegie') return 'Spezial: Regie';
   if (opKey === '_specialFehler') return 'Spezial: Fehler';
   if (opKey === '_special') return 'Spezial';
+  if (opKey === '_regie') return 'Regie';
+  if (opKey === '_fehler') return 'Fehler';
 
   // normal options (option1..option6)
   const label = OPTION_LABELS[opKey];
@@ -5599,6 +5608,8 @@ function exportOpColor(opKey) {
     option6: '#EDC948',
     Regie: '#B07AA1',
     Fehler: '#FF9DA7',
+    _regie: '#B07AA1',
+    _fehler: '#FF9DA7',
     _special_regie: '#B07AA1',
     _special_fehler: '#FF9DA7',
     _special: '#9C755F',

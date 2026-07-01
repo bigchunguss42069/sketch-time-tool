@@ -2910,15 +2910,16 @@ body {
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #60676f;
   background: none;
   border: none;
-  padding: 8px 0 0 0;
+  border-radius: 12px;
+  padding: 8px 1 0 0;
   transition: color 0.2s;
 }
 
 .stamp-edit-toggle:hover {
-  color: #6366f1;
+  color: #4649f1;
 }
 
 .stamp-edit-toggle::-webkit-details-marker {
@@ -3347,11 +3348,6 @@ body.in-admin-view #view-admin {
   border: 1px solid rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(12px);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-
-  background: rgba(148, 163, 184, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .admin-tab-btn {
@@ -3367,6 +3363,20 @@ body.in-admin-view #view-admin {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+@media (max-width: 640px) {
+  .admin-tabs {
+    flex-wrap: wrap;
+    border-radius: 14px;
+  }
+
+  .admin-tab-btn {
+    flex: 0 0 calc(33.333% - 3px);
+    font-size: 12px;
+    padding: 9px 4px;
+    border-radius: 10px;
+  }
 }
 
 .admin-tab-btn:hover {

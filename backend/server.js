@@ -1361,10 +1361,15 @@ app.post(
     const { id } = req.params;
     const { password } = req.body || {};
 
-    if (!password || password.length < 6) {
-      return res
-        .status(400)
-        .json({ ok: false, error: 'Password must be at least 6 characters' });
+    const pwOk =
+      password.length >= 8 &&
+      /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+    if (!password || !pwOk) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          'Passwort muss mindestens 8 Zeichen und eine Zahl oder ein Sonderzeichen enthalten.',
+      });
     }
 
     try {

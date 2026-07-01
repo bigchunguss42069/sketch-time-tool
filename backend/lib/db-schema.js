@@ -511,6 +511,32 @@ async function seedInitialUsers(db, initialUsers) {
  * @param {import('pg').Pool} db
  * @param {Array} initialUsers - aus constants.js
  */
+async function ensureSecurityEventsTable(db) {
+  if (!db) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS security_events (
+      id SERIAL PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      username TEXT,
+      ip TEXT,
+      detail JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_security_events_username
+    ON security_events (username)
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_security_events_type
+    ON security_events (event_type)
+  `);
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_security_events_created_at
+    ON security_events (created_at DESC)
+  `);
+}
+
 async function initializeDatabase(db, initialUsers) {
   await ensureUsersTable(db);
   await ensureSessionsTable(db);
@@ -523,6 +549,7 @@ async function initializeDatabase(db, initialUsers) {
   await ensureStampEditsTable(db);
   await ensureWorkSchedulesTable(db);
   await ensureAnlagenTables(db);
+  await ensureSecurityEventsTable(db);
   await seedInitialUsers(db, initialUsers);
 }
 
@@ -568,6 +595,7 @@ module.exports = {
   ensureStampEditsTable,
   ensureWorkSchedulesTable,
   ensureAnlagenTables,
+  ensureSecurityEventsTable,
   seedInitialUsers,
   initializeDatabase,
 };
