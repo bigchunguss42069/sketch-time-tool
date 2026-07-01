@@ -758,11 +758,16 @@ async function loadAdminPayroll() {
  * Switches the active main view and triggers view-specific refreshes.
  */
 
+let _navSyncInProgress = false;
 topNavTabs.forEach((tab) => {
   tab.addEventListener('click', () => {
-    if (_draftLoadComplete) syncDraftToServer();
-    const view = tab.dataset.view; // "wochenplan", "pikett", "dashboard", "dokumente"
-
+    if (_draftLoadComplete && !_navSyncInProgress) {
+      _navSyncInProgress = true;
+      syncDraftToServer().finally(() => {
+        _navSyncInProgress = false;
+      });
+    }
+    const view = tab.dataset.view;
     // Switch active tab
     topNavTabs.forEach((t) => t.classList.remove('active'));
     tab.classList.add('active');
@@ -1637,14 +1642,17 @@ function renderPikettList() {
     body.appendChild(overtimeSection);
 
     card.appendChild(header);
-    if (locked) {
-      const lockBadge = document.createElement('div');
-      lockBadge.className = 'pikett-lock-badge';
-      lockBadge.textContent = '🔒 Gesperrt';
-      card.appendChild(lockBadge);
-    }
-
     card.appendChild(body);
+
+    if (locked) {
+      const lockOverlay = document.createElement('div');
+      lockOverlay.className = 'pikett-lock-error';
+      const lockText = document.createElement('div');
+      lockText.className = 'pikett-lock-error-text';
+      lockText.textContent = '🔒 Gesperrt';
+      lockOverlay.appendChild(lockText);
+      card.appendChild(lockOverlay);
+    }
 
     if (!locked) {
       const cardFooter = document.createElement('div');
@@ -8554,7 +8562,7 @@ if (stampEditDate) {
         lockMsg.className = 'stamp-edit-lock-msg';
         lockMsg.textContent =
           'Diese Woche ist gesperrt — keine Änderungen möglich.';
-        stampEditDate.after(lockMsg);
+        body.appendChild(lockMsg);
       }
     } else {
       body.querySelectorAll('button, input').forEach((el) => {
@@ -8581,8 +8589,8 @@ if (stampEditAddBtn) {
       const autoStamps = [
         { type: 'in', time: '07:00' },
         { type: 'out', time: '12:00' },
-        { type: 'in', time: '12:30' },
-        { type: 'out', time: '16:30' },
+        { type: 'in', time: '13:00' },
+        { type: 'out', time: '17:00' },
       ];
       autoStamps.forEach((s) => {
         dayData.stamps.push(s);
