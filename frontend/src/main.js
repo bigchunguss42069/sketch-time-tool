@@ -8239,21 +8239,24 @@ function renderStampLog(dateKey, logEl, editMode) {
           title: 'Zeit ändern',
           time: stamp.time,
           type: stamp.type,
-          onSave: (type, newTime) => {
-            const sortedOriginal = [...dayData.stamps].sort((a, b) =>
+          onSave: (newType, newTime) => {
+            const currentDayData = getOrCreateDayData(dateKey);
+            const sortedCurrent = [...currentDayData.stamps].sort((a, b) =>
               a.time.localeCompare(b.time)
             );
-            const realIdx = dayData.stamps.indexOf(sortedOriginal[idx]);
-            const oldTime = dayData.stamps[realIdx]?.time;
-            const oldType = dayData.stamps[realIdx]?.type;
+            const target = sortedCurrent[idx];
+            const realIdx = target
+              ? currentDayData.stamps.findIndex(
+                  (s) => s.time === target.time && s.type === target.type
+                )
+              : -1;
             if (realIdx !== -1) {
-              logStampEdit(
-                dateKey,
-                'deleted',
-                currentDayData.stamps[realIdx],
-                null
-              );
-              currentDayData.stamps.splice(realIdx, 1);
+              const oldStamp = currentDayData.stamps[realIdx];
+              logStampEdit(dateKey, 'edited', oldStamp, {
+                type: newType,
+                time: newTime,
+              });
+              currentDayData.stamps[realIdx] = { type: newType, time: newTime };
             }
             saveToStorage();
             if (_draftLoadComplete) syncDraftToServer();
