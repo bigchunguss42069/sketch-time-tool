@@ -1152,6 +1152,28 @@ function applySavedMonthPayloadToLocalStores(savedPayload) {
  * Local persistence helpers / Pikett and absences
  */
 
+// ─── KomNr Recent History (temporär, bis Anlagen-Autocomplete verfügbar) ───
+const KOM_HISTORY_KEY = 'komNrHistory-v1';
+const KOM_HISTORY_MAX = 20;
+
+function loadKomHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(KOM_HISTORY_KEY) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveKomHistory(komNr) {
+  if (!komNr || String(komNr).trim().length < 3) return;
+  const history = loadKomHistory().filter((k) => k !== komNr);
+  history.unshift(komNr);
+  localStorage.setItem(
+    KOM_HISTORY_KEY,
+    JSON.stringify(history.slice(0, KOM_HISTORY_MAX))
+  );
+}
+
 function loadPikettStore() {
   const raw = localStorage.getItem(PIKETT_STORAGE_KEY);
   if (!raw) return [];
@@ -7050,8 +7072,51 @@ function applyKomForCurrentDay() {
     komInput.placeholder = 'z.B. 5226821';
     komInput.value = entry.komNr || '';
 
+    // KomNr Recent History Dropdown
+    const komInputWrap = document.createElement('div');
+    komInputWrap.className = 'kom-input-wrap';
+    const komDropdown = document.createElement('div');
+    komDropdown.className = 'kom-history-dropdown hidden';
+
+    const renderKomDropdown = () => {
+      const history = loadKomHistory();
+      const q = komInput.value.trim().toLowerCase();
+      const filtered = (
+        q ? history.filter((k) => k.toLowerCase().includes(q)) : history
+      ).slice(0, 5);
+      if (!filtered.length) {
+        komDropdown.classList.add('hidden');
+        return;
+      }
+      komDropdown.innerHTML = filtered
+        .map(
+          (k) =>
+            `<div class="kom-history-item" data-value="${escapeHtml(k)}">${escapeHtml(k)}</div>`
+        )
+        .join('');
+      komDropdown.classList.remove('hidden');
+    };
+
+    komInput.addEventListener('focus', renderKomDropdown);
+    komInput.addEventListener('input', renderKomDropdown);
+    komInput.addEventListener('blur', () => {
+      const val = normalizeKomNr(komInput.value);
+      if (val) saveKomHistory(val);
+      setTimeout(() => komDropdown.classList.add('hidden'), 150);
+    });
+
+    komDropdown.addEventListener('mousedown', (e) => {
+      const item = e.target.closest('.kom-history-item');
+      if (!item) return;
+      komInput.value = item.dataset.value;
+      komInput.dispatchEvent(new Event('change', { bubbles: true }));
+      komDropdown.classList.add('hidden');
+    });
+
+    komInputWrap.appendChild(komInput);
+    komInputWrap.appendChild(komDropdown);
     label.appendChild(labelSpan);
-    label.appendChild(komInput);
+    label.appendChild(komInputWrap);
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
