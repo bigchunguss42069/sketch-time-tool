@@ -34,6 +34,7 @@
     BlinkMacSystemFont,
     'Segoe UI',
     sans-serif;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
