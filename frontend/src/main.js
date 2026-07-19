@@ -7108,8 +7108,20 @@ function applyKomForCurrentDay() {
     komDropdown.addEventListener('mousedown', (e) => {
       const item = e.target.closest('.kom-history-item');
       if (!item) return;
-      komInput.value = item.dataset.value;
-      komInput.dispatchEvent(new Event('change', { bubbles: true }));
+      const selectedVal = item.dataset.value;
+      komInput.value = selectedVal;
+
+      // Direkt in dayStore speichern statt auf globalen Change-Handler zu verlassen
+      const dateKey = getCurrentDateKey();
+      const dayData = getOrCreateDayData(dateKey);
+      const card = komInput.closest('.kom-card');
+      if (card) {
+        const entryIndex = Number(card.dataset.entryIndex || '0');
+        const entry = getOrCreateEntry(dayData, entryIndex);
+        entry.komNr = normalizeKomNr(selectedVal);
+        saveToStorage();
+      }
+      saveKomHistory(selectedVal);
       komDropdown.classList.add('hidden');
     });
 
