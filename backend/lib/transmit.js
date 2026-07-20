@@ -567,6 +567,7 @@ function createTransmitService(
           payload: payloadToSave,
           updatedBy: strictUsername,
           computeMonthUeZ1,
+          skipToday: false,
         });
       } catch (e) {
         console.error(

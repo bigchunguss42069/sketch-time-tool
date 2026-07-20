@@ -444,7 +444,8 @@ function createKontenService(db) {
     userId,
     dateKey,
     acceptedAbsenceHoursMap,
-    cachedEmpStartKey = undefined
+    cachedEmpStartKey = undefined,
+    skipToday = true
   ) {
     const weekday = new Date(dateKey + 'T00:00:00').getDay();
     if (weekday === 0 || weekday === 6) return { soll: 0, employmentPct: 100 };
@@ -460,7 +461,8 @@ function createKontenService(db) {
       return { soll: 0, employmentPct: 100 };
 
     const today = formatDateKey(new Date());
-    if (dateKey >= today) return { soll: 0, employmentPct: 100 };
+    if (dateKey > today) return { soll: 0, employmentPct: 100 };
+    if (dateKey === today && skipToday) return { soll: 0, employmentPct: 100 };
 
     if (isBernHolidayKey(dateKey)) return { soll: 0, employmentPct: 100 };
     if (isCompanyBridgeDay(dateKey)) return { soll: 0, employmentPct: 100 };
@@ -514,6 +516,7 @@ function createKontenService(db) {
     payload,
     updatedBy,
     computeMonthUeZ1,
+    skipToday = true,
   }) {
     if (!db) throw new Error('DATABASE_URL is not configured');
 
@@ -578,7 +581,8 @@ function createKontenService(db) {
         payload,
         year,
         monthIndex,
-        ensured.userId
+        ensured.userId,
+        skipToday
       );
 
       const deltaUeZ1 = round1(monthUeZ1 - prevSnap.ueZ1);

@@ -243,7 +243,13 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
    * @param {number} vorarbeitRequired - Jahresziel für Vorarbeit
    * @returns {Promise<{ ueZ1: number, vorarbeitBalance: number }>}
    */
-  async function computeMonthUeZ1(payload, year, monthIndex, userId) {
+  async function computeMonthUeZ1(
+    payload,
+    year,
+    monthIndex,
+    userId,
+    skipToday = true
+  ) {
     const daysObj =
       payload?.days && typeof payload.days === 'object' ? payload.days : {};
 
@@ -277,7 +283,8 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
         userId,
         dateKey,
         acceptedAbsenceDays,
-        cachedEmpStartKey
+        cachedEmpStartKey,
+        skipToday
       );
       if (soll === 0) continue;
 
