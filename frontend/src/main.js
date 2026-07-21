@@ -925,6 +925,47 @@ function saveToStorage() {
 
 // Draft Sync — debounced, sendet aktuellen Monat an Server
 let _draftSyncTimer = null;
+let _liveStampInterval = null;
+
+function getLiveStampTotal(stamps) {
+  if (!Array.isArray(stamps) || stamps.length === 0) return null;
+  const sorted = [...stamps].sort((a, b) => a.time.localeCompare(b.time));
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  let total = 0;
+  let lastIn = null;
+  for (const s of sorted) {
+    const [hh, mm] = s.time.split(':').map(Number);
+    const minutes = hh * 60 + mm;
+    if (s.type === 'in') lastIn = minutes;
+    else if (s.type === 'out' && lastIn !== null) {
+      total += minutes - lastIn;
+      lastIn = null;
+    }
+  }
+  // Laufende Session dazurechnen
+  if (lastIn !== null) total += nowMinutes - lastIn;
+  if (total <= 0) return null;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function startLiveStampCounter(stamps) {
+  stopLiveStampCounter();
+  _liveStampInterval = setInterval(() => {
+    if (!stampCardNet) return;
+    const live = getLiveStampTotal(stamps);
+    stampCardNet.textContent = live || '0h';
+  }, 60_000);
+}
+
+function stopLiveStampCounter() {
+  if (_liveStampInterval) {
+    clearInterval(_liveStampInterval);
+    _liveStampInterval = null;
+  }
+}
 let _draftLoadComplete = false;
 
 function scheduleDraftSync() {
@@ -7295,8 +7336,61 @@ function applySpecialEntriesForCurrentDay() {
     komInput.placeholder = 'z.B. 5226821';
     komInput.value = entry.komNr || '';
 
+    // KomNr Recent History Dropdown (analog zur Kom-Karte)
+    const specialKomWrap = document.createElement('div');
+    specialKomWrap.className = 'kom-input-wrap';
+    const specialKomDropdown = document.createElement('div');
+    specialKomDropdown.className = 'kom-history-dropdown hidden';
+
+    const renderSpecialKomDropdown = () => {
+      const history = loadKomHistory();
+      const q = komInput.value.trim().toLowerCase();
+      const filtered = (
+        q ? history.filter((k) => k.toLowerCase().includes(q)) : history
+      ).slice(0, 5);
+      if (!filtered.length) {
+        specialKomDropdown.classList.add('hidden');
+        return;
+      }
+      specialKomDropdown.innerHTML = filtered
+        .map(
+          (k) =>
+            `<div class="kom-history-item" data-value="${escapeHtml(k)}">${escapeHtml(k)}</div>`
+        )
+        .join('');
+      specialKomDropdown.classList.remove('hidden');
+    };
+
+    komInput.addEventListener('focus', renderSpecialKomDropdown);
+    komInput.addEventListener('input', renderSpecialKomDropdown);
+    komInput.addEventListener('blur', () => {
+      const val = normalizeKomNr(komInput.value);
+      if (val) saveKomHistory(val);
+      setTimeout(() => specialKomDropdown.classList.add('hidden'), 150);
+    });
+
+    specialKomDropdown.addEventListener('mousedown', (e) => {
+      const item = e.target.closest('.kom-history-item');
+      if (!item) return;
+      const selectedVal = item.dataset.value;
+      komInput.value = selectedVal;
+      const dateKey = getCurrentDateKey();
+      const dayData = getOrCreateDayData(dateKey);
+      if (
+        Array.isArray(dayData.specialEntries) &&
+        dayData.specialEntries[index]
+      ) {
+        dayData.specialEntries[index].komNr = normalizeKomNr(selectedVal);
+        saveToStorage();
+      }
+      saveKomHistory(selectedVal);
+      specialKomDropdown.classList.add('hidden');
+    });
+
+    specialKomWrap.appendChild(komInput);
+    specialKomWrap.appendChild(specialKomDropdown);
     komField.appendChild(komLabel);
-    komField.appendChild(komInput);
+    komField.appendChild(specialKomWrap);
     middle.appendChild(komField);
 
     // --- Unten: Rapport-Nr. oder Fehlerbeschreibung ---
@@ -8401,12 +8495,21 @@ function renderStampCard() {
 
   if (stampCardDate) stampCardDate.textContent = formatDateDE(todayKey);
 
-  const net = getStampNet(stamps);
+  const stamped = isStampedIn(stamps);
   const netWrap = document.getElementById('stampCardNetWrap');
-  if (stampCardNet) stampCardNet.textContent = net || '0h';
   if (netWrap) netWrap.style.display = 'flex';
 
-  const stamped = isStampedIn(stamps);
+  if (stamped) {
+    // Live-Counter: sofort aktuellen Wert zeigen und Interval starten
+    const live = getLiveStampTotal(stamps);
+    if (stampCardNet) stampCardNet.textContent = live || '0h';
+    startLiveStampCounter(stamps);
+  } else {
+    // Statischer Total wenn ausgestempelt
+    stopLiveStampCounter();
+    const net = getStampNet(stamps);
+    if (stampCardNet) stampCardNet.textContent = net || '0h';
+  }
   if (stampBtn) {
     stampBtn.classList.toggle('stamped-in', stamped);
     if (stampBtnLabel)
