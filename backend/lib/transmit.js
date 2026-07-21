@@ -300,6 +300,65 @@ function createTransmitService(
     });
 
     try {
+      const teamId = String(user.teamId || '');
+
+      if (teamId) {
+        const oldSnap = await readAnlagenSnapshot(
+          db,
+          user.username,
+          year,
+          monthIndex
+        );
+        const newSnap = extractAnlagenSnapshotFromPayload(
+          submission,
+          user.username
+        );
+        const index = await readAnlagenIndex(db);
+        const ledger = await readAnlagenLedger(db);
+        const touched = new Set([
+          ...Object.keys(oldSnap || {}),
+          ...Object.keys(newSnap || {}),
+        ]);
+
+        if (oldSnap) {
+          applySnapshotToIndexAndLedger({
+            index,
+            ledger,
+            teamId,
+            username: user.username,
+            snap: oldSnap,
+            sign: -1,
+          });
+        }
+
+        applySnapshotToIndexAndLedger({
+          index,
+          ledger,
+          teamId,
+          username: user.username,
+          snap: newSnap,
+          sign: +1,
+        });
+
+        recomputeLastActivitiesForTeam(
+          index,
+          ledger,
+          teamId,
+          Array.from(touched)
+        );
+
+        await writeAnlagenIndex(db, index);
+        await writeAnlagenLedger(db, ledger);
+        await writeAnlagenSnapshot(
+          db,
+          user.username,
+          year,
+          monthIndex,
+          newSnap,
+          teamId
+        );
+      }
+
       await updateKontenFromSubmission({
         username: user.username,
         teamId: user.teamId || null,
@@ -310,13 +369,15 @@ function createTransmitService(
         updatedBy: 'auto-transmit',
         computeMonthUeZ1,
       });
+
       console.log(
         `[AutoTransmit] ${user.username} — ${payload.monthLabel} erfolgreich übertragen.`
       );
     } catch (err) {
       console.error(
-        `[AutoTransmit] Konto-Update fehlgeschlagen für ${user.username}:`,
-        err.message
+        `[AutoTransmit] Anlagen-/Konto-Update fehlgeschlagen für ${user.username}:`,
+        err.message,
+        err.stack
       );
     }
   }
