@@ -57,8 +57,11 @@ function getPayrollAbsenceTypeLabel(type) {
     .toLowerCase();
   const map = {
     ferien: 'Ferien',
+    krank: 'Krank',
+    arzt: 'Arztbesuch',
     unfall: 'Unfall',
     militaer: 'Militär',
+    mutterschaft: 'Mutterschaft',
     bezahlteabwesenheit: 'Bezahlte Abwesenheit',
     vaterschaft: 'Vaterschaftsurlaub',
     sonstiges: 'Sonstiges',
@@ -91,10 +94,40 @@ function ensurePayrollAuditRow(rowMap, dateKey) {
       pikettHours: 0,
       overtime3Hours: 0,
       absenceLabels: [],
+      doctorAbsences: [],
       stamps: [],
     });
   }
   return rowMap.get(dateKey);
+}
+
+function payrollTimeToMinutes(value) {
+  const raw = String(value || '').slice(0, 5);
+
+  if (!/^\d{2}:\d{2}$/.test(raw)) return null;
+
+  const [hours, minutes] = raw.split(':').map(Number);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function formatPayrollMinutes(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(total / 60);
+  const remainingMinutes = total % 60;
+
+  return `${hours}:${String(remainingMinutes).padStart(2, '0')} Std.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +148,8 @@ function createPayrollService(
     computePayrollPeriodOvertimeFromSubmission,
     loadLatestMonthSubmission,
     aggregatePayrollFromSubmission,
+    getDailySoll,
+    fetchEmpStartKey,
   }
 ) {
   /**
@@ -139,6 +174,7 @@ function createPayrollService(
 
     const absencesById = new Map();
     const auditRowMap = new Map();
+    const cachedEmpStartKey = await fetchEmpStartKey(user.id);
 
     const totals = {
       praesenzStunden: 0,
@@ -324,8 +360,72 @@ function createPayrollService(
         const dk = formatDateKey(cursor);
         if (isWeekdayDateKey(dk)) {
           const row = ensurePayrollAuditRow(auditRowMap, dk);
-          if (!row.absenceLabels.includes(label)) row.absenceLabels.push(label);
-          if (type === 'ferien') row.ferien = true;
+
+          if (!row.absenceLabels.includes(label)) {
+            row.absenceLabels.push(label);
+          }
+
+          if (type === 'ferien') {
+            row.ferien = true;
+          }
+
+          if (type === 'arzt') {
+            const startTime = String(abs.startTime || '').slice(0, 5);
+            const endTime = String(abs.endTime || '').slice(0, 5);
+
+            const startMinutes = payrollTimeToMinutes(startTime);
+            const endMinutes = payrollTimeToMinutes(endTime);
+
+            const durationMinutes =
+              startMinutes != null &&
+              endMinutes != null &&
+              endMinutes > startMinutes
+                ? endMinutes - startMinutes
+                : Math.round(Math.max(0, Number(abs.hours) || 0) * 60);
+
+            const maximumCreditMinutes = Math.min(
+              durationMinutes,
+              60,
+              Math.round(Math.max(0, Number(abs.hours) || 0) * 60)
+            );
+
+            const { soll: dailyTargetHours } = await getDailySoll(
+              user.id,
+              dk,
+              new Map(),
+              cachedEmpStartKey
+            );
+
+            const targetMinutes = Math.round(
+              Math.max(0, Number(dailyTargetHours) || 0) * 60
+            );
+
+            const presenceMinutes = Math.round(
+              Math.max(0, Number(row.praesenzStunden) || 0) * 60
+            );
+
+            const missingTargetMinutes = Math.max(
+              0,
+              targetMinutes - presenceMinutes
+            );
+
+            const creditedMinutes = Math.min(
+              maximumCreditMinutes,
+              missingTargetMinutes
+            );
+
+            row.doctorAbsences.push({
+              startTime: startTime || null,
+              endTime: endTime || null,
+              durationMinutes,
+              maximumCreditMinutes,
+              creditedMinutes,
+              notCreditedMinutes: Math.max(
+                0,
+                durationMinutes - creditedMinutes
+              ),
+            });
+          }
         }
         cursor.setDate(cursor.getDate() + 1);
       }
@@ -356,6 +456,7 @@ function createPayrollService(
         overtime3Hours: r1(row.overtime3Hours),
         absenceLabels: row.absenceLabels || [],
         absencesText: (row.absenceLabels || []).join(' | '),
+        doctorAbsences: row.doctorAbsences || [],
         stamps: row.stamps || [],
       }))
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
@@ -684,7 +785,8 @@ function createPayrollService(
         sectionTitle('Absenzen im Zeitraum');
         const TYPE_LABELS = {
           ferien: 'Ferien',
-          krank: 'Krank / Arztbesuch',
+          krank: 'Krank',
+          arzt: 'Arztbesuch',
           unfall: 'Unfall',
           militaer: 'Militär',
           mutterschaft: 'Mutterschaft',
@@ -784,7 +886,9 @@ function createPayrollService(
           const expenseViolation =
             entry.nebenauslagen && presenceMinutes < 4 * 60;
 
-          ensurePdfSpace(86);
+          const doctorLineHeight = (entry.doctorAbsences || []).length * 42;
+
+          ensurePdfSpace(86 + doctorLineHeight);
           doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
 
           if (entry.stamps && entry.stamps.length > 0) {
@@ -863,6 +967,39 @@ function createPayrollService(
             doc.text(`Abwesenheiten: ${entry.absencesText}`);
           }
 
+          for (const doctor of entry.doctorAbsences || []) {
+            const timeRange =
+              doctor.startTime && doctor.endTime
+                ? `${doctor.startTime}–${doctor.endTime}`
+                : 'Zeitraum nicht verfügbar';
+
+            doc
+              .font('Helvetica-Bold')
+              .fontSize(8.5)
+              .fillColor('#000000')
+              .text(`Arztbesuch: ${timeRange}`);
+
+            doc
+              .font('Helvetica')
+              .fontSize(8)
+              .text(
+                `Dauer: ${formatPayrollMinutes(doctor.durationMinutes)}   |   ` +
+                  `Gutgeschrieben: ${formatPayrollMinutes(doctor.creditedMinutes)}`
+              );
+
+            if (doctor.notCreditedMinutes > 0) {
+              doc
+                .fillColor('#c62828')
+                .text(
+                  `Nicht gutgeschrieben: ${formatPayrollMinutes(
+                    doctor.notCreditedMinutes
+                  )}`
+                )
+                .fillColor('#000000');
+            }
+          }
+
+          doc.font('Helvetica').fillColor('#000000');
           doc.moveDown(0.35);
         });
       }

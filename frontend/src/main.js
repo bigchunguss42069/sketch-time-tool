@@ -3852,13 +3852,15 @@ function renderAbsenceListForCurrentYear() {
     if (st === 'accepted') {
       const btn = document.createElement('button');
       btn.type = 'button';
-      if (req.type === 'krank') {
+
+      if (req.type === 'krank' || req.type === 'arzt') {
         btn.className = 'absence-delete-direct-btn';
         btn.textContent = 'Löschen';
       } else {
         btn.className = 'absence-cancel-btn';
         btn.textContent = 'Storno anfragen';
       }
+
       statusRow.appendChild(btn);
     }
 

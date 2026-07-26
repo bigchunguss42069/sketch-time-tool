@@ -252,6 +252,8 @@ const {
   computePayrollPeriodOvertimeFromSubmission,
   loadLatestMonthSubmission,
   aggregatePayrollFromSubmission,
+  getDailySoll,
+  fetchEmpStartKey,
 });
 
 const { autoTransmitForUser, registerTransmitRoutes } = createTransmitService(
