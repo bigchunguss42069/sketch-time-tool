@@ -5111,6 +5111,39 @@ body.in-admin-view #view-admin {
   background: var(--accent);
 }
 
+.anlagen-error-details {
+  margin-top: 16px;
+}
+
+.anlagen-error-detail-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.anlagen-error-detail-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.18);
+}
+
+.anlagen-error-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.anlagen-error-detail-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.anlagen-error-detail-row strong {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* ============================================================
    Präsenz Tab
    ============================================================ */

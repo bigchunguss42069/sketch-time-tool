@@ -31,6 +31,43 @@ const {
 } = require('./compute');
 const { getOperationLabel } = require('./constants');
 
+function normalizeErrorDescription(value) {
+  const display = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  return {
+    key: (display || 'ohne fehlerbeschreibung').toLocaleLowerCase('de-CH'),
+    display: display || 'Ohne Fehlerbeschreibung',
+  };
+}
+
+function addErrorDetail(target, detail, sign = 1) {
+  if (!target || !detail) return;
+
+  const key = [detail.dateKey, detail.username, detail.descriptionKey].join(
+    '|'
+  );
+
+  if (!target[key]) {
+    target[key] = {
+      dateKey: detail.dateKey,
+      username: detail.username,
+      descriptionKey: detail.descriptionKey,
+      description: detail.description,
+      hours: 0,
+    };
+  }
+
+  target[key].hours = round1(
+    Number(target[key].hours || 0) + sign * Number(detail.hours || 0)
+  );
+
+  if (!(target[key].hours > 0)) {
+    delete target[key];
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ledger (tagesbasierte Buchungen)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -352,6 +389,7 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
           totalHours: 0,
           byOperation: {},
           byDate: {},
+          errorDetails: {},
           lastActivity: null,
         };
       const rec = snap[komNr];
@@ -386,6 +424,7 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
           totalHours: 0,
           byOperation: {},
           byDate: {},
+          errorDetails: {},
           lastActivity: null,
         };
       const rec = snap[komNr];
@@ -396,6 +435,18 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
       addNum(rec.byOperation, bucket, h);
       addNum(rec.byDate, dateKey, h);
       rec.totalHours += h;
+
+      if (type === 'fehler') {
+        const description = normalizeErrorDescription(s?.description);
+
+        addErrorDetail(rec.errorDetails, {
+          dateKey,
+          username,
+          descriptionKey: description.key,
+          description: description.display,
+          hours: h,
+        });
+      }
       if (!rec.lastActivity || dateKey > rec.lastActivity)
         rec.lastActivity = dateKey;
     }
@@ -471,6 +522,7 @@ function ensureAnlageRec(teamObj, komNr) {
       totalHours: 0,
       byOperation: {},
       byUser: {},
+      errorDetails: {},
       lastActivity: null,
     };
   }
@@ -481,6 +533,12 @@ function ensureAnlageRec(teamObj, komNr) {
     teamObj[komNr].byOperation = {};
   if (!teamObj[komNr].byUser || typeof teamObj[komNr].byUser !== 'object')
     teamObj[komNr].byUser = {};
+  if (
+    !teamObj[komNr].errorDetails ||
+    typeof teamObj[komNr].errorDetails !== 'object'
+  ) {
+    teamObj[komNr].errorDetails = {};
+  }
   if (!('lastActivity' in teamObj[komNr])) teamObj[komNr].lastActivity = null;
   if (!('totalHours' in teamObj[komNr])) teamObj[komNr].totalHours = 0;
   return teamObj[komNr];
@@ -534,11 +592,16 @@ function applySnapshotToIndexAndLedger({
         totalHours: 0,
         byOperation: {},
         byUser: {},
+        errorDetails: {},
         lastActivity: null,
       };
     }
     const gi = teamIndex[komNr];
     const total = Number(rec.totalHours || 0);
+
+    if (!gi.errorDetails || typeof gi.errorDetails !== 'object') {
+      gi.errorDetails = {};
+    }
 
     gi.totalHours = round1(Number(gi.totalHours || 0) + sign * total);
 
@@ -552,6 +615,10 @@ function applySnapshotToIndexAndLedger({
     if (sign > 0) addNum(gi.byUser, username, total);
     else subNum(gi.byUser, username, total);
     cleanupZeroish(gi.byUser);
+
+    for (const detail of Object.values(rec.errorDetails || {})) {
+      addErrorDetail(gi.errorDetails, detail, sign);
+    }
 
     // Ledger
     if (!ledger[teamId][komNr]) ledger[teamId][komNr] = { byUser: {} };
@@ -606,6 +673,7 @@ function extractAnlagenFromSubmission(submission, username) {
           totalHours: 0,
           byOperation: {},
           byUser: {},
+          errorDetails: {},
           lastActivity: null,
         });
       const rec = out.get(komNr);
@@ -640,14 +708,29 @@ function extractAnlagenFromSubmission(submission, username) {
           totalHours: 0,
           byOperation: {},
           byUser: {},
+          errorDetails: {},
           lastActivity: null,
         });
       const rec = out.get(komNr);
 
       rec.totalHours += h;
       addNum(rec.byUser, username, h);
+
       const t = String(s?.type || '').toLowerCase();
-      addNum(rec.byOperation, t === 'fehler' ? 'Fehler' : 'Regie', h);
+      addNum(rec.byOperation, t === 'fehler' ? '_fehler' : '_regie', h);
+
+      if (t === 'fehler') {
+        const description = normalizeErrorDescription(s?.description);
+
+        addErrorDetail(rec.errorDetails, {
+          dateKey,
+          username,
+          descriptionKey: description.key,
+          description: description.display,
+          hours: h,
+        });
+      }
+
       if (!rec.lastActivity || dateKey > rec.lastActivity)
         rec.lastActivity = dateKey;
     }
@@ -694,6 +777,10 @@ async function rebuildAnlagenIndex(db, listUsersFromDb) {
           addNum(g.byOperation, k, v);
         for (const [n, v] of Object.entries(rec.byUser || {}))
           addNum(g.byUser, n, v);
+
+        for (const detail of Object.values(rec.errorDetails || {})) {
+          addErrorDetail(g.errorDetails, detail, 1);
+        }
 
         if (
           rec.lastActivity &&
@@ -788,13 +875,23 @@ function registerAnlagenRoutes(
 
       const now = new Date();
 
+      const exportedAt = new Intl.DateTimeFormat('de-CH', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }).format(now);
+
+      const exportedBy = String(req.user.username || '–');
+
       doc.fontSize(18).text(`Anlage ${komNr}`, { align: 'left' });
       doc.moveDown(0.2);
       doc
         .fontSize(10)
-        .text(
-          `Team: ${teamId} · Exportiert am: ${now.toLocaleString('de-CH')}`
-        );
+        .text(`Exportiert am: ${exportedAt}`)
+        .text(`Exportiert von: ${exportedBy}`);
       doc.moveDown(0.6);
 
       if (m?.archived) {
@@ -813,7 +910,13 @@ function registerAnlagenRoutes(
           .toFixed(1)
           .replace('.', ',')} h`
       );
-      doc.fontSize(10).text(`Letzte Aktivität: ${rec.lastActivity || '–'}`);
+      doc
+        .fontSize(10)
+        .text(
+          `Letzte Aktivität: ${
+            rec.lastActivity ? formatDateDisplayEU(rec.lastActivity) : '–'
+          }`
+        );
       doc.moveDown(0.6);
 
       const pageInnerW =
@@ -895,6 +998,71 @@ function registerAnlagenRoutes(
             .fontSize(10)
             .text(`${u.u}: ${u.h.toFixed(1).replace('.', ',')} h`);
         });
+
+      const errorDetails = Object.values(rec.errorDetails || {})
+        .map((detail) => ({
+          dateKey: detail.dateKey,
+          username: detail.username,
+          description: detail.description || 'Ohne Fehlerbeschreibung',
+          hours: Number(detail.hours) || 0,
+        }))
+        .filter((detail) => detail.hours > 0);
+
+      if (errorDetails.length > 0) {
+        const groupedErrors = new Map();
+
+        for (const detail of errorDetails) {
+          if (!groupedErrors.has(detail.description)) {
+            groupedErrors.set(detail.description, {
+              totalHours: 0,
+              entries: [],
+            });
+          }
+
+          const group = groupedErrors.get(detail.description);
+          group.totalHours += detail.hours;
+          group.entries.push(detail);
+        }
+
+        doc.moveDown(0.8);
+        doc.fontSize(12).text('Fehlerbuchungen', { underline: true });
+        doc.moveDown(0.3);
+
+        const groups = Array.from(groupedErrors.entries()).sort(
+          (a, b) => b[1].totalHours - a[1].totalHours
+        );
+
+        for (const [description, group] of groups) {
+          if (doc.y > 740) doc.addPage();
+
+          doc
+            .fontSize(10)
+            .text(
+              `${description}: ${group.totalHours
+                .toFixed(1)
+                .replace('.', ',')} h`,
+              { continued: false }
+            );
+
+          group.entries
+            .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)))
+            .forEach((entry) => {
+              if (doc.y > 770) doc.addPage();
+
+              doc
+                .fontSize(9)
+                .fillColor('#4B5563')
+                .text(
+                  `  ${formatDateDisplayEU(entry.dateKey)} · ${entry.username}: ${entry.hours
+                    .toFixed(1)
+                    .replace('.', ',')} h`
+                );
+            });
+
+          doc.fillColor('black');
+          doc.moveDown(0.25);
+        }
+      }
 
       doc.moveDown(0.8);
       doc.fontSize(12).text('Tagesjournal', { underline: true });
@@ -1043,6 +1211,22 @@ function registerAnlagenRoutes(
         users: Object.entries(rec.byUser || {})
           .map(([username, hours]) => ({ username, hours: round1(hours) }))
           .sort((a, b) => b.hours - a.hours),
+        errorDetails: Object.values(rec.errorDetails || {})
+          .map((detail) => ({
+            dateKey: detail.dateKey,
+            username: detail.username,
+            description: detail.description || 'Ohne Fehlerbeschreibung',
+            hours: round1(detail.hours),
+          }))
+          .filter((detail) => detail.hours > 0)
+          .sort((a, b) => {
+            const descriptionCompare = a.description.localeCompare(
+              b.description,
+              'de-CH'
+            );
+            if (descriptionCompare !== 0) return descriptionCompare;
+            return String(a.dateKey).localeCompare(String(b.dateKey));
+          }),
         archived: !!(m && m.archived),
         archivedAt: m?.archivedAt || null,
         archivedBy: m?.archivedBy || null,

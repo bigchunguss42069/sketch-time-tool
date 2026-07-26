@@ -5383,7 +5383,7 @@ function renderAnlagenList(anlagen) {
 
     const last = a.lastActivity ? formatShortDateFromKey(a.lastActivity) : '–';
     const topOp = a.topOperationKey ? operationLabel(a.topOperationKey) : '–';
-    meta.textContent = `Top: ${topOp} · Letzte Aktivität: ${last}${a.archived ? ' · Archiviert' : ''}`;
+    meta.textContent = `Letzte Aktivität: ${last}${a.archived ? ' · Archiviert' : ''}`;
 
     const hours = document.createElement('div');
     hours.className = 'anlagen-hours';
@@ -5563,6 +5563,43 @@ function renderAnlagenDetail(data) {
   charts.appendChild(opsCard);
   charts.appendChild(usersCard);
   adminAnlagenDetail.appendChild(charts);
+
+  const errorDetails = Array.isArray(data.errorDetails)
+    ? data.errorDetails.filter((detail) => Number(detail.hours || 0) > 0)
+    : [];
+
+  if (errorDetails.length > 0) {
+    const groupedErrors = new Map();
+
+    errorDetails.forEach((detail) => {
+      const description =
+        String(detail.description || '').trim() || 'Ohne Fehlerbeschreibung';
+      const current = groupedErrors.get(description) || 0;
+      groupedErrors.set(description, current + Number(detail.hours || 0));
+    });
+
+    const errorCard = document.createElement('div');
+    errorCard.className = 'anlagen-card anlagen-error-details';
+
+    errorCard.innerHTML = `
+    <h4>Fehlerdetails</h4>
+    <div class="anlagen-error-detail-list">
+      ${Array.from(groupedErrors.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([description, hours]) => `
+            <div class="anlagen-error-detail-row">
+              <span>${escapeHtml(description)}</span>
+              <strong>${escapeHtml(formatHours(hours))}</strong>
+            </div>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+
+    adminAnlagenDetail.appendChild(errorCard);
+  }
 }
 async function exportAnlagePdf(komNr) {
   if (!komNr) throw new Error('Kom.-Nr fehlt');
