@@ -368,11 +368,12 @@ export function absenceTypeLabel(type) {
     .toLowerCase();
   const map = {
     ferien: 'Ferien',
+    krank: 'Krank',
+    arzt: 'Arztbesuch',
     unfall: 'Unfall',
     militaer: 'Militär',
     bezahlteabwesenheit: 'Bezahlte Abwesenheit',
     vaterschaft: 'Vaterschaftsurlaub',
-    krank: 'Krank / Arztbesuch',
   };
   return map[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : '–');
 }

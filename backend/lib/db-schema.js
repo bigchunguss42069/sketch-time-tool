@@ -260,6 +260,10 @@ async function ensureAbsencesTable(db) {
   await db.query(
     `ALTER TABLE absences ADD COLUMN IF NOT EXISTS hours DOUBLE PRECISION`
   );
+  await db.query(
+    `ALTER TABLE absences ADD COLUMN IF NOT EXISTS start_time TIME`
+  );
+  await db.query(`ALTER TABLE absences ADD COLUMN IF NOT EXISTS end_time TIME`);
 
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_absences_username_created

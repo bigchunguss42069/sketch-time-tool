@@ -2104,6 +2104,17 @@ body {
   border-color: #dc2626;
 }
 
+.absence-doctor-warning {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e0a800;
+  border-radius: 8px;
+  background: #fff8dc;
+  color: #664d03;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 /* ============================================================
    Week Rows (Overview)
    ============================================================ */

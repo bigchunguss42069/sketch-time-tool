@@ -5,8 +5,8 @@
  *
  * Enthält alle Datenbankoperationen und API-Endpunkte für Absenzen.
  *
- * Typen: ferien, krank, unfall, militaer, mutterschaft, vaterschaft,
- *        bezahlteabwesenheit, sonstiges
+ * Typen: ferien, krank, arzt, unfall, militaer, mutterschaft,
+ *        vaterschaft, bezahlteabwesenheit, sonstiges
  *
  * Status-Flow:
  *   pending → accepted | rejected      (Admin-Entscheid)
@@ -86,6 +86,8 @@ function mapAbsenceRow(row) {
     cancelRequestedAt: toIsoTimestamp(row.cancel_requested_at),
     cancelRequestedBy: row.cancel_requested_by || null,
     hours: row.hours == null ? null : Number(row.hours),
+    startTime: row.start_time ? String(row.start_time).slice(0, 5) : null,
+    endTime: row.end_time ? String(row.end_time).slice(0, 5) : null,
   };
 }
 
@@ -158,6 +160,8 @@ async function insertAbsenceForUser(
     to,
     days,
     hours,
+    startTime,
+    endTime,
     comment,
     status,
     createdAt,
@@ -175,10 +179,13 @@ async function insertAbsenceForUser(
   const result = await conn.query(
     `INSERT INTO absences (
        id, user_id, username, team_id, type, from_date, to_date,
-       days, hours, comment, status, created_at, created_by,
-       decided_at, decided_by, cancel_requested_at, cancel_requested_by
+       days, hours, start_time, end_time, comment, status,
+       created_at, created_by, decided_at, decided_by,
+       cancel_requested_at, cancel_requested_by
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     VALUES (
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+     )
      RETURNING *`,
     [
       id,
@@ -190,6 +197,8 @@ async function insertAbsenceForUser(
       to,
       days,
       hours ?? null,
+      startTime || null,
+      endTime || null,
       comment,
       status,
       createdAt,
@@ -422,13 +431,37 @@ function registerAbsenceRoutes(
     const comment = String(req.body?.comment || '').trim();
 
     const daysRaw = req.body?.days;
-    const days = daysRaw === '' || daysRaw == null ? null : Number(daysRaw);
+    let days = daysRaw === '' || daysRaw == null ? null : Number(daysRaw);
 
     const hoursRaw = req.body?.hours;
-    const hours = hoursRaw === '' || hoursRaw == null ? null : Number(hoursRaw);
+    let hours = hoursRaw === '' || hoursRaw == null ? null : Number(hoursRaw);
+
+    const startTime = String(req.body?.startTime || '').trim();
+    const endTime = String(req.body?.endTime || '').trim();
 
     const isKrank = type === 'krank';
+    const isArzt = type === 'arzt';
+    const isAutoAccepted = isKrank || isArzt;
     const now = new Date().toISOString();
+
+    const timeToMinutes = (value) => {
+      if (!/^\d{2}:\d{2}$/.test(value)) return null;
+
+      const [hour, minute] = value.split(':').map(Number);
+
+      if (
+        !Number.isInteger(hour) ||
+        !Number.isInteger(minute) ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59
+      ) {
+        return null;
+      }
+
+      return hour * 60 + minute;
+    };
 
     if (!type) {
       return res.status(400).json({ ok: false, error: 'Missing type' });
@@ -440,6 +473,47 @@ function registerAbsenceRoutes(
     }
     if (days != null && (!Number.isFinite(days) || days < 0)) {
       return res.status(400).json({ ok: false, error: 'Invalid days' });
+    }
+
+    if (hours != null && (!Number.isFinite(hours) || hours <= 0)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Ungültige Stundenangabe.',
+      });
+    }
+
+    if (isArzt) {
+      if (from !== to) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Ein Arztbesuch muss für einen einzelnen Tag erfasst werden.',
+        });
+      }
+
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+
+      if (startMinutes == null || endMinutes == null) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Bitte eine gültige Von- und Bis-Uhrzeit angeben.',
+        });
+      }
+
+      if (endMinutes <= startMinutes) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Die Bis-Uhrzeit muss nach der Von-Uhrzeit liegen.',
+        });
+      }
+
+      const durationMinutes = endMinutes - startMinutes;
+      const durationHours = durationMinutes / 60;
+
+      // Tatsächlicher Zeitraum wird über startTime/endTime dokumentiert.
+      // Für das Zeitkonto werden pro Tag maximal 1:00 Stunde angerechnet.
+      hours = Math.min(durationHours, 1);
+      days = hours / 8;
     }
 
     const idFromClient = String(req.body?.id || '').trim();
@@ -459,18 +533,21 @@ function registerAbsenceRoutes(
         to,
         days,
         hours,
+        startTime: isArzt ? startTime : null,
+        endTime: isArzt ? endTime : null,
         comment,
         createdAt: now,
         createdBy: username,
         cancelRequestedAt: null,
         cancelRequestedBy: null,
-        status: isKrank ? 'accepted' : 'pending',
-        decidedAt: isKrank ? now : null,
-        decidedBy: isKrank ? 'system' : null,
+        status: isAutoAccepted ? 'accepted' : 'pending',
+        decidedAt: isAutoAccepted ? now : null,
+        decidedBy: isAutoAccepted ? 'system' : null,
       });
 
-      // Email-Alert — nur für pending Anfragen (nicht für krank/auto-accepted)
-      if (!isKrank) {
+      // Email-Alert — nur für pending Anfragen
+      // Krankheit und Arztbesuche werden automatisch akzeptiert.
+      if (!isAutoAccepted) {
         sendAbsenceRequestAlert({
           username,
           teamId: teamId || '',
@@ -504,10 +581,11 @@ function registerAbsenceRoutes(
       const item = await findAbsenceByUserAndId(db, username, id);
       if (!item) return res.status(404).json({ ok: false, error: 'Not found' });
 
-      const isKrank = item.type === 'krank';
+      const isAutoAccepted = item.type === 'krank' || item.type === 'arzt';
+
       if (
         item.status !== 'pending' &&
-        !(isKrank && item.status === 'accepted')
+        !(isAutoAccepted && item.status === 'accepted')
       ) {
         return res
           .status(409)

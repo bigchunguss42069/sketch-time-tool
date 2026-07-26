@@ -1283,7 +1283,8 @@
                         <span>Art</span>
                         <select id="absenceType" class="absence-input">
                           <option value="ferien">Ferien</option>
-                          <option value="krank">Krank / Arztbesuch</option>
+                          <option value="krank">Krank</option>
+                          <option value="arzt">Arztbesuch</option>
                           <option value="unfall">Unfall</option>
                           <option value="militaer">Militär</option>
                           <option value="mutterschaft">Mutterschaft</option>
@@ -1298,21 +1299,22 @@
                       class="absence-form-row absence-form-row--two"
                     >
                       <label class="absence-label">
-                        <span>Von</span>
-                        <input
-                          type="date"
-                          id="absenceFrom"
-                          class="absence-input"
-                        />
-                      </label>
-                      <label class="absence-label">
-                        <span>Bis</span>
-                        <input
-                          type="date"
-                          id="absenceTo"
-                          class="absence-input"
-                        />
-                      </label>
+                      <span id="absenceFromLabel">Von</span>
+                      <input
+                        type="date"
+                        id="absenceFrom"
+                        class="absence-input"
+                      />
+                    </label>
+
+                    <label class="absence-label" id="absenceToLabel">
+                      <span>Bis</span>
+                      <input
+                        type="date"
+                        id="absenceTo"
+                        class="absence-input"
+                      />
+                    </label>
                     </div>
 
                     <!-- Ferien: automatische Berechnung + halber Tag -->
@@ -1331,6 +1333,47 @@
                         <input type="number" id="absenceHours" min="0.5" max="8" step="0.5"
                               placeholder="z.B. 4" class="absence-input" />
                       </label>
+                    </div>
+
+                    <!-- Arztbesuch: tatsächlichen Zeitraum erfassen -->
+                    <div id="absenceArztExtra" class="hidden">
+                      <div class="absence-form-row absence-form-row--two">
+                        <label class="absence-label">
+                          <span>Von Uhrzeit</span>
+                          <input
+                            type="time"
+                            id="absenceArztFromTime"
+                            class="absence-input"
+                            lang="de-CH"
+                          />
+                        </label>
+
+                        <label class="absence-label">
+                          <span>Bis Uhrzeit</span>
+                          <input
+                            type="time"
+                            id="absenceArztToTime"
+                            class="absence-input"
+                            lang="de-CH"
+                          />
+                        </label>
+                      </div>
+
+                      <div class="absence-form-row">
+                        <div
+                          id="absenceArztDuration"
+                          class="absence-calc-badge"
+                        >
+                          Dauer: –
+                        </div>
+                      </div>
+
+                      <div class="absence-form-row">
+                        <div class="absence-doctor-warning">
+                          Pro Arbeitstag wird maximal 1:00 Stunde Arztabsenz gutgeschrieben.
+                          Der vollständige Zeitraum wird trotzdem dokumentiert.
+                        </div>
+                      </div>
                     </div>
 
                     <div class="absence-form-row">

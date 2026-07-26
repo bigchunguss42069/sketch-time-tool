@@ -134,6 +134,13 @@ const absenceToEl = document.getElementById('absenceTo');
 const absenceDaysEl = document.getElementById('absenceDays');
 const absenceCommentEl = document.getElementById('absenceComment');
 const absenceSaveBtn = document.getElementById('absenceSaveBtn');
+
+const absenceArztExtraEl = document.getElementById('absenceArztExtra');
+const absenceArztFromTimeEl = document.getElementById('absenceArztFromTime');
+const absenceArztToTimeEl = document.getElementById('absenceArztToTime');
+const absenceArztDurationEl = document.getElementById('absenceArztDuration');
+const absenceToLabelEl = document.getElementById('absenceToLabel');
+const absenceFromLabelEl = document.getElementById('absenceFromLabel');
 /**
  * Dashboard / transmission controls
  */
@@ -1797,6 +1804,10 @@ if (absenceSaveBtn) {
     const to = absenceToEl.value;
     const comment = absenceCommentEl.value.trim();
 
+    const startTime = type === 'arzt' ? absenceArztFromTimeEl?.value || '' : '';
+
+    const endTime = type === 'arzt' ? absenceArztToTimeEl?.value || '' : '';
+
     let days = null;
     let hours = null;
 
@@ -1808,14 +1819,56 @@ if (absenceSaveBtn) {
       const hoursRaw = document.getElementById('absenceHours')?.value;
       hours = hoursRaw ? Number(hoursRaw) : null;
       days = hours ? hours / 8 : 1;
+    } else if (type === 'arzt') {
+      const startMinutes = timeValueToMinutes(startTime);
+      const endMinutes = timeValueToMinutes(endTime);
+
+      if (!from) {
+        showToast('Bitte das Datum des Arztbesuchs auswählen.');
+        return;
+      }
+
+      if (startMinutes == null || endMinutes == null) {
+        showToast('Bitte eine gültige Von- und Bis-Uhrzeit angeben.');
+        return;
+      }
+
+      if (endMinutes <= startMinutes) {
+        showToast('Die Bis-Uhrzeit muss nach der Von-Uhrzeit liegen.');
+        return;
+      }
+
+      // Arztbesuche werden immer für genau einen Tag erfasst.
+      absenceToEl.value = from;
+
+      const durationMinutes = endMinutes - startMinutes;
+
+      // Nur Vorschau. Das Backend berechnet und begrenzt den Wert erneut.
+      hours = Math.min(durationMinutes / 60, 1);
+      days = hours / 8;
     }
 
-    if (!type || !from || !to) {
-      showToast('Bitte Typ, Von und Bis ausfüllen.');
+    const effectiveTo = type === 'arzt' ? from : to;
+
+    if (!type || !from || !effectiveTo) {
+      showToast(
+        type === 'arzt'
+          ? 'Bitte Typ und Datum ausfüllen.'
+          : 'Bitte Typ, Von und Bis ausfüllen.'
+      );
       return;
     }
 
-    const submitAbsence = async ({ type, from, to, days, hours, comment }) => {
+    const submitAbsence = async ({
+      type,
+      from,
+      to,
+      days,
+      hours,
+      startTime,
+      endTime,
+      comment,
+    }) => {
       const localId = `abs-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
       try {
         const res = await authFetch('/api/absences', {
@@ -1828,6 +1881,8 @@ if (absenceSaveBtn) {
             to,
             days,
             hours,
+            startTime,
+            endTime,
             comment,
           }),
         });
@@ -1845,7 +1900,26 @@ if (absenceSaveBtn) {
         absenceFromEl.value = '';
         absenceToEl.value = '';
         absenceCommentEl.value = '';
+
+        if (absenceArztFromTimeEl) {
+          absenceArztFromTimeEl.value = '';
+        }
+
+        if (absenceArztToTimeEl) {
+          absenceArztToTimeEl.value = '';
+        }
+
+        if (absenceArztDurationEl) {
+          absenceArztDurationEl.textContent = 'Dauer: –';
+        }
+
+        const absenceHoursEl = document.getElementById('absenceHours');
+        if (absenceHoursEl) {
+          absenceHoursEl.value = '';
+        }
+
         updateAbsenceCalcBadge();
+        updateAbsenceFormForType();
         await syncMyAbsencesFromServer();
       } catch (e) {
         console.error(e);
@@ -1853,17 +1927,35 @@ if (absenceSaveBtn) {
       }
     };
 
-    if (type === 'krank' && hours > 0 && from !== to) {
+    if (type === 'krank' && hours > 0 && from !== effectiveTo) {
       showConfirmToast(
-        `${hours}h Arzt/Krank für mehrere Tage (${from} – ${to}) — stundenweise Absenzen sollten nur für einen Tag erfasst werden.`,
+        `${hours}h Krankheit für mehrere Tage (${from} – ${effectiveTo}) — stundenweise Absenzen sollten nur für einen Tag erfasst werden.`,
         async () => {
-          await submitAbsence({ type, from, to, days, hours, comment });
+          await submitAbsence({
+            type,
+            from,
+            to: effectiveTo,
+            days,
+            hours,
+            startTime,
+            endTime,
+            comment,
+          });
         }
       );
       return;
     }
 
-    await submitAbsence({ type, from, to, days, hours, comment });
+    await submitAbsence({
+      type,
+      from,
+      to: effectiveTo,
+      days,
+      hours,
+      startTime,
+      endTime,
+      comment,
+    });
   });
 }
 
@@ -1933,16 +2025,86 @@ function countAbsenceWorkdays(from, to) {
   return count;
 }
 
+function timeValueToMinutes(value) {
+  if (!/^\d{2}:\d{2}$/.test(String(value || ''))) return null;
+
+  const [hours, minutes] = value.split(':').map(Number);
+
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  return hours * 60 + minutes;
+}
+
+function formatMinutesAsHours(minutes) {
+  if (!Number.isFinite(minutes) || minutes < 0) return '–';
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  return `${hours}:${String(remainingMinutes).padStart(2, '0')} Std.`;
+}
+
+function updateDoctorAbsenceDuration() {
+  if (!absenceArztDurationEl) return;
+
+  const fromMinutes = timeValueToMinutes(absenceArztFromTimeEl?.value);
+  const toMinutes = timeValueToMinutes(absenceArztToTimeEl?.value);
+
+  if (fromMinutes == null || toMinutes == null) {
+    absenceArztDurationEl.textContent = 'Dauer: –';
+    return;
+  }
+
+  if (toMinutes <= fromMinutes) {
+    absenceArztDurationEl.textContent = 'Dauer: Bis muss nach Von liegen';
+    return;
+  }
+
+  const durationMinutes = toMinutes - fromMinutes;
+  const creditedMinutes = Math.min(durationMinutes, 60);
+
+  absenceArztDurationEl.textContent =
+    `Dauer: ${formatMinutesAsHours(durationMinutes)} · ` +
+    `maximal anrechenbar: ${formatMinutesAsHours(creditedMinutes)}`;
+}
+
 function updateAbsenceFormForType() {
   const type = absenceTypeEl?.value;
   const ferienExtra = document.getElementById('absenceFerienExtra');
   const krankExtra = document.getElementById('absenceKrankExtra');
-  const halberTag = document.getElementById('absenceHalberTag');
 
   ferienExtra?.classList.toggle('hidden', type !== 'ferien');
   krankExtra?.classList.toggle('hidden', type !== 'krank');
+  absenceArztExtraEl?.classList.toggle('hidden', type !== 'arzt');
 
-  if (type === 'ferien') updateAbsenceCalcBadge();
+  const isDoctor = type === 'arzt';
+
+  absenceToLabelEl?.classList.toggle('hidden', isDoctor);
+
+  if (absenceFromLabelEl) {
+    absenceFromLabelEl.textContent = isDoctor ? 'Datum' : 'Von';
+  }
+
+  if (isDoctor && absenceFromEl?.value) {
+    absenceToEl.value = absenceFromEl.value;
+  }
+
+  if (type === 'ferien') {
+    updateAbsenceCalcBadge();
+  }
+
+  if (isDoctor) {
+    updateDoctorAbsenceDuration();
+  }
 }
 
 function updateAbsenceCalcBadge() {
@@ -1966,6 +2128,18 @@ absenceTypeEl?.addEventListener('change', () => {
   updateAbsenceFormForType();
   updateAbsenceCalcBadge();
 });
+
+absenceFromEl?.addEventListener('change', () => {
+  if (absenceTypeEl?.value === 'arzt') {
+    absenceToEl.value = absenceFromEl.value;
+  }
+
+  updateAbsenceCalcBadge();
+});
+
+absenceArztFromTimeEl?.addEventListener('change', updateDoctorAbsenceDuration);
+
+absenceArztToTimeEl?.addEventListener('change', updateDoctorAbsenceDuration);
 
 // Initialisierung beim Start
 updateAbsenceFormForType();

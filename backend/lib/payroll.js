@@ -345,6 +345,7 @@ function createPayrollService(
         dateKey: row.dateKey,
         dateLabel: formatDateDisplayEU(row.dateKey),
         praesenzStunden: r1(row.praesenzStunden),
+        praesenzMinuten: Math.round((Number(row.praesenzStunden) || 0) * 60),
         ferien: !!row.ferien,
         morgenessen: !!row.morgenessen,
         mittagessen: !!row.mittagessen,
@@ -778,17 +779,25 @@ function createPayrollService(
           .text('Keine relevanten Einträge im ausgewählten Zeitraum.');
       } else {
         row.auditRows.forEach((entry) => {
-          ensurePdfSpace(54);
+          const presenceMinutes = Number(entry.praesenzMinuten) || 0;
+          const mealViolation = entry.mittagessen && presenceMinutes < 6 * 60;
+          const expenseViolation =
+            entry.nebenauslagen && presenceMinutes < 4 * 60;
+
+          ensurePdfSpace(86);
           doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
+
           if (entry.stamps && entry.stamps.length > 0) {
             const pairs = [];
             const sorted = [...entry.stamps];
+
             for (let i = 0; i < sorted.length - 1; i++) {
               if (sorted[i].type === 'in' && sorted[i + 1].type === 'out') {
                 pairs.push(`${sorted[i].time}–${sorted[i + 1].time}`);
                 i++;
               }
             }
+
             doc
               .font('Helvetica')
               .fontSize(8)
@@ -796,23 +805,64 @@ function createPayrollService(
               .text(`Stempel: ${pairs.length > 0 ? pairs.join('  |  ') : '–'}`)
               .fillColor('#000000');
           }
+
           doc
             .font('Helvetica')
             .fontSize(8.5)
+            .fillColor('#000000')
             .text(
               `Präsenz: ${fmtHours(entry.praesenzStunden)}   |   Ferien: ${entry.ferien ? 'Ja' : 'Nein'}`
-            )
+            );
+
+          doc
+            .text(`Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   `, {
+              continued: true,
+            })
+            .fillColor(mealViolation ? '#c62828' : '#000000')
+            .text(`Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}`, {
+              continued: true,
+            })
+            .fillColor('#000000')
+            .text(`   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`);
+
+          doc
             .text(
-              `Morgenessen: ${entry.morgenessen ? 'Ja' : 'Nein'}   |   Mittagessen: ${entry.mittagessen ? 'Ja' : 'Nein'}   |   Abendessen: ${entry.abendessen ? 'Ja' : 'Nein'}`
+              `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   `,
+              { continued: true }
             )
-            .text(
-              `Schmutzzulage: ${entry.schmutzzulage ? 'Ja' : 'Nein'}   |   Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`
-            )
+            .fillColor(expenseViolation ? '#c62828' : '#000000')
+            .text(`Nebenauslagen: ${entry.nebenauslagen ? 'Ja' : 'Nein'}`)
+            .fillColor('#000000')
             .text(
               `Pikett: ${fmtHours(entry.pikettHours)}   |   ÜZ3: ${fmtHours(entry.overtime3Hours)}`
             );
-          if (entry.absencesText)
+
+          if (mealViolation) {
+            doc
+              .font('Helvetica-Bold')
+              .fontSize(8)
+              .fillColor('#c62828')
+              .text(
+                'Hinweis: Mittagessen bei weniger als 6:00 Std. Präsenzzeit.'
+              );
+          }
+
+          if (expenseViolation) {
+            doc
+              .font('Helvetica-Bold')
+              .fontSize(8)
+              .fillColor('#c62828')
+              .text(
+                'Hinweis: Nebenauslagen bei weniger als 4:00 Std. Präsenzzeit.'
+              );
+          }
+
+          doc.font('Helvetica').fontSize(8.5).fillColor('#000000');
+
+          if (entry.absencesText) {
             doc.text(`Abwesenheiten: ${entry.absencesText}`);
+          }
+
           doc.moveDown(0.35);
         });
       }
