@@ -1962,6 +1962,7 @@ body {
   display: flex;
   justify-content: flex-end;
   padding-top: 4px;
+  padding-bottom: 10px;
 }
 
 .absence-save-btn {

@@ -805,6 +805,31 @@ window.addEventListener('beforeunload', () => {
   syncDraftViaBeacon();
 });
 
+// iOS Safari feuert 'beforeunload' beim Verlassen der App (App-Wechsel,
+// Homescreen, Sperren des Geräts) unzuverlässig bis gar nicht. 'pagehide'
+// und 'visibilitychange' sind dafür der auf iOS zuverlässige Weg.
+window.addEventListener('pagehide', () => {
+  if (!_draftLoadComplete) return;
+  syncDraftViaBeacon();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!_draftLoadComplete) return;
+  if (document.visibilityState === 'hidden') {
+    syncDraftViaBeacon();
+  }
+});
+
+// Sobald die Verbindung wiederkommt (z. B. nach schlechtem Empfang im
+// Liftschacht/Keller), einen zuvor fehlgeschlagenen Sync automatisch
+// nachholen, statt auf die nächste manuelle Änderung zu warten.
+window.addEventListener('online', () => {
+  if (!_draftLoadComplete) return;
+  if (_draftSyncFailed) {
+    scheduleDraftSync();
+  }
+});
+
 // Beacon-Variante für beforeunload: fetch() wird vom Browser beim Page-Unload
 // abgebrochen (sichtbar als Netzwerkfehler), sendBeacon() übersteht das.
 // sendBeacon kann keine Header setzen, daher Token im Body statt im Header.
@@ -867,7 +892,7 @@ const OPTION_LABELS = {
   option1: 'Montage',
   option2: 'Demontage',
   option3: 'Transport',
-  option4: 'Inbetreibnahme',
+  option4: 'Inbetriebnahme',
   option5: 'Abnahme',
   option6: 'Werk',
 };
@@ -919,10 +944,12 @@ function loadFromStorage() {
     console.error('Failed to load from storage', err);
   }
 }
+
 function saveToStorage() {
   try {
     const json = JSON.stringify(dayStore);
     localStorage.setItem(STORAGE_KEY, json);
+    localStorage.setItem(STORAGE_KEY + '_pendingSync', '1');
     // Nur setzen wenn User aktiv bearbeitet, nicht wenn vom Server geladen
     scheduleDraftSync();
   } catch (err) {
@@ -932,6 +959,7 @@ function saveToStorage() {
 
 // Draft Sync — debounced, sendet aktuellen Monat an Server
 let _draftSyncTimer = null;
+let _draftSyncFailed = false;
 let _liveStampInterval = null;
 
 function getLiveStampTotal(stamps) {
@@ -1012,6 +1040,8 @@ async function syncDraftToServer() {
       // Anderes Gerät hat neuere Daten — Server-Stand laden
       console.warn('Draft conflict: reloading from server');
       await loadDraftFromServer();
+      localStorage.removeItem(STORAGE_KEY + '_pendingSync');
+      _draftSyncFailed = false;
       showToast('Daten von anderem Gerät übernommen');
       return;
     }
@@ -1019,8 +1049,11 @@ async function syncDraftToServer() {
     const syncData = await res.json().catch(() => null);
     const serverSavedAt = syncData?.updatedAt || savedAt;
     localStorage.setItem(STORAGE_KEY + '_savedAt', serverSavedAt);
+    localStorage.removeItem(STORAGE_KEY + '_pendingSync');
+    _draftSyncFailed = false;
   } catch (err) {
     console.error('Draft sync failed', err);
+    _draftSyncFailed = true;
   }
 }
 
@@ -9415,6 +9448,13 @@ function reloadAllDataForCurrentUser() {
   // Draft vom Server laden (async, überschreibt wenn Server neuer)
   loadDraftFromServer().then(() => {
     _draftLoadComplete = true;
+
+    // Falls beim letzten Verlassen der App ein Sync nicht durchkam (z. B.
+    // fehlendes Netz), jetzt beim Start sofort erneut versuchen, statt
+    // auf die nächste manuelle Änderung zu warten.
+    if (localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1') {
+      scheduleDraftSync();
+    }
 
     // Polling: alle 30s Server-Stand abholen (Multi-Device Sync)
     if (!import.meta.env.DEV) {
