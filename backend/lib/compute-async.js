@@ -59,7 +59,8 @@ function buildMonthOverviewFromSubmission(
   submission,
   year,
   monthIndex,
-  acceptedAbsenceDaysOverride
+  acceptedAbsenceDaysOverride,
+  vacationDaysSetOverride
 ) {
   const monthStart = new Date(year, monthIndex, 1);
   const monthEnd = new Date(year, monthIndex + 1, 0);
@@ -82,11 +83,14 @@ function buildMonthOverviewFromSubmission(
           monthStartKey,
           monthEndKey
         );
-  const vacationDaysSet = buildAcceptedVacationDaysSet(
-    submission?.absences,
-    monthStartKey,
-    monthEndKey
-  );
+  const vacationDaysSet =
+    vacationDaysSetOverride instanceof Set
+      ? vacationDaysSetOverride
+      : buildAcceptedVacationDaysSet(
+          submission?.absences,
+          monthStartKey,
+          monthEndKey
+        );
 
   let monthTotalHours = 0;
   const weekMap = new Map();

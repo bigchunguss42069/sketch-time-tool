@@ -461,6 +461,61 @@ function createPayrollService(
       }))
       .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 
+    // Plausibilitätsprüfung Spesen: Mittagessen/Nebenauslagen gegen
+    // tatsächlich berechtigte Tage (nach Präsenzminuten) prüfen.
+    const expenseAudit = auditRows.reduce(
+      (result, entry) => {
+        const presenceMinutes = Number(entry.praesenzMinuten) || 0;
+
+        if (presenceMinutes > 0) {
+          result.workedDays += 1;
+        }
+
+        if (presenceMinutes >= 6 * 60) {
+          result.mealEligibleDays += 1;
+        }
+
+        if (presenceMinutes >= 4 * 60) {
+          result.expenseEligibleDays += 1;
+        }
+
+        if (entry.mittagessen) {
+          result.claimedLunches += 1;
+        }
+
+        if (entry.nebenauslagen) {
+          result.claimedExpenses += 1;
+        }
+
+        const hasClaim =
+          entry.morgenessen ||
+          entry.mittagessen ||
+          entry.abendessen ||
+          entry.schmutzzulage ||
+          entry.nebenauslagen;
+
+        if (hasClaim && presenceMinutes <= 0) {
+          result.claimDaysWithoutPresence += 1;
+        }
+
+        return result;
+      },
+      {
+        workedDays: 0,
+        mealEligibleDays: 0,
+        expenseEligibleDays: 0,
+        claimedLunches: 0,
+        claimedExpenses: 0,
+        claimDaysWithoutPresence: 0,
+      }
+    );
+
+    expenseAudit.tooManyLunches =
+      expenseAudit.claimedLunches > expenseAudit.mealEligibleDays;
+
+    expenseAudit.tooManyExpenses =
+      expenseAudit.claimedExpenses > expenseAudit.expenseEligibleDays;
+
     // Korrekturen aus Konten
     const kontoRes = await db.query(
       `SELECT ue_z1, ue_z1_correction, ue_z2, ue_z2_correction,
@@ -561,6 +616,7 @@ function createPayrollService(
       },
       teamId: user.teamId || null,
       auditRows,
+      expenseAudit,
     };
   }
 
@@ -781,6 +837,52 @@ function createPayrollService(
         ['Nebenauslagen', fmtCount(row.totals.nebenauslagenCount)],
       ]);
 
+      sectionTitle('Plausibilitätsprüfung Spesen');
+      const ea = row.expenseAudit || {};
+
+      const writeExpenseAuditLine = (label, value, flagged) => {
+        ensurePdfSpace(16);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor('#000000')
+          .text(`${label}: `, { continued: true });
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .fillColor(flagged ? '#c62828' : '#000000')
+          .text(flagged ? `${value}  (!)` : String(value));
+      };
+
+      writeExpenseAuditLine('Gearbeitete Tage', fmtCount(ea.workedDays), false);
+      writeExpenseAuditLine(
+        'Mittagessen-berechtigte Tage',
+        fmtCount(ea.mealEligibleDays),
+        false
+      );
+      writeExpenseAuditLine(
+        'Eingetragene Mittagessen',
+        fmtCount(ea.claimedLunches),
+        !!ea.tooManyLunches
+      );
+      writeExpenseAuditLine(
+        'Nebenauslagen-berechtigte Tage',
+        fmtCount(ea.expenseEligibleDays),
+        false
+      );
+      writeExpenseAuditLine(
+        'Eingetragene Nebenauslagen',
+        fmtCount(ea.claimedExpenses),
+        !!ea.tooManyExpenses
+      );
+      writeExpenseAuditLine(
+        'Spesentage ohne Präsenz',
+        fmtCount(ea.claimDaysWithoutPresence),
+        (ea.claimDaysWithoutPresence || 0) > 0
+      );
+
+      doc.fillColor('#000000');
+
       if (row.absencesByType && Object.keys(row.absencesByType).length > 0) {
         sectionTitle('Absenzen im Zeitraum');
         const TYPE_LABELS = {
@@ -885,10 +987,19 @@ function createPayrollService(
           const mealViolation = entry.mittagessen && presenceMinutes < 6 * 60;
           const expenseViolation =
             entry.nebenauslagen && presenceMinutes < 4 * 60;
+          const hasExpenseClaim =
+            entry.morgenessen ||
+            entry.mittagessen ||
+            entry.abendessen ||
+            entry.schmutzzulage ||
+            entry.nebenauslagen;
+          const claimWithoutPresence = hasExpenseClaim && presenceMinutes <= 0;
 
-          const doctorLineHeight = (entry.doctorAbsences || []).length * 42;
+          const doctorLineHeight = (entry.doctorAbsences || []).length * 56;
 
-          ensurePdfSpace(86 + doctorLineHeight);
+          ensurePdfSpace(
+            86 + doctorLineHeight + (claimWithoutPresence ? 12 : 0)
+          );
           doc.font('Helvetica-Bold').fontSize(9).text(entry.dateLabel);
 
           if (entry.stamps && entry.stamps.length > 0) {
@@ -961,6 +1072,14 @@ function createPayrollService(
               );
           }
 
+          if (claimWithoutPresence) {
+            doc
+              .font('Helvetica-Bold')
+              .fontSize(8)
+              .fillColor('#c62828')
+              .text('Hinweis: Spesenposition ohne erfasste Präsenz.');
+          }
+
           doc.font('Helvetica').fontSize(8.5).fillColor('#000000');
 
           if (entry.absencesText) {
@@ -982,9 +1101,10 @@ function createPayrollService(
             doc
               .font('Helvetica')
               .fontSize(8)
+              .text(`Dauer: ${formatPayrollMinutes(doctor.durationMinutes)}`)
               .text(
-                `Dauer: ${formatPayrollMinutes(doctor.durationMinutes)}   |   ` +
-                  `Gutgeschrieben: ${formatPayrollMinutes(doctor.creditedMinutes)}`
+                `Maximal gemäss Policy: ${formatPayrollMinutes(doctor.maximumCreditMinutes)}   |   ` +
+                  `Effektiv gutgeschrieben: ${formatPayrollMinutes(doctor.creditedMinutes)}`
               );
 
             if (doctor.notCreditedMinutes > 0) {

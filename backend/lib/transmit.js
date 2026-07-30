@@ -24,6 +24,8 @@ const {
   computeTransmissionTotals,
 } = require('./compute');
 
+const { toDateOnlyString } = require('./absences');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure Hilfsfunktionen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,8 +230,8 @@ function createTransmitService(
     const userAbsences = absenceResult.rows.map((row) => ({
       id: row.id,
       type: row.type,
-      from: String(row.from_date).slice(0, 10),
-      to: String(row.to_date).slice(0, 10),
+      from: toDateOnlyString(row.from_date),
+      to: toDateOnlyString(row.to_date),
       days: row.days,
       hours: row.hours == null ? null : Number(row.hours),
       status: row.status,
@@ -418,6 +420,32 @@ function createTransmitService(
           ok: false,
           error: 'Zukünftige Monate können nicht übertragen werden.',
         });
+      }
+
+      // Absenzen sind serverseitig verwaltet (eigener Genehmigungs-Workflow) —
+      // niemals den vom Client mitgesendeten Stand übernehmen, sonst können
+      // veraltete Client-Caches bereits genehmigte/korrigierte Absenzen
+      // (z. B. per Admin/SQL nachgetragene Ferien) wieder überschreiben.
+      try {
+        const absenceResult = await db.query(
+          `SELECT * FROM absences WHERE user_id = $1`,
+          [req.user.id]
+        );
+        payload.absences = absenceResult.rows.map((row) => ({
+          id: row.id,
+          type: row.type,
+          from: toDateOnlyString(row.from_date),
+          to: toDateOnlyString(row.to_date),
+          days: row.days,
+          hours: row.hours == null ? null : Number(row.hours),
+          status: row.status,
+          comment: row.comment || '',
+        }));
+      } catch (e) {
+        console.error('Failed to load fresh absences for transmit:', e);
+        return res
+          .status(500)
+          .json({ ok: false, error: 'Absenzen konnten nicht geladen werden.' });
       }
 
       const userId = req.user.username;

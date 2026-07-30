@@ -47,6 +47,7 @@ const {
   computeNonPikettHours,
   buildPikettHoursByDate,
   buildAcceptedAbsenceHoursMap,
+  buildAcceptedVacationDaysSet,
   computeAbsenceDaysInPeriod,
   computeVacationUsedDaysForMonth,
   computeTransmissionTotals,
@@ -779,12 +780,18 @@ app.get(
             monthStartKey,
             monthEndKey
           );
+          const vacationDaysSet = buildAcceptedVacationDaysSet(
+            storedAbsences,
+            monthStartKey,
+            monthEndKey
+          );
 
           const overview = buildMonthOverviewFromSubmission(
             submission,
             year,
             monthIndex,
-            acceptedAbsenceDays
+            acceptedAbsenceDays,
+            vacationDaysSet
           );
 
           const userLocks =
