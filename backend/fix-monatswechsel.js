@@ -23,6 +23,17 @@ async function main() {
   const { computeTransmissionTotals } = require('./lib/compute');
   const { createSubmissionsService } = require('./lib/submissions');
   const { makeMonthLabel } = require('./lib/holidays');
+  const {
+    readAnlagenIndex,
+    readAnlagenLedger,
+    readAnlagenSnapshot,
+    writeAnlagenIndex,
+    writeAnlagenLedger,
+    writeAnlagenSnapshot,
+    extractAnlagenSnapshotFromPayload,
+    applySnapshotToIndexAndLedger,
+    recomputeLastActivitiesForTeam,
+  } = require('./lib/anlagen');
 
   const { getDailySoll, fetchEmpStartKey, updateKontenFromSubmission } =
     createKontenService(db);
@@ -145,6 +156,64 @@ async function main() {
         payload: submission,
       });
 
+      const teamId = String(user.team_id || '');
+      if (teamId) {
+        const oldSnap = await readAnlagenSnapshot(
+          db,
+          user.username,
+          YEAR,
+          MONTH_INDEX
+        );
+        const newSnap = extractAnlagenSnapshotFromPayload(
+          submission,
+          user.username
+        );
+        const index = await readAnlagenIndex(db);
+        const ledger = await readAnlagenLedger(db);
+        const touched = new Set([
+          ...Object.keys(oldSnap || {}),
+          ...Object.keys(newSnap || {}),
+        ]);
+
+        if (oldSnap) {
+          applySnapshotToIndexAndLedger({
+            index,
+            ledger,
+            teamId,
+            username: user.username,
+            snap: oldSnap,
+            sign: -1,
+          });
+        }
+
+        applySnapshotToIndexAndLedger({
+          index,
+          ledger,
+          teamId,
+          username: user.username,
+          snap: newSnap,
+          sign: +1,
+        });
+
+        recomputeLastActivitiesForTeam(
+          index,
+          ledger,
+          teamId,
+          Array.from(touched)
+        );
+
+        await writeAnlagenIndex(db, index);
+        await writeAnlagenLedger(db, ledger);
+        await writeAnlagenSnapshot(
+          db,
+          user.username,
+          YEAR,
+          MONTH_INDEX,
+          newSnap,
+          teamId
+        );
+      }
+
       await updateKontenFromSubmission({
         username: user.username,
         teamId: user.team_id,
@@ -158,7 +227,7 @@ async function main() {
       });
 
       console.log(
-        `${user.username}: Submission + Konten aktualisiert${hadMissingDay ? ' (31.07. war im Draft vorhanden und wurde nachgezogen)' : ' (kein 31.07.-Eintrag im Draft gefunden)'}`
+        `${user.username}: Submission + Anlagen-Index + Konten aktualisiert${hadMissingDay ? ' (31.07. war im Draft vorhanden und wurde nachgezogen)' : ' (kein 31.07.-Eintrag im Draft gefunden)'}`
       );
     } catch (err) {
       console.error(`${user.username}: Fehler — ${err.message}`);
