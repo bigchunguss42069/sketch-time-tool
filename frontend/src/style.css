@@ -5127,6 +5127,24 @@ body.in-admin-view #view-admin {
   margin-top: 16px;
 }
 
+.anlagen-fehler-details {
+  border-left: 3px solid #ff9da7;
+  padding-left: 12px;
+}
+
+.anlagen-fehler-details h4 {
+  color: #d1425a;
+}
+
+.anlagen-regie-details {
+  border-left: 3px solid #b07aa1;
+  padding-left: 12px;
+}
+
+.anlagen-regie-details h4 {
+  color: #8a5a80;
+}
+
 .anlagen-error-detail-list {
   display: grid;
   gap: 8px;

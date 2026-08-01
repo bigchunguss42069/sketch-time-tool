@@ -42,6 +42,17 @@ function normalizeErrorDescription(value) {
   };
 }
 
+function normalizeRegieReference(value) {
+  const display = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  return {
+    key: (display || 'ohne rapport-nr.').toLocaleLowerCase('de-CH'),
+    display: display || 'Ohne Rapport-Nr.',
+  };
+}
+
 function addErrorDetail(target, detail, sign = 1) {
   if (!target || !detail) return;
 
@@ -55,6 +66,7 @@ function addErrorDetail(target, detail, sign = 1) {
       username: detail.username,
       descriptionKey: detail.descriptionKey,
       description: detail.description,
+      note: detail.note || '',
       hours: 0,
     };
   }
@@ -390,6 +402,7 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
           byOperation: {},
           byDate: {},
           errorDetails: {},
+          regieDetails: {},
           lastActivity: null,
         };
       const rec = snap[komNr];
@@ -425,6 +438,7 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
           byOperation: {},
           byDate: {},
           errorDetails: {},
+          regieDetails: {},
           lastActivity: null,
         };
       const rec = snap[komNr];
@@ -444,6 +458,17 @@ function extractAnlagenSnapshotFromPayload(payload, username) {
           username,
           descriptionKey: description.key,
           description: description.display,
+          hours: h,
+        });
+      } else {
+        const reference = normalizeRegieReference(s?.rapportNr);
+
+        addErrorDetail(rec.regieDetails, {
+          dateKey,
+          username,
+          descriptionKey: reference.key,
+          description: reference.display,
+          note: String(s?.description || '').trim(),
           hours: h,
         });
       }
@@ -523,6 +548,7 @@ function ensureAnlageRec(teamObj, komNr) {
       byOperation: {},
       byUser: {},
       errorDetails: {},
+      regieDetails: {},
       lastActivity: null,
     };
   }
@@ -538,6 +564,12 @@ function ensureAnlageRec(teamObj, komNr) {
     typeof teamObj[komNr].errorDetails !== 'object'
   ) {
     teamObj[komNr].errorDetails = {};
+  }
+  if (
+    !teamObj[komNr].regieDetails ||
+    typeof teamObj[komNr].regieDetails !== 'object'
+  ) {
+    teamObj[komNr].regieDetails = {};
   }
   if (!('lastActivity' in teamObj[komNr])) teamObj[komNr].lastActivity = null;
   if (!('totalHours' in teamObj[komNr])) teamObj[komNr].totalHours = 0;
@@ -593,6 +625,7 @@ function applySnapshotToIndexAndLedger({
         byOperation: {},
         byUser: {},
         errorDetails: {},
+        regieDetails: {},
         lastActivity: null,
       };
     }
@@ -601,6 +634,9 @@ function applySnapshotToIndexAndLedger({
 
     if (!gi.errorDetails || typeof gi.errorDetails !== 'object') {
       gi.errorDetails = {};
+    }
+    if (!gi.regieDetails || typeof gi.regieDetails !== 'object') {
+      gi.regieDetails = {};
     }
 
     gi.totalHours = round1(Number(gi.totalHours || 0) + sign * total);
@@ -618,6 +654,9 @@ function applySnapshotToIndexAndLedger({
 
     for (const detail of Object.values(rec.errorDetails || {})) {
       addErrorDetail(gi.errorDetails, detail, sign);
+    }
+    for (const detail of Object.values(rec.regieDetails || {})) {
+      addErrorDetail(gi.regieDetails, detail, sign);
     }
 
     // Ledger
@@ -674,6 +713,7 @@ function extractAnlagenFromSubmission(submission, username) {
           byOperation: {},
           byUser: {},
           errorDetails: {},
+          regieDetails: {},
           lastActivity: null,
         });
       const rec = out.get(komNr);
@@ -709,6 +749,7 @@ function extractAnlagenFromSubmission(submission, username) {
           byOperation: {},
           byUser: {},
           errorDetails: {},
+          regieDetails: {},
           lastActivity: null,
         });
       const rec = out.get(komNr);
@@ -727,6 +768,17 @@ function extractAnlagenFromSubmission(submission, username) {
           username,
           descriptionKey: description.key,
           description: description.display,
+          hours: h,
+        });
+      } else {
+        const reference = normalizeRegieReference(s?.rapportNr);
+
+        addErrorDetail(rec.regieDetails, {
+          dateKey,
+          username,
+          descriptionKey: reference.key,
+          description: reference.display,
+          note: String(s?.description || '').trim(),
           hours: h,
         });
       }
@@ -780,6 +832,9 @@ async function rebuildAnlagenIndex(db, listUsersFromDb) {
 
         for (const detail of Object.values(rec.errorDetails || {})) {
           addErrorDetail(g.errorDetails, detail, 1);
+        }
+        for (const detail of Object.values(rec.regieDetails || {})) {
+          addErrorDetail(g.regieDetails, detail, 1);
         }
 
         if (
@@ -1064,6 +1119,74 @@ function registerAnlagenRoutes(
         }
       }
 
+      const regieDetails = Object.values(rec.regieDetails || {})
+        .map((detail) => ({
+          dateKey: detail.dateKey,
+          username: detail.username,
+          description: detail.description || 'Ohne Rapport-Nr.',
+          note: detail.note || '',
+          hours: Number(detail.hours) || 0,
+        }))
+        .filter((detail) => detail.hours > 0);
+
+      if (regieDetails.length > 0) {
+        const groupedRegie = new Map();
+
+        for (const detail of regieDetails) {
+          if (!groupedRegie.has(detail.description)) {
+            groupedRegie.set(detail.description, {
+              totalHours: 0,
+              entries: [],
+            });
+          }
+
+          const group = groupedRegie.get(detail.description);
+          group.totalHours += detail.hours;
+          group.entries.push(detail);
+        }
+
+        doc.moveDown(0.8);
+        doc.fontSize(12).text('Regiebuchungen', { underline: true });
+        doc.moveDown(0.3);
+
+        const groups = Array.from(groupedRegie.entries()).sort(
+          (a, b) => b[1].totalHours - a[1].totalHours
+        );
+
+        for (const [description, group] of groups) {
+          if (doc.y > 740) doc.addPage();
+
+          doc
+            .fontSize(10)
+            .text(
+              `${description}: ${group.totalHours
+                .toFixed(1)
+                .replace('.', ',')} h`,
+              { continued: false }
+            );
+
+          group.entries
+            .sort((a, b) => String(a.dateKey).localeCompare(String(b.dateKey)))
+            .forEach((entry) => {
+              if (doc.y > 770) doc.addPage();
+
+              const noteSuffix = entry.note ? ` — ${entry.note}` : '';
+
+              doc
+                .fontSize(9)
+                .fillColor('#4B5563')
+                .text(
+                  `  ${formatDateDisplayEU(entry.dateKey)} · ${entry.username}: ${entry.hours
+                    .toFixed(1)
+                    .replace('.', ',')} h${noteSuffix}`
+                );
+            });
+
+          doc.fillColor('black');
+          doc.moveDown(0.25);
+        }
+      }
+
       doc.moveDown(0.8);
       doc.fontSize(12).text('Tagesjournal', { underline: true });
       doc.moveDown(0.3);
@@ -1216,6 +1339,23 @@ function registerAnlagenRoutes(
             dateKey: detail.dateKey,
             username: detail.username,
             description: detail.description || 'Ohne Fehlerbeschreibung',
+            hours: round1(detail.hours),
+          }))
+          .filter((detail) => detail.hours > 0)
+          .sort((a, b) => {
+            const descriptionCompare = a.description.localeCompare(
+              b.description,
+              'de-CH'
+            );
+            if (descriptionCompare !== 0) return descriptionCompare;
+            return String(a.dateKey).localeCompare(String(b.dateKey));
+          }),
+        regieDetails: Object.values(rec.regieDetails || {})
+          .map((detail) => ({
+            dateKey: detail.dateKey,
+            username: detail.username,
+            description: detail.description || 'Ohne Rapport-Nr.',
+            note: detail.note || '',
             hours: round1(detail.hours),
           }))
           .filter((detail) => detail.hours > 0)

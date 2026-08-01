@@ -5788,7 +5788,7 @@ function renderAnlagenDetail(data) {
     });
 
     const errorCard = document.createElement('div');
-    errorCard.className = 'anlagen-card anlagen-error-details';
+    errorCard.className = 'anlagen-card anlagen-fehler-details';
 
     errorCard.innerHTML = `
     <h4>Fehlerdetails</h4>
@@ -5809,7 +5809,45 @@ function renderAnlagenDetail(data) {
 
     adminAnlagenDetail.appendChild(errorCard);
   }
+
+  const regieDetails = Array.isArray(data.regieDetails)
+    ? data.regieDetails.filter((detail) => Number(detail.hours || 0) > 0)
+    : [];
+
+  if (regieDetails.length > 0) {
+    const groupedRegie = new Map();
+
+    regieDetails.forEach((detail) => {
+      const description =
+        String(detail.description || '').trim() || 'Ohne Rapport-Nr.';
+      const current = groupedRegie.get(description) || 0;
+      groupedRegie.set(description, current + Number(detail.hours || 0));
+    });
+
+    const regieCard = document.createElement('div');
+    regieCard.className = 'anlagen-card anlagen-regie-details';
+
+    regieCard.innerHTML = `
+    <h4>Regiedetails</h4>
+    <div class="anlagen-error-detail-list">
+      ${Array.from(groupedRegie.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([description, hours]) => `
+            <div class="anlagen-error-detail-row">
+              <span>${escapeHtml(description)}</span>
+              <strong>${escapeHtml(formatHours(hours))}</strong>
+            </div>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+
+    adminAnlagenDetail.appendChild(regieCard);
+  }
 }
+
 async function exportAnlagePdf(komNr) {
   if (!komNr) throw new Error('Kom.-Nr fehlt');
 
@@ -7666,6 +7704,27 @@ function applySpecialEntriesForCurrentDay() {
     detailField.appendChild(detailInput);
     bottom.appendChild(detailField);
 
+    // Bei Regie zusätzlich ein optionales Freitext-Feld — Gruppierung in
+    // Anlagen-Tab/PDF bleibt trotzdem über die Rapport-Nr., der Freitext
+    // wird nur als Notiz pro Eintrag mitgeführt.
+    if (entry.type !== 'fehler') {
+      const noteField = document.createElement('label');
+      noteField.className = 'special-field';
+      const noteLabel = document.createElement('span');
+      noteLabel.className = 'special-detail-label';
+      noteLabel.textContent = 'Beschreibung (optional)';
+
+      const noteInput = document.createElement('input');
+      noteInput.type = 'text';
+      noteInput.className = 'special-regie-note-input';
+      noteInput.placeholder = 'kurze Beschreibung der Regiearbeit';
+      noteInput.value = entry.description || '';
+
+      noteField.appendChild(noteLabel);
+      noteField.appendChild(noteInput);
+      bottom.appendChild(noteField);
+    }
+
     row.appendChild(top);
     row.appendChild(middle);
     row.appendChild(bottom);
@@ -7742,7 +7801,8 @@ document.addEventListener('input', (event) => {
     target.classList.contains('special-type-select') ||
     target.classList.contains('special-kom-input') ||
     target.classList.contains('special-hours-input') ||
-    target.classList.contains('special-detail-input')
+    target.classList.contains('special-detail-input') ||
+    target.classList.contains('special-regie-note-input')
   ) {
     const row = target.closest('.special-row');
     if (!row) return;
@@ -7782,6 +7842,8 @@ document.addEventListener('input', (event) => {
       } else {
         special.rapportNr = target.value;
       }
+    } else if (target.classList.contains('special-regie-note-input')) {
+      special.description = target.value;
     }
 
     saveToStorage();

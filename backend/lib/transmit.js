@@ -188,8 +188,18 @@ function createTransmitService(
    */
   async function autoTransmitForUser(user) {
     const now = new Date();
-    const year = now.getFullYear();
-    const monthIndex = now.getMonth();
+
+    // WICHTIG: year/monthIndex müssen sich am zuletzt VOLLSTÄNDIG
+    // abgeschlossenen Tag orientieren (= gestern), nicht an "jetzt". Der Cron
+    // läuft nachts um 02:00 — am ersten Tag eines neuen Monats wäre
+    // now.getMonth() bereits der neue Monat, wodurch der 31./30./28./29. des
+    // Vormonats nie erfasst würde (Monatswechsel-Bug). Für alle anderen
+    // Nächte ist "gestern" ohnehin derselbe Monat wie "heute", also keine
+    // Verhaltensänderung ausserhalb des Monatswechsels.
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() - 1);
+    const year = targetDate.getFullYear();
+    const monthIndex = targetDate.getMonth();
 
     const draftResult = await db.query(
       'SELECT data FROM user_drafts WHERE user_id = $1',
