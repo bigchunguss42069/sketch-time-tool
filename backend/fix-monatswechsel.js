@@ -5,7 +5,10 @@ const db = new Pool({ connectionString: process.env.DATABASE_URL });
 // Holt den fehlenden letzten Monatstag (Standard: Juli 2026) direkt aus dem
 // rohen Draft (user_drafts) nach, da der zuletzt gespeicherte
 // month_submissions-Payload diesen Tag wegen des Monatswechsel-Bugs nie
-// enthalten hat. Nutzt dieselbe Payload-Konstruktion wie autoTransmitForUser.
+// enthalten hat. Nutzt dieselbe Payload-Konstruktion wie autoTransmitForUser
+// UND schreibt — genau wie autoTransmitForUser — sowohl einen neuen
+// month_submissions-Eintrag (für die Admin-Übersicht) als auch den
+// aktualisierten Konten-Saldo.
 //
 // Aufruf: node fix-monatswechsel.js [username1 username2 ...]
 // Ohne Argumente: alle aktiven User in team_id = 'montage'.
@@ -18,6 +21,8 @@ async function main() {
   const { createComputeAsyncService } = require('./lib/compute-async');
   const { toDateOnlyString } = require('./lib/absences');
   const { computeTransmissionTotals } = require('./lib/compute');
+  const { createSubmissionsService } = require('./lib/submissions');
+  const { makeMonthLabel } = require('./lib/holidays');
 
   const { getDailySoll, fetchEmpStartKey, updateKontenFromSubmission } =
     createKontenService(db);
@@ -25,6 +30,7 @@ async function main() {
     getDailySoll,
     fetchEmpStartKey
   );
+  const { insertMonthSubmission } = createSubmissionsService(db, null);
 
   const requestedUsers = process.argv.slice(2);
 
@@ -101,6 +107,7 @@ async function main() {
     const payload = {
       year: YEAR,
       monthIndex: MONTH_INDEX,
+      monthLabel: makeMonthLabel(YEAR, MONTH_INDEX),
       days: monthDays,
       pikett: monthPikett,
       absences: userAbsences,
@@ -108,8 +115,36 @@ async function main() {
     };
 
     const totals = computeTransmissionTotals(payload);
+    const now = new Date();
+
+    const submission = {
+      ...payload,
+      userId: user.username,
+      teamId: user.team_id || null,
+      receivedAt: now.toISOString(),
+      totals,
+      autoTransmit: true,
+    };
 
     try {
+      const timestamp = now.toISOString().replace(/[:.]/g, '-');
+      const fileName = `${YEAR}-07-${timestamp}-fix.json`;
+
+      await insertMonthSubmission({
+        id: fileName,
+        userId: user.id,
+        username: user.username,
+        teamId: user.team_id || null,
+        year: YEAR,
+        monthIndex: MONTH_INDEX,
+        monthLabel: payload.monthLabel,
+        sentAt: now.toISOString(),
+        receivedAt: now.toISOString(),
+        sizeBytes: Buffer.byteLength(JSON.stringify(submission), 'utf8'),
+        totals,
+        payload: submission,
+      });
+
       await updateKontenFromSubmission({
         username: user.username,
         teamId: user.team_id,
@@ -121,8 +156,9 @@ async function main() {
         computeMonthUeZ1,
         skipToday: true,
       });
+
       console.log(
-        `${user.username}: Konten aktualisiert${hadMissingDay ? ' (31.07. war im Draft vorhanden und wurde nachgezogen)' : ' (kein 31.07.-Eintrag im Draft gefunden)'}`
+        `${user.username}: Submission + Konten aktualisiert${hadMissingDay ? ' (31.07. war im Draft vorhanden und wurde nachgezogen)' : ' (kein 31.07.-Eintrag im Draft gefunden)'}`
       );
     } catch (err) {
       console.error(`${user.username}: Fehler — ${err.message}`);
