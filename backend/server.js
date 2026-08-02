@@ -218,6 +218,7 @@ const {
   getDailySoll,
   updateKontenFromSubmission,
   restoreVacationDaysForCancelledAbsence,
+  deductVacationDaysForAcceptedAbsence,
   registerKontenRoutes,
 } = createKontenService(db);
 
@@ -357,7 +358,8 @@ registerAbsenceRoutes(
   loadLatestMonthSubmission,
   updateKontenFromSubmission,
   computeMonthUeZ1,
-  computeTransmissionTotals
+  computeTransmissionTotals,
+  deductVacationDaysForAcceptedAbsence
 );
 
 registerAnlagenRoutes(

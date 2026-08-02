@@ -405,7 +405,8 @@ function registerAbsenceRoutes(
   loadLatestMonthSubmission,
   updateKontenFromSubmission,
   computeMonthUeZ1,
-  computeTransmissionTotals
+  computeTransmissionTotals,
+  deductVacationDaysForAcceptedAbsence
 ) {
   // GET /api/absences
   app.get('/api/absences', requireAuth, async (req, res) => {
@@ -744,6 +745,23 @@ function registerAbsenceRoutes(
           });
         }
 
+        let vacationDeducted = 0;
+        if (status === 'accepted' && previousStatus !== 'accepted') {
+          try {
+            vacationDeducted = await deductVacationDaysForAcceptedAbsence({
+              username,
+              teamId: targetUser.teamId || null,
+              absence: updated,
+              updatedBy: req.user.username,
+            });
+          } catch (err) {
+            console.error(
+              `[VacationDeduct] Fehler für ${username}:`,
+              err.message
+            );
+          }
+        }
+
         if (status === 'accepted') {
           try {
             await retransmitAffectedMonths({
@@ -764,7 +782,12 @@ function registerAbsenceRoutes(
           }
         }
 
-        return res.json({ ok: true, absence: updated, vacationRestored });
+        return res.json({
+          ok: true,
+          absence: updated,
+          vacationRestored,
+          vacationDeducted,
+        });
       } catch (err) {
         console.error('Failed to decide absence', err);
         return res.status(500).json({ ok: false, error: 'Decision failed' });

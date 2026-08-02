@@ -204,7 +204,7 @@ function createKontenService(db) {
     const resolvedTeam = teamId || userRow.team_id || null;
 
     const kontenResult = await client.query(
-      'SELECT * FROM konten WHERE user_id = $1 LIMIT 1',
+      'SELECT * FROM konten WHERE user_id = $1 LIMIT 1 FOR UPDATE',
       [userId]
     );
 
@@ -723,7 +723,12 @@ function createKontenService(db) {
       });
 
       for (const row of snapResult.rows) {
-        const nextVacUsed = Math.max(0, (Number(row.vac_used) || 0) - vacDays);
+        const portion = computeVacationUsedDaysForMonth(
+          { absences: [absence] },
+          row.year,
+          row.month_index
+        );
+        const nextVacUsed = Math.max(0, (Number(row.vac_used) || 0) - portion);
         await client.query(
           `UPDATE konten_snapshots SET vac_used=$4, updated_at=$5
            WHERE user_id=$1 AND year=$2 AND month_index=$3`,
@@ -732,6 +737,122 @@ function createKontenService(db) {
             row.year,
             row.month_index,
             nextVacUsed,
+            nextKonto.updatedAt,
+          ]
+        );
+      }
+
+      await client.query('COMMIT');
+      return vacDays;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Zieht Ferientage SOFORT bei Akzeptanz einer Ferien-Absenz vom Saldo ab —
+   * unabhängig davon, ob der/die betroffenen Monate bereits transmittiert
+   * wurden. Damit ein späterer regulärer Monats-Transmit denselben Zeitraum
+   * nicht ein zweites Mal abzieht, werden die betroffenen
+   * konten_snapshots.vac_used-Werte gleich mit vorbelegt (per UPSERT) — der
+   * Monats-Transmit sieht den Verbrauch dann schon als "bereits verrechnet"
+   * und die Differenzberechnung dort ergibt für diesen Zeitraum 0.
+   *
+   * Gegenstück zu restoreVacationDaysForCancelledAbsence.
+   *
+   * @param {{ username: string, teamId?: string, absence: object, updatedBy?: string }} params
+   * @returns {Promise<number>} Anzahl abgezogener Tage
+   */
+  async function deductVacationDaysForAcceptedAbsence({
+    username,
+    teamId,
+    absence,
+    updatedBy,
+  }) {
+    if (!db) return 0;
+
+    const vacDays = calculateAbsenceVacationDays(absence);
+    if (!(vacDays > 0)) return 0;
+
+    let fromDate = new Date(absence.from + 'T00:00:00');
+    let toDate = new Date(absence.to + 'T00:00:00');
+
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
+      return 0;
+    if (toDate < fromDate) {
+      const tmp = fromDate;
+      fromDate = toDate;
+      toDate = tmp;
+    }
+
+    // Pro betroffenem Monat den anteiligen Tage-Anteil ermitteln (nicht den
+    // vollen vacDays-Wert je Monat — eine Absenz kann über Monatsgrenzen
+    // hinweg gehen).
+    const monthPortions = [];
+    const cursor = new Date(fromDate);
+    cursor.setDate(1);
+    const endMonth = new Date(toDate);
+    endMonth.setDate(1);
+    while (cursor <= endMonth) {
+      const year = cursor.getFullYear();
+      const monthIndex = cursor.getMonth();
+      const portion = computeVacationUsedDaysForMonth(
+        { absences: [absence] },
+        year,
+        monthIndex
+      );
+      if (portion > 0) {
+        monthPortions.push({ year, monthIndex, portion });
+      }
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    if (!monthPortions.length) return 0;
+
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      const ensured = await ensureKontenUserRecord({
+        username,
+        teamId,
+        client,
+      });
+
+      const nextKonto = {
+        ...ensured.konto,
+        vacationDays: (Number(ensured.konto.vacationDays) || 0) - vacDays,
+        updatedAt: new Date().toISOString(),
+        updatedBy: updatedBy || username,
+      };
+
+      await persistKontenUserRecord({
+        client,
+        userId: ensured.userId,
+        username: ensured.username,
+        teamId: ensured.teamId,
+        konto: nextKonto,
+      });
+
+      for (const { year, monthIndex, portion } of monthPortions) {
+        const mk = kontenMonthKey(year, monthIndex);
+        await client.query(
+          `INSERT INTO konten_snapshots
+             (user_id, username, year, month_index, month_key, vac_used, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (user_id, year, month_index) DO UPDATE SET
+             vac_used = konten_snapshots.vac_used + EXCLUDED.vac_used,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            ensured.userId,
+            ensured.username,
+            year,
+            monthIndex,
+            mk,
+            portion,
             nextKonto.updatedAt,
           ]
         );
@@ -946,6 +1067,7 @@ function createKontenService(db) {
     getDailySoll,
     updateKontenFromSubmission,
     restoreVacationDaysForCancelledAbsence,
+    deductVacationDaysForAcceptedAbsence,
     registerKontenRoutes,
   };
 }
