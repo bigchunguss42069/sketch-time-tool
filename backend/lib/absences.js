@@ -824,7 +824,12 @@ function registerAbsenceRoutes(
               err.message
             );
           }
-        } else if (previousStatus === 'accepted' && status !== 'accepted') {
+        } else if (
+          (previousStatus === 'accepted' ||
+            previousStatus === 'cancel_requested') &&
+          status !== previousStatus &&
+          status !== 'accepted'
+        ) {
           try {
             await sendAbsenceChangeToHR({
               action: 'storniert',
