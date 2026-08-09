@@ -20,7 +20,7 @@
  */
 
 const crypto = require('crypto');
-const { sendAbsenceRequestAlert } = require('./cron');
+const { sendAbsenceRequestAlert, sendAbsenceChangeToHR } = require('./cron');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mapping-Helpers
@@ -743,6 +743,24 @@ function registerAbsenceRoutes(
             absence: updated,
             updatedBy: req.user.username,
           });
+
+          try {
+            await retransmitAffectedMonths({
+              db,
+              username,
+              teamId: targetUser.teamId || null,
+              absence: updated,
+              loadLatestMonthSubmission,
+              updateKontenFromSubmission,
+              computeMonthUeZ1,
+              computeTransmissionTotals,
+            });
+          } catch (err) {
+            console.error(
+              `[AbsenceRetransmit] Fehler für ${username}:`,
+              err.message
+            );
+          }
         }
 
         let vacationDeducted = 0;
@@ -777,6 +795,51 @@ function registerAbsenceRoutes(
           } catch (err) {
             console.error(
               `[AbsenceRetransmit] Fehler für ${username}:`,
+              err.message
+            );
+          }
+        }
+
+        // HR konsistent bei jedem Wechsel in/aus "accepted" informieren —
+        // für alle Absenz-Typen (nicht nur Ferien), egal ob Genehmigung,
+        // Storno oder nachträgliche Ablehnung einer bereits akzeptierten
+        // Absenz. Eine zentrale Stelle statt verstreuter Einzel-Aufrufe,
+        // damit das nicht wieder auseinanderläuft.
+        if (previousStatus !== 'accepted' && status === 'accepted') {
+          try {
+            await sendAbsenceChangeToHR({
+              action: 'genehmigt',
+              username,
+              teamId: targetUser.teamId || null,
+              type: updated.type,
+              fromDate: updated.from,
+              toDate: updated.to,
+              days: updated.days,
+              hours: updated.hours,
+              decidedBy: req.user.username,
+            });
+          } catch (err) {
+            console.error(
+              `[AbsenceHrAlert] Fehler für ${username}:`,
+              err.message
+            );
+          }
+        } else if (previousStatus === 'accepted' && status !== 'accepted') {
+          try {
+            await sendAbsenceChangeToHR({
+              action: 'storniert',
+              username,
+              teamId: targetUser.teamId || null,
+              type: updated.type,
+              fromDate: updated.from,
+              toDate: updated.to,
+              days: updated.days,
+              hours: updated.hours,
+              decidedBy: req.user.username,
+            });
+          } catch (err) {
+            console.error(
+              `[AbsenceHrAlert] Fehler für ${username}:`,
               err.message
             );
           }

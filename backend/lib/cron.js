@@ -271,6 +271,89 @@ async function sendAbsenceRequestAlert({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// HR-Benachrichtigung bei Ferien-Änderungen (genehmigt oder storniert)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Sendet eine E-Mail an HR, sobald eine Ferien-Absenz genehmigt oder eine
+ * bereits genehmigte Ferien-Absenz storniert wurde. Nutzt dieselbe
+ * Mail-Infrastruktur wie sendAbsenceRequestAlert.
+ *
+ * @param {{ action: 'genehmigt'|'storniert', username: string,
+ *   teamId: string|null, fromDate: string, toDate: string, days: number,
+ *   decidedBy: string }} params
+ */
+async function sendAbsenceChangeToHR({
+  action,
+  username,
+  teamId,
+  type,
+  fromDate,
+  toDate,
+  days,
+  hours,
+  decidedBy,
+}) {
+  const to = process.env.ALERT_EMAIL_HR;
+  if (!to) return; // keine HR-Adresse konfiguriert
+
+  const TYPE_LABELS = {
+    ferien: 'Ferien',
+    krank: 'Krank',
+    arzt: 'Arztbesuch',
+    unfall: 'Unfall',
+    militaer: 'Militär',
+    mutterschaft: 'Mutterschaft',
+    vaterschaft: 'Vaterschaftsurlaub',
+    bezahlteabwesenheit: 'Bezahlte Abwesenheit',
+    sonstiges: 'Sonstiges',
+  };
+  const typeLabel = TYPE_LABELS[type] || type || 'Absenz';
+  const durationLabel =
+    hours > 0 && days < 1
+      ? `${hours}h`
+      : hours > 0
+        ? `${days}d / ${hours}h`
+        : `${days}d`;
+
+  const formatDateCH = (iso) => {
+    if (!iso) return iso;
+    const [y, m, d] = iso.split('-');
+    return `${d}.${m}.${y}`;
+  };
+
+  const actionLabel = action === 'storniert' ? 'storniert' : 'genehmigt';
+  const decidedByLabel =
+    action === 'storniert' ? 'Storniert von' : 'Genehmigt von';
+
+  try {
+    const transporter = createMailTransporter();
+    await transporter.sendMail({
+      from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
+      to,
+      subject: `${typeLabel} ${actionLabel}: ${username}`,
+      text: [
+        `Mitarbeiter: ${username}`,
+        teamId ? `Team: ${teamId}` : '',
+        `Typ: ${typeLabel}`,
+        `Zeitraum: ${formatDateCH(fromDate)} – ${formatDateCH(toDate)}`,
+        `Dauer: ${durationLabel}`,
+        `${decidedByLabel}: ${decidedBy}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+    console.log(
+      `[AUDIT] ABSENCE_HR_ALERT_SENT action=${action} type=${type} user=${username} to=${to}`
+    );
+  } catch (err) {
+    console.error(
+      `[AUDIT] ABSENCE_HR_ALERT_FAILED action=${action} type=${type} user=${username} error=${err.message}`
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -279,4 +362,5 @@ module.exports = {
   checkAndSendStampAlerts,
   registerCronJobs,
   sendAbsenceRequestAlert,
+  sendAbsenceChangeToHR,
 };
