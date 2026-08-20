@@ -440,6 +440,69 @@ function createPayrollService(
     overtime.ueZ2 = r1(overtime.ueZ2);
     overtime.ueZ3 = r1(overtime.ueZ3);
 
+    // ─────────────────────────────────────────────────────────────────────
+    // "Aktuelles Saldo" historisch korrekt bis zum Periodenende berechnen,
+    // statt eines Live-Werts zum Exportzeitpunkt. Sonst entsteht eine
+    // Diskrepanz, wenn die Abrechnung mit Verzögerung erstellt wird und
+    // zwischen Periodenende und Export bereits neue Überzeit anfällt, die
+    // eigentlich in die nächste Lohnperiode gehört.
+    //
+    // Nur der transmittierte Anteil (Stempeldaten) wird auf "bis
+    // Periodenende" begrenzt — kompletter Verlauf seit Anstellungsbeginn
+    // neu aus den Rohdaten berechnet, nicht nur die aktuelle Periode.
+    // Manuelle Korrekturen bleiben bewusst ungefiltert (live), da sie oft
+    // rückwirkende Aufholbuchungen sind, bei denen "wann eingetragen" und
+    // "wann wirksam" nicht übereinstimmen — ein Datums-Filter würde solche
+    // Korrekturen fälschlich aus der Periode rausschneiden, in der sie
+    // eigentlich gelten sollen.
+    let ueZ1RawAsOfPeriodEnd = 0;
+    let ueZ2AsOfPeriodEnd = 0;
+    let ueZ3AsOfPeriodEnd = 0;
+
+    if (cachedEmpStartKey) {
+      const empStartDate = new Date(cachedEmpStartKey + 'T00:00:00');
+      const historyMonthRange =
+        empStartDate <= periodEnd
+          ? getMonthRangeBetween(empStartDate, periodEnd)
+          : [];
+
+      for (const month of historyMonthRange) {
+        const submission =
+          submissionCache.get(month.monthKey) ||
+          (await loadLatestMonthSubmission(
+            user.username,
+            month.year,
+            month.monthIndex
+          ));
+
+        if (!submission) continue;
+        submissionCache.set(month.monthKey, submission);
+
+        const monthStartKey = formatDateKey(
+          new Date(month.year, month.monthIndex, 1)
+        );
+        const monthEndKey = formatDateKey(
+          new Date(month.year, month.monthIndex + 1, 0)
+        );
+        const clippedFrom =
+          cachedEmpStartKey > monthStartKey ? cachedEmpStartKey : monthStartKey;
+        const clippedTo = toKey < monthEndKey ? toKey : monthEndKey;
+
+        if (clippedFrom > clippedTo) continue;
+
+        const rangeOvertime = await computePayrollPeriodOvertimeFromSubmission(
+          submission,
+          clippedFrom,
+          clippedTo,
+          user.id
+        );
+
+        ueZ1RawAsOfPeriodEnd = r1(ueZ1RawAsOfPeriodEnd + rangeOvertime.ueZ1Raw);
+        ueZ2AsOfPeriodEnd = r1(ueZ2AsOfPeriodEnd + rangeOvertime.ueZ2);
+        ueZ3AsOfPeriodEnd = r1(ueZ3AsOfPeriodEnd + rangeOvertime.ueZ3);
+      }
+    }
+
     const auditRows = Array.from(auditRowMap.values())
       .map((row) => ({
         dateKey: row.dateKey,
@@ -538,6 +601,12 @@ function createPayrollService(
     );
     const ferienSaldo = r1(Number(kontoRow.vacation_days) || 0);
 
+    // Finale Salden "bis Periodenende": transmittierter Anteil begrenzt auf
+    // Periodenende (oben berechnet), Korrekturen bewusst ungefiltert/live.
+    const ueZ1SaldoAsOfPeriodEnd = r1(ueZ1RawAsOfPeriodEnd + ueZ1Correction);
+    const ueZ2SaldoAsOfPeriodEnd = r1(ueZ2AsOfPeriodEnd + ueZ2Correction);
+    const ueZ3SaldoAsOfPeriodEnd = r1(ueZ3AsOfPeriodEnd + ueZ3Correction);
+
     // Jahresgutschriften (automatisch) im Zeitraum, fürs Audit-PDF
     const vacationCreditRes = await db.query(
       `SELECT old_value, new_value, reason, created_at
@@ -603,6 +672,13 @@ function createPayrollService(
         ueZ1Saldo,
         ueZ2Saldo,
         ueZ3Saldo,
+
+        // Historisch korrekter Saldo bis zum Periodenende (statt Live-Wert
+        // zum Exportzeitpunkt) — Korrekturen bewusst ungefiltert/live, siehe
+        // Berechnung weiter oben.
+        ueZ1SaldoAsOfPeriodEnd,
+        ueZ2SaldoAsOfPeriodEnd,
+        ueZ3SaldoAsOfPeriodEnd,
 
         ueZ2: overtime.ueZ2,
         ueZ2Correction,
@@ -956,11 +1032,13 @@ function createPayrollService(
         writeMetricLines(corrLines);
       }
 
-      sectionTitle('Aktuelles Saldo');
+      sectionTitle(
+        `Aktuelles Saldo (bis ${formatDateDisplayEU(formatDateKey(periodEnd))})`
+      );
       writeMetricLines([
-        ['ÜZ1 Saldo', fmtSignedHours(row.overtime.ueZ1Saldo)],
-        ['ÜZ2 Saldo', fmtSignedHours(row.overtime.ueZ2Saldo)],
-        ['ÜZ3 Saldo', fmtSignedHours(row.overtime.ueZ3Saldo)],
+        ['ÜZ1 Saldo', fmtSignedHours(row.overtime.ueZ1SaldoAsOfPeriodEnd)],
+        ['ÜZ2 Saldo', fmtSignedHours(row.overtime.ueZ2SaldoAsOfPeriodEnd)],
+        ['ÜZ3 Saldo', fmtSignedHours(row.overtime.ueZ3SaldoAsOfPeriodEnd)],
       ]);
 
       sectionTitle('Berücksichtigte Übertragungen');
