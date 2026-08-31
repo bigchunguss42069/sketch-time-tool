@@ -5615,7 +5615,9 @@ function renderAnlagenList(anlagen) {
 
     const kom = document.createElement('div');
     kom.className = 'anlagen-komnr';
-    kom.textContent = a.komNr || '–';
+    kom.textContent = a.title
+      ? `${a.title} · ${a.komNr || '–'}`
+      : a.komNr || '–';
 
     const meta = document.createElement('div');
     meta.className = 'anlagen-meta';
@@ -5698,7 +5700,58 @@ function renderAnlagenDetail(data) {
 
   const title = document.createElement('div');
   title.className = 'anlagen-detail-title';
-  title.textContent = `Kom.-Nr. ${komNr}`;
+
+  const titlePrefix = document.createElement('span');
+  titlePrefix.textContent = `Kom.-Nr. ${komNr} (`;
+
+  const titleInput = document.createElement('input');
+  titleInput.type = 'text';
+  titleInput.className = 'anlagen-title-input';
+  titleInput.placeholder = 'Titel hinzufügen …';
+  titleInput.value = data.title || '';
+  titleInput.size = Math.max(12, (data.title || '').length || 14);
+
+  const titleSuffix = document.createElement('span');
+  titleSuffix.textContent = ')';
+
+  const saveTitle = () => {
+    const newTitle = titleInput.value.trim();
+    if (newTitle === (data.title || '')) return; // keine Änderung
+
+    authFetch('/api/admin/anlagen-title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ komNr, title: newTitle }),
+    })
+      .then((res) => res.json())
+      .then((result) => {
+        if (!result.ok) throw new Error(result.error || 'Fehler');
+        data.title = result.title || '';
+        anlagenDetailCache.delete(komNr);
+        loadAdminAnlagenSummary({ force: true });
+        showToast('Titel gespeichert.');
+      })
+      .catch((err) => {
+        console.error(err);
+        showToast('Titel konnte nicht gespeichert werden.');
+        titleInput.value = data.title || ''; // zurücksetzen
+      });
+  };
+
+  titleInput.addEventListener('blur', saveTitle);
+  titleInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      titleInput.blur();
+    } else if (e.key === 'Escape') {
+      titleInput.value = data.title || '';
+      titleInput.blur();
+    }
+  });
+
+  title.appendChild(titlePrefix);
+  title.appendChild(titleInput);
+  title.appendChild(titleSuffix);
 
   const sub = document.createElement('div');
   sub.className = 'anlagen-detail-sub';

@@ -490,6 +490,18 @@ async function ensureAnlagenTables(db) {
     )
   `);
 
+  // Frei editierbarer Titel pro Kom-Nr (global, teamunabhängig — dieselbe
+  // Baustelle wird oft von mehreren Teams bearbeitet). Reine
+  // Ordnungshilfe im Anlagen-Tab, keine Versionshistorie nötig.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS anlagen_titles (
+      kom_nr TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_anlagen_archive_team
     ON anlagen_archive (team_id, kom_nr)

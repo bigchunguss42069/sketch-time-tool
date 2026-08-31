@@ -241,6 +241,63 @@ function buildAnlagenArchiveObject(rows) {
 /**
  * @param {import('pg').Pool} db
  */
+/**
+ * Liest alle Anlagen-Titel als Map { komNr: { title, updatedBy, updatedAt } }.
+ *
+ * @param {import('pg').Pool} db
+ */
+async function readAnlagenTitles(db) {
+  if (!db) return {};
+
+  const result = await db.query(
+    `SELECT kom_nr, title, updated_by, updated_at FROM anlagen_titles`
+  );
+
+  const map = {};
+  result.rows.forEach((row) => {
+    map[row.kom_nr] = {
+      title: row.title || '',
+      updatedBy: row.updated_by || null,
+      updatedAt: row.updated_at || null,
+    };
+  });
+  return map;
+}
+
+/**
+ * Setzt oder löscht den Titel einer Kom-Nr. Leerer/whitespace-only Titel
+ * löscht den Eintrag wieder (zurück zum Zustand "kein Titel gesetzt").
+ *
+ * @param {import('pg').Pool} db
+ * @param {{ komNr: string, title: string, updatedBy: string }} params
+ */
+async function setAnlagenTitle(db, { komNr, title, updatedBy }) {
+  if (!db) throw new Error('DATABASE_URL is not configured');
+
+  const trimmed = String(title || '').trim();
+
+  if (!trimmed) {
+    await db.query(`DELETE FROM anlagen_titles WHERE kom_nr = $1`, [komNr]);
+    return null;
+  }
+
+  const result = await db.query(
+    `INSERT INTO anlagen_titles (kom_nr, title, updated_by, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (kom_nr) DO UPDATE
+       SET title = $2, updated_by = $3, updated_at = NOW()
+     RETURNING kom_nr, title, updated_by, updated_at`,
+    [komNr, trimmed, updatedBy || null]
+  );
+
+  const row = result.rows[0];
+  return {
+    title: row.title,
+    updatedBy: row.updated_by || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
 async function readAnlagenArchive(db) {
   if (!db) return {};
 
@@ -1243,6 +1300,7 @@ function registerAnlagenRoutes(
       }
 
       const archive = await readAnlagenArchive(db);
+      const titles = await readAnlagenTitles(db);
 
       const list = Object.entries(teamObj).map(([komNr, rec]) => {
         const m = archive[komNr] || null;
@@ -1261,6 +1319,7 @@ function registerAnlagenRoutes(
 
         return {
           komNr,
+          title: titles[komNr]?.title || '',
           totalHours: round1(rec.totalHours || 0),
           lastActivity: rec.lastActivity || null,
           topOperationKey: topOpKey,
@@ -1271,7 +1330,13 @@ function registerAnlagenRoutes(
       });
 
       const filtered = list.filter((a) => {
-        if (search && !String(a.komNr).includes(search)) return false;
+        if (search) {
+          const inKomNr = String(a.komNr).includes(search);
+          const inTitle = String(a.title || '')
+            .toLowerCase()
+            .includes(search.toLowerCase());
+          if (!inKomNr && !inTitle) return false;
+        }
         if (status === 'all') return true;
         if (status === 'archived') return !!a.archived;
         return !a.archived;
@@ -1321,11 +1386,16 @@ function registerAnlagenRoutes(
 
       const archive = await readAnlagenArchive(db);
       const m = archive[komNr] || null;
+      const titles = await readAnlagenTitles(db);
+      const titleMeta = titles[komNr] || null;
 
       return res.json({
         ok: true,
         teamId,
         komNr,
+        title: titleMeta?.title || '',
+        titleUpdatedBy: titleMeta?.updatedBy || null,
+        titleUpdatedAt: titleMeta?.updatedAt || null,
         totalHours: round1(rec.totalHours || 0),
         lastActivity: rec.lastActivity || null,
         operations: Object.entries(rec.byOperation || {})
@@ -1426,6 +1496,40 @@ function registerAnlagenRoutes(
     }
   );
 
+  // POST /api/admin/anlagen-title — Titel setzen/löschen (global, teamunabhängig)
+  app.post(
+    '/api/admin/anlagen-title',
+    requireAuth,
+    requireAdmin,
+    async (req, res) => {
+      const komNr = normalizeKomNr(req.body?.komNr);
+      const title = String(req.body?.title || '');
+
+      if (!komNr)
+        return res.status(400).json({ ok: false, error: 'Missing komNr' });
+
+      try {
+        const result = await setAnlagenTitle(db, {
+          komNr,
+          title,
+          updatedBy: req.user.username,
+        });
+        return res.json({
+          ok: true,
+          komNr,
+          title: result?.title || '',
+          titleUpdatedBy: result?.updatedBy || null,
+          titleUpdatedAt: result?.updatedAt || null,
+        });
+      } catch (err) {
+        console.error('Failed to persist anlagen title:', err);
+        return res
+          .status(500)
+          .json({ ok: false, error: 'Could not persist title' });
+      }
+    }
+  );
+
   // POST /api/admin/anlagen-rebuild
   app.post(
     '/api/admin/anlagen-rebuild',
@@ -1456,6 +1560,8 @@ module.exports = {
   // Archiv
   readAnlagenArchive,
   setAnlagenArchiveState,
+  readAnlagenTitles,
+  setAnlagenTitle,
 
   // Snapshots
   readAnlagenSnapshot,

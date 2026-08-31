@@ -5011,6 +5011,29 @@ body.in-admin-view #view-admin {
   font-weight: 800;
   color: var(--text);
 }
+.anlagen-title-input {
+  font-size: 18px;
+  font-weight: 800;
+  font-family: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  padding: 0 2px;
+  min-width: 60px;
+}
+.anlagen-title-input:hover {
+  border-bottom-color: var(--muted);
+}
+.anlagen-title-input:focus {
+  outline: none;
+  border-bottom: 1px solid var(--accent, #4a7dff);
+}
+.anlagen-title-input::placeholder {
+  font-weight: 600;
+  color: var(--muted);
+  opacity: 0.7;
+}
 .anlagen-detail-sub {
   font-size: 14px;
   color: var(--muted);
