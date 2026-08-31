@@ -4862,6 +4862,11 @@ function isDateLocked(dateKey) {
 function applyWeekLockUI() {
   const locked = isCurrentWeekLocked();
 
+  // Pikett-Liste neu rendern, damit Sperr-Status sofort korrekt angezeigt
+  // wird — vorher blieb sie bis zu einem zufälligen Monatswechsel auf dem
+  // (evtl. veralteten) Stand von vor dem Laden der Week-Locks stehen.
+  renderPikettList();
+
   // Inputs in day-content deaktivieren
   document
     .querySelectorAll(
