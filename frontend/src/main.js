@@ -839,20 +839,16 @@ function syncDraftViaBeacon() {
   if (!user || !token) return;
 
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
   const savedAt = now.toISOString();
 
-  const monthData = {};
-  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
-    const d = new Date(dateKey + 'T00:00:00');
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      monthData[dateKey] = dayData;
-    }
-  });
-
+  // Siehe syncDraftToServer: Sync-Fenster statt Monats-Filter oder
+  // kompletter Historie.
   const basedOn = localStorage.getItem(STORAGE_KEY + '_savedAt') || null;
-  const data = { dayStore: monthData, pikettStore, year, month, savedAt };
+  const data = {
+    dayStore: getDayStoreWithinSyncWindow(),
+    pikettStore,
+    savedAt,
+  };
 
   const payload = JSON.stringify({ data, basedOn, token });
   const blob = new Blob([payload], { type: 'application/json' });
@@ -1008,26 +1004,48 @@ function scheduleDraftSync() {
   _draftSyncTimer = setTimeout(() => syncDraftToServer(), 3000);
 }
 
+// Wie weit rückwirkend Tage im laufenden Sync mitgeschickt werden. Älteres
+// bleibt serverseitig unangetastet (Merge, kein Replace) — muss also nicht
+// bei jedem Sync erneut übertragen werden. 60 Tage decken grosszügig alle
+// realistischen Nachtrags-/Korrekturfälle ab (auch über Monatsgrenzen und
+// Lohnperioden hinweg), ohne dass der Payload über Jahre hinweg unbegrenzt
+// wächst.
+const DRAFT_SYNC_WINDOW_DAYS = 60;
+
+function getDayStoreWithinSyncWindow() {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - DRAFT_SYNC_WINDOW_DAYS);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  const windowed = {};
+  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
+    // Zukünftige/aktuelle Einträge immer mitschicken, Vergangenes nur
+    // innerhalb des Fensters.
+    if (dateKey >= cutoffKey) {
+      windowed[dateKey] = dayData;
+    }
+  });
+  return windowed;
+}
+
 // savedAt nur beim echten Sync updaten:
 async function syncDraftToServer() {
   const user = getCurrentUser();
   if (!user) return;
 
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
   const savedAt = now.toISOString();
 
-  const monthData = {};
-  Object.entries(dayStore).forEach(([dateKey, dayData]) => {
-    const d = new Date(dateKey + 'T00:00:00');
-    if (d.getFullYear() === year && d.getMonth() === month) {
-      monthData[dateKey] = dayData;
-    }
-  });
-
+  // WICHTIG: den dayStore innerhalb des Sync-Fensters senden, nicht nur
+  // den aktuellen Kalendermonat (sonst Datenverlust bei Korrekturen über
+  // Monatsgrenzen hinweg) und nicht die komplette Historie (sonst wächst
+  // der Payload über Jahre unbegrenzt). Älteres bleibt serverseitig
+  // unangetastet dank Merge statt Replace.
   const basedOn = localStorage.getItem(STORAGE_KEY + '_savedAt') || null;
-  const data = { dayStore: monthData, pikettStore, year, month, savedAt };
+  const data = {
+    dayStore: getDayStoreWithinSyncWindow(),
+    pikettStore,
+    savedAt,
+  };
 
   try {
     const res = await authFetch('/api/draft/sync', {
@@ -3507,6 +3525,11 @@ function renderAdminKontenGrid(rows) {
         <input class="admin-konto-reason" type="text" placeholder="z.B. ÜZ-Auszahlung Januar 2026">
       </label>
 
+      <label class="admin-konto-reason-label">Wirksam ab (optional)
+        <input class="admin-konto-effective-date" type="date">
+        <span class="admin-konto-hint">Nur bei ÜZ1/ÜZ2/ÜZ3-Korrekturen relevant. Leer = wirksam ab heute. Für rückwirkende Aufholbuchungen ein früheres Datum setzen, damit vergangene Lohnabrechnungen die Korrektur korrekt berücksichtigen.</span>
+      </label>
+
       <div class="admin-konto-actions">
         <button type="button" class="admin-konto-save" data-username="${username}">Speichern</button>
       </div>
@@ -5083,6 +5106,8 @@ document.addEventListener('click', async (event) => {
     });
     const reasonEl = card.querySelector('.admin-konto-reason');
     if (reasonEl) body.reason = reasonEl.value.trim() || null;
+    const effectiveDateEl = card.querySelector('.admin-konto-effective-date');
+    if (effectiveDateEl) body.effectiveDate = effectiveDateEl.value || null;
 
     try {
       const res = await authFetch('/api/admin/konten/set', {
@@ -9346,15 +9371,61 @@ async function loadDraftFromServer() {
 
     if (serverTime > localTime) {
       if (draft.dayStore && typeof draft.dayStore === 'object') {
-        const { year, month } = draft;
-        Object.keys(dayStore).forEach((dateKey) => {
-          const d = new Date(dateKey + 'T00:00:00');
-          if (d.getFullYear() === year && d.getMonth() === month) {
-            delete dayStore[dateKey];
-          }
-        });
+        const cleanedServerDayStore = cleanDayStoreEntries(draft.dayStore);
 
-        Object.assign(dayStore, cleanDayStoreEntries(draft.dayStore));
+        // Stempel NIE blind ersetzen — nur vereinigen (lokale + Server-
+        // Stempel, Duplikate nach Zeit+Typ entfernt). Ein automatischer
+        // Hintergrund-Sync darf strukturell nie Stempel wegnehmen, die
+        // lokal schon vorhanden sind, unabhängig vom genauen Grund, warum
+        // die Server-Version gerade unvollständig sein könnte (Timing,
+        // Netz, o.ä.). Explizites Löschen durch den User läuft weiterhin
+        // separat über die Edit-Buttons (mit stampEditLog-Eintrag).
+        Object.entries(cleanedServerDayStore).forEach(
+          ([dateKey, serverDay]) => {
+            const localDay = dayStore[dateKey];
+            const localStamps = Array.isArray(localDay?.stamps)
+              ? localDay.stamps
+              : [];
+            const serverStamps = Array.isArray(serverDay?.stamps)
+              ? serverDay.stamps
+              : [];
+
+            if (localStamps.length > serverStamps.length) {
+              // Diagnose: Server hätte hier lokal vorhandene Stempel entfernt.
+              console.warn(
+                `[SyncGuard] ${dateKey}: Server-Stempel (${serverStamps.length}) < lokale Stempel (${localStamps.length}) — Union statt Ersetzen angewendet.`,
+                { localStamps, serverStamps }
+              );
+              authFetch('/api/diagnostics/stamp-sync-anomaly', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  dateKey,
+                  localStamps,
+                  serverStamps,
+                  localTime: localRaw,
+                  serverTime: data.updatedAt,
+                }),
+              }).catch(() => {});
+            }
+
+            const stampKey = (s) => `${s.type}|${s.time}`;
+            const mergedMap = new Map();
+            [...serverStamps, ...localStamps].forEach((s) => {
+              if (s && s.type && s.time) mergedMap.set(stampKey(s), s);
+            });
+            const mergedStamps = Array.from(mergedMap.values());
+
+            cleanedServerDayStore[dateKey] = {
+              ...serverDay,
+              stamps: mergedStamps,
+            };
+          }
+        );
+
+        // Kompletter Merge über alle Monate — der Draft enthält jetzt immer
+        // den gesamten dayStore, kein Monats-Feld mehr nötig.
+        Object.assign(dayStore, cleanedServerDayStore);
 
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(dayStore));

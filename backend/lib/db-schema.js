@@ -211,6 +211,15 @@ async function ensureKontenTables(db) {
     )
   `);
 
+  // Migration: Wirksamkeitsdatum pro Korrektur, getrennt vom Eingabe-
+  // Zeitpunkt (created_at). NULL = wirksam ab Eingabedatum (Normalfall).
+  // Für rückwirkende Aufholbuchungen (z. B. Migration aus altem System)
+  // kann ein früheres Datum gesetzt werden, damit Lohnabrechnungen für
+  // vergangene Perioden die Korrektur korrekt mitberücksichtigen.
+  await db.query(
+    `ALTER TABLE konto_adjustments ADD COLUMN IF NOT EXISTS effective_date DATE`
+  );
+
   await db.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       token TEXT PRIMARY KEY,
@@ -337,6 +346,39 @@ async function ensureLiveStampsTable(db) {
       stamps    JSONB NOT NULL DEFAULT '[]'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+}
+
+/**
+ * Diagnose-Tabelle: protokolliert, wenn ein automatischer Draft-Sync
+ * (loadDraftFromServer) eine Server-Version mit weniger Stempeln als der
+ * lokale Stand vorgefunden hat. Dient der Untersuchung gemeldeter
+ * "Stempel verschwunden"-Fälle — die Stempel selbst gehen dank Union-Merge
+ * clientseitig nicht verloren, aber wir wollen sehen, WANN/WARUM die
+ * Server-Version unvollständig war.
+ *
+ * @param {import('pg').Pool} db
+ */
+async function ensureStampSyncAnomaliesTable(db) {
+  if (!db) return;
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS stamp_sync_anomalies (
+      id           SERIAL PRIMARY KEY,
+      user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      username     TEXT NOT NULL,
+      date_key     TEXT NOT NULL,
+      local_stamps JSONB NOT NULL,
+      server_stamps JSONB NOT NULL,
+      local_time   TEXT,
+      server_time  TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_stamp_sync_anomalies_username
+    ON stamp_sync_anomalies (username, created_at DESC)
   `);
 }
 
@@ -551,6 +593,7 @@ async function initializeDatabase(db, initialUsers) {
   await ensureDraftsTable(db);
   await ensureLiveStampsTable(db);
   await ensureStampEditsTable(db);
+  await ensureStampSyncAnomaliesTable(db);
   await ensureWorkSchedulesTable(db);
   await ensureAnlagenTables(db);
   await ensureSecurityEventsTable(db);
@@ -597,6 +640,7 @@ module.exports = {
   ensureDraftsTable,
   ensureLiveStampsTable,
   ensureStampEditsTable,
+  ensureStampSyncAnomaliesTable,
   ensureWorkSchedulesTable,
   ensureAnlagenTables,
   ensureSecurityEventsTable,

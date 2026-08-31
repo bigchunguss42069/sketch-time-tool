@@ -218,7 +218,6 @@ const {
   getDailySoll,
   updateKontenFromSubmission,
   restoreVacationDaysForCancelledAbsence,
-  deductVacationDaysForAcceptedAbsence,
   registerKontenRoutes,
 } = createKontenService(db);
 
@@ -358,8 +357,7 @@ registerAbsenceRoutes(
   loadLatestMonthSubmission,
   updateKontenFromSubmission,
   computeMonthUeZ1,
-  computeTransmissionTotals,
-  deductVacationDaysForAcceptedAbsence
+  computeTransmissionTotals
 );
 
 registerAnlagenRoutes(
@@ -496,6 +494,41 @@ app.get(
       return res
         .status(500)
         .json({ ok: false, error: 'Could not load transmissions' });
+    }
+  }
+);
+
+// POST /api/diagnostics/stamp-sync-anomaly — Client meldet, wenn ein
+// automatischer Sync weniger Stempel als lokal vorhanden vorgefunden hat.
+// Rein diagnostisch, kein Einfluss auf die eigentlichen Daten (die
+// Stempel selbst werden clientseitig per Union-Merge weiterhin behalten).
+app.post(
+  '/api/diagnostics/stamp-sync-anomaly',
+  requireAuth,
+  async (req, res) => {
+    try {
+      const { dateKey, localStamps, serverStamps, localTime, serverTime } =
+        req.body || {};
+      if (!dateKey) return res.status(400).json({ ok: false });
+
+      await db.query(
+        `INSERT INTO stamp_sync_anomalies
+           (user_id, username, date_key, local_stamps, server_stamps, local_time, server_time)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          req.user.id,
+          req.user.username,
+          String(dateKey),
+          JSON.stringify(localStamps || []),
+          JSON.stringify(serverStamps || []),
+          localTime || null,
+          serverTime || null,
+        ]
+      );
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('Stamp sync anomaly log error', err);
+      return res.status(500).json({ ok: false });
     }
   }
 );
@@ -848,6 +881,29 @@ app.get(
   }
 );
 
+// Mergt eingehende dayStore-Einträge in den bestehenden Draft und kappt
+// dabei Einträge, die älter als DRAFT_RETENTION_DAYS sind. Bereits
+// transmittierte/gesperrte Tage leben dauerhaft in month_submissions —
+// der Draft ist nur die Arbeits-/Staging-Fläche für noch nicht
+// abgeschlossene Tage, muss also nicht unbegrenzt wachsen. Grosszügiger
+// als das 60-Tage-Sende-Fenster des Clients, damit nie ein Tag verworfen
+// wird, den ein Client gerade noch mitschickt.
+const DRAFT_RETENTION_DAYS = 120;
+
+function mergeDayStoreWithRetention(existingDayStore, incomingDayStore) {
+  const merged = { ...existingDayStore, ...incomingDayStore };
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - DRAFT_RETENTION_DAYS);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+
+  const pruned = {};
+  Object.entries(merged).forEach(([dateKey, dayData]) => {
+    if (dateKey >= cutoffKey) pruned[dateKey] = dayData;
+  });
+  return pruned;
+}
+
 // POST /api/draft/sync-beacon — wie /api/draft/sync, aber für navigator.sendBeacon()
 // beim beforeunload-Event (keine Custom-Header möglich, daher Token im Body).
 // sendBeacon() liefert keine Antwort an den Client — Fehler werden nur geloggt.
@@ -876,6 +932,25 @@ app.post('/api/draft/sync-beacon', async (req, res) => {
       }
     }
 
+    // Gleiches Merge wie in /api/draft/sync — siehe dortiger Kommentar.
+    const existingResult = await db.query(
+      'SELECT data FROM user_drafts WHERE user_id = $1',
+      [user.id]
+    );
+    const existingData = existingResult.rows[0]?.data || {};
+    const existingDayStore =
+      existingData.dayStore && typeof existingData.dayStore === 'object'
+        ? existingData.dayStore
+        : {};
+    const incomingDayStore =
+      data.dayStore && typeof data.dayStore === 'object' ? data.dayStore : {};
+
+    const mergedData = {
+      ...existingData,
+      ...data,
+      dayStore: mergeDayStoreWithRetention(existingDayStore, incomingDayStore),
+    };
+
     await db.query(
       `
       INSERT INTO user_drafts (user_id, username, data, updated_at)
@@ -883,7 +958,7 @@ app.post('/api/draft/sync-beacon', async (req, res) => {
       ON CONFLICT (user_id) DO UPDATE
         SET data = $3, updated_at = NOW()
     `,
-      [user.id, user.username, JSON.stringify(data)]
+      [user.id, user.username, JSON.stringify(mergedData)]
     );
 
     return res.status(204).end();
@@ -916,6 +991,30 @@ app.post('/api/draft/sync', requireAuth, async (req, res) => {
       }
     }
 
+    // WICHTIG: dayStore serverseitig mergen statt komplett zu ersetzen.
+    // Der Client sendet zwar mittlerweile immer den kompletten dayStore,
+    // aber ein Merge ist zusätzliche Absicherung — schützt z. B. ältere,
+    // noch nicht aktualisierte Clients davor, andere Monate zu löschen,
+    // und schützt vor Datenverlust bei zwei nahezu gleichzeitigen Syncs
+    // von unterschiedlichen Geräten.
+    const existingResult = await db.query(
+      'SELECT data FROM user_drafts WHERE user_id = $1',
+      [req.user.id]
+    );
+    const existingData = existingResult.rows[0]?.data || {};
+    const existingDayStore =
+      existingData.dayStore && typeof existingData.dayStore === 'object'
+        ? existingData.dayStore
+        : {};
+    const incomingDayStore =
+      data.dayStore && typeof data.dayStore === 'object' ? data.dayStore : {};
+
+    const mergedData = {
+      ...existingData,
+      ...data,
+      dayStore: mergeDayStoreWithRetention(existingDayStore, incomingDayStore),
+    };
+
     await db.query(
       `
       INSERT INTO user_drafts (user_id, username, data, updated_at)
@@ -923,7 +1022,7 @@ app.post('/api/draft/sync', requireAuth, async (req, res) => {
       ON CONFLICT (user_id) DO UPDATE
         SET data = $3, updated_at = NOW()
     `,
-      [req.user.id, req.user.username, JSON.stringify(data)]
+      [req.user.id, req.user.username, JSON.stringify(mergedData)]
     );
 
     const saved = await db.query(
