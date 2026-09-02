@@ -24,11 +24,7 @@ const {
   kontenMonthKey,
 } = require('./holidays');
 
-const {
-  toNumber,
-  round1,
-  computeVacationUsedDaysForMonth,
-} = require('./compute');
+const { toNumber, round1 } = require('./compute');
 
 const { getPayrollYearConfig } = require('./constants');
 
@@ -533,7 +529,7 @@ function createKontenService(db) {
       const yearStr = String(year);
 
       const snapResult = await client.query(
-        `SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vac_used, vorarbeit_balance
+        `SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vorarbeit_balance
          FROM konten_snapshots WHERE user_id = $1 AND year = $2 AND month_index = $3 LIMIT 1`,
         [ensured.userId, year, monthIndex]
       );
@@ -545,7 +541,6 @@ function createKontenService(db) {
             ueZ1Positive: 0,
             ueZ2: 0,
             ueZ3: 0,
-            vacUsed: 0,
             vorarbeitBalance: 0,
           };
 
@@ -587,28 +582,34 @@ function createKontenService(db) {
 
       const deltaUeZ1 = round1(monthUeZ1 - prevSnap.ueZ1);
 
+      // WICHTIG: Ferienverbrauch (vacationDays) wird NICHT hier neu
+      // berechnet — die einzige Quelle der Wahrheit dafür ist der
+      // Sofort-Abzug/-Ausgleich bei Akzeptanz/Storno einer Absenz
+      // (deductVacationDaysForAcceptedAbsence /
+      // restoreVacationDaysForCancelledAbsence). Anders als ÜZ1/ÜZ2/ÜZ3
+      // hängt der Ferienverbrauch nicht von tatsächlich gestempelten
+      // Daten ab — eine zweite, aus den transmittierten Monatsdaten neu
+      // berechnete Quelle hier führte früher zu doppeltem Abzug, sobald
+      // eine Absenz den normalen Akzeptanz-Weg umging (z. B. SQL-Migration).
       const nextSnap = {
         ueZ1: monthUeZ1,
         ueZ1Positive: 0,
         ueZ2: Number(totals?.pikett) || 0,
         ueZ3: Number(totals?.overtime3) || 0,
-        vacUsed: computeVacationUsedDaysForMonth(payload, year, monthIndex),
       };
       nextKonto.ueZ1 += deltaUeZ1;
       nextKonto.ueZ2 += nextSnap.ueZ2 - prevSnap.ueZ2;
       nextKonto.ueZ3 += nextSnap.ueZ3 - prevSnap.ueZ3;
-      nextKonto.vacationDays -= nextSnap.vacUsed - prevSnap.vacUsed;
 
       await client.query(
         `INSERT INTO konten_snapshots
            (user_id, username, year, month_index, month_key, ue_z1, ue_z1_positive,
-           ue_z2, ue_z3, vac_used, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           ue_z2, ue_z3, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          ON CONFLICT (user_id, year, month_index) DO UPDATE SET
            username=EXCLUDED.username, month_key=EXCLUDED.month_key,
            ue_z1=EXCLUDED.ue_z1, ue_z1_positive=EXCLUDED.ue_z1_positive,
            ue_z2=EXCLUDED.ue_z2, ue_z3=EXCLUDED.ue_z3,
-           vac_used=EXCLUDED.vac_used,
            updated_at=EXCLUDED.updated_at`,
         [
           ensured.userId,
@@ -620,7 +621,6 @@ function createKontenService(db) {
           nextSnap.ueZ1Positive,
           nextSnap.ueZ2,
           nextSnap.ueZ3,
-          nextSnap.vacUsed,
           nextKonto.updatedAt,
         ]
       );
@@ -652,7 +652,10 @@ function createKontenService(db) {
   }
 
   /**
-   * Stellt Ferientage zurück wenn eine akzeptierte Absenz storniert wird.
+   * Stellt Ferientage zurück, wenn eine akzeptierte Absenz storniert wird.
+   * Einzige Quelle der Wahrheit für Ferienverbrauch — reiner Sofort-
+   * Ausgleich, unabhängig davon, ob/wann die betroffenen Monate
+   * transmittiert wurden oder werden.
    *
    * @param {{ username: string, absence: object, updatedBy: string }} params
    * @returns {Promise<number>} Anzahl zurückerstatteter Ferientage
@@ -667,45 +670,11 @@ function createKontenService(db) {
     const vacDays = calculateAbsenceVacationDays(absence);
     if (!(vacDays > 0)) return 0;
 
-    let fromDate = new Date(absence.from + 'T00:00:00');
-    let toDate = new Date(absence.to + 'T00:00:00');
-
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
-      return 0;
-    if (toDate < fromDate) {
-      const tmp = fromDate;
-      fromDate = toDate;
-      toDate = tmp;
-    }
-
-    const affectedMonths = new Set();
-    const cursor = new Date(fromDate);
-    while (cursor <= toDate) {
-      affectedMonths.add(
-        kontenMonthKey(cursor.getFullYear(), cursor.getMonth())
-      );
-      cursor.setMonth(cursor.getMonth() + 1);
-      cursor.setDate(1);
-    }
-
-    const monthKeys = Array.from(affectedMonths);
-    if (!monthKeys.length) return 0;
-
     const client = await db.connect();
     try {
       await client.query('BEGIN');
 
       const ensured = await ensureKontenUserRecord({ username, client });
-      const snapResult = await client.query(
-        `SELECT year, month_index, month_key, vac_used FROM konten_snapshots
-         WHERE user_id = $1 AND month_key = ANY($2::text[])`,
-        [ensured.userId, monthKeys]
-      );
-
-      if (!snapResult.rows.length) {
-        await client.query('ROLLBACK');
-        return 0;
-      }
 
       const nextKonto = {
         ...ensured.konto,
@@ -722,26 +691,6 @@ function createKontenService(db) {
         konto: nextKonto,
       });
 
-      for (const row of snapResult.rows) {
-        const portion = computeVacationUsedDaysForMonth(
-          { absences: [absence] },
-          row.year,
-          row.month_index
-        );
-        const nextVacUsed = Math.max(0, (Number(row.vac_used) || 0) - portion);
-        await client.query(
-          `UPDATE konten_snapshots SET vac_used=$4, updated_at=$5
-           WHERE user_id=$1 AND year=$2 AND month_index=$3`,
-          [
-            ensured.userId,
-            row.year,
-            row.month_index,
-            nextVacUsed,
-            nextKonto.updatedAt,
-          ]
-        );
-      }
-
       await client.query('COMMIT');
       return vacDays;
     } catch (err) {
@@ -753,13 +702,15 @@ function createKontenService(db) {
   }
 
   /**
-   * Zieht Ferientage SOFORT bei Akzeptanz einer Ferien-Absenz vom Saldo ab —
-   * unabhängig davon, ob der/die betroffenen Monate bereits transmittiert
-   * wurden. Damit ein späterer regulärer Monats-Transmit denselben Zeitraum
-   * nicht ein zweites Mal abzieht, werden die betroffenen
-   * konten_snapshots.vac_used-Werte gleich mit vorbelegt (per UPSERT) — der
-   * Monats-Transmit sieht den Verbrauch dann schon als "bereits verrechnet"
-   * und die Differenzberechnung dort ergibt für diesen Zeitraum 0.
+   * Zieht Ferientage SOFORT bei Akzeptanz einer Ferien-Absenz vom Saldo ab.
+   * Einzige Quelle der Wahrheit für Ferienverbrauch — es findet KEINE
+   * zusätzliche Neuberechnung beim Monats-Transmit mehr statt (Ferien sind,
+   * anders als ÜZ1/ÜZ2/ÜZ3, allein durch den Absenz-Antrag bestimmt und
+   * hängen nicht von tatsächlich gestempelten Daten ab — ein zweiter
+   * "berechne aus den transmittierten Daten neu"-Mechanismus ist hier
+   * unnötig und hat früher zu doppeltem Abzug geführt, wenn eine Absenz
+   * den normalen Akzeptanz-Weg umging, z. B. bei einer direkten
+   * SQL-Migration).
    *
    * Gegenstück zu restoreVacationDaysForCancelledAbsence.
    *
@@ -776,41 +727,6 @@ function createKontenService(db) {
 
     const vacDays = calculateAbsenceVacationDays(absence);
     if (!(vacDays > 0)) return 0;
-
-    let fromDate = new Date(absence.from + 'T00:00:00');
-    let toDate = new Date(absence.to + 'T00:00:00');
-
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
-      return 0;
-    if (toDate < fromDate) {
-      const tmp = fromDate;
-      fromDate = toDate;
-      toDate = tmp;
-    }
-
-    // Pro betroffenem Monat den anteiligen Tage-Anteil ermitteln (nicht den
-    // vollen vacDays-Wert je Monat — eine Absenz kann über Monatsgrenzen
-    // hinweg gehen).
-    const monthPortions = [];
-    const cursor = new Date(fromDate);
-    cursor.setDate(1);
-    const endMonth = new Date(toDate);
-    endMonth.setDate(1);
-    while (cursor <= endMonth) {
-      const year = cursor.getFullYear();
-      const monthIndex = cursor.getMonth();
-      const portion = computeVacationUsedDaysForMonth(
-        { absences: [absence] },
-        year,
-        monthIndex
-      );
-      if (portion > 0) {
-        monthPortions.push({ year, monthIndex, portion });
-      }
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-
-    if (!monthPortions.length) return 0;
 
     const client = await db.connect();
     try {
@@ -836,27 +752,6 @@ function createKontenService(db) {
         teamId: ensured.teamId,
         konto: nextKonto,
       });
-
-      for (const { year, monthIndex, portion } of monthPortions) {
-        const mk = kontenMonthKey(year, monthIndex);
-        await client.query(
-          `INSERT INTO konten_snapshots
-             (user_id, username, year, month_index, month_key, vac_used, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           ON CONFLICT (user_id, year, month_index) DO UPDATE SET
-             vac_used = konten_snapshots.vac_used + EXCLUDED.vac_used,
-             updated_at = EXCLUDED.updated_at`,
-          [
-            ensured.userId,
-            ensured.username,
-            year,
-            monthIndex,
-            mk,
-            portion,
-            nextKonto.updatedAt,
-          ]
-        );
-      }
 
       await client.query('COMMIT');
       return vacDays;
