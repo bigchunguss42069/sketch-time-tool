@@ -428,6 +428,7 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
           username: user.username,
           role: user.role,
           teamId: user.teamId,
+          isFullAdmin: user.isFullAdmin,
         },
       });
     } catch (err) {
@@ -446,6 +447,7 @@ function registerAuthRoutes(app, db, requireAuth, createMailTransporter) {
         username: user.username,
         role: user.role,
         teamId: user.teamId,
+        isFullAdmin: user.isFullAdmin,
       },
     });
   });
