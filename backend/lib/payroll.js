@@ -19,6 +19,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { getAdminTeamScope, hasTeamAccess } = require('./auth');
 const {
   formatDateKey,
   formatDateDisplayEU,
@@ -59,6 +60,7 @@ function getPayrollAbsenceTypeLabel(type) {
     ferien: 'Ferien',
     krank: 'Krank',
     arzt: 'Arztbesuch',
+    kompensation: 'Kompensation',
     unfall: 'Unfall',
     militaer: 'Militär',
     mutterschaft: 'Mutterschaft',
@@ -965,6 +967,7 @@ function createPayrollService(
           ferien: 'Ferien',
           krank: 'Krank',
           arzt: 'Arztbesuch',
+          kompensation: 'Kompensation',
           unfall: 'Unfall',
           militaer: 'Militär',
           mutterschaft: 'Mutterschaft',
@@ -1236,7 +1239,11 @@ function createPayrollService(
         const periodEnd = fromDate <= toDate ? toDate : fromDate;
 
         try {
-          const users = await listUsersFromDb({ role: 'user' });
+          const scope = getAdminTeamScope(req);
+          const users = await listUsersFromDb({
+            role: 'user',
+            ...(scope !== null ? { teamId: scope } : {}),
+          });
           const rows = await Promise.all(
             users.map((user) =>
               buildPayrollPeriodDataForUser(user, periodStart, periodEnd)
@@ -1301,6 +1308,11 @@ function createPayrollService(
             return res
               .status(404)
               .json({ ok: false, error: 'Mitarbeiter nicht gefunden.' });
+          }
+          if (!hasTeamAccess(req, targetUser.teamId || null)) {
+            return res
+              .status(403)
+              .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
           }
 
           const row = await buildPayrollPeriodDataForUser(

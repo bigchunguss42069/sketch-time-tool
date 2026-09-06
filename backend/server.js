@@ -87,6 +87,8 @@ const {
   createRequireAuth,
   requireAdmin,
   registerAuthRoutes,
+  getAdminTeamScope,
+  hasTeamAccess,
 } = require('./lib/auth');
 
 // ============================================================================
@@ -414,7 +416,11 @@ app.post(
           .status(400)
           .json({ ok: false, error: 'Ungültiger Zeitraum' });
 
-      const users = await listUsersFromDb({ role: 'user' });
+      const scope = getAdminTeamScope(req);
+      const users = await listUsersFromDb({
+        role: 'user',
+        ...(scope !== null ? { teamId: scope } : {}),
+      });
       const monthStr = from.slice(0, 7);
       const zipName = `lohnabrechnung_${monthStr}.zip`;
 
@@ -563,15 +569,20 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
+      const scope = getAdminTeamScope(req);
       const result = await db.query(`
       SELECT l.username, l.today_key, l.stamps, l.updated_at, u.team_id
       FROM live_stamps l
       LEFT JOIN users u ON u.username = l.username
       ORDER BY l.username ASC
     `);
+      const rows =
+        scope === null
+          ? result.rows
+          : result.rows.filter((r) => (r.team_id || null) === scope);
       return res.json({
         ok: true,
-        users: result.rows.map((r) => ({
+        users: rows.map((r) => ({
           username: r.username,
           teamId: r.team_id || null,
           todayKey: r.today_key,
@@ -630,15 +641,18 @@ app.get(
         });
       });
 
-      const users = Object.entries(byUser).map(
-        ([username, { teamId, edits }]) => ({
+      const users = Object.entries(byUser)
+        .map(([username, { teamId, edits }]) => ({
           username,
           teamId,
           editCount: edits.length,
           flagged: edits.length >= 10,
           edits,
-        })
-      );
+        }))
+        .filter((u) => {
+          const scope = getAdminTeamScope(req);
+          return scope === null || (u.teamId || null) === scope;
+        });
 
       return res.json({ ok: true, users });
     } catch (err) {
@@ -769,7 +783,11 @@ app.get(
 
     try {
       const monthLabel = makeMonthLabel(year, monthIndex);
-      const users = await listUsersFromDb({ role: 'user' });
+      const scope = getAdminTeamScope(req);
+      const users = await listUsersFromDb({
+        role: 'user',
+        ...(scope !== null ? { teamId: scope } : {}),
+      });
 
       const rows = await Promise.all(
         users.map(async (user) => {
@@ -1108,6 +1126,11 @@ app.get(
       if (!user) {
         return res.status(404).json({ ok: false, error: 'User not found' });
       }
+      if (!hasTeamAccess(req, user.teamId || null)) {
+        return res
+          .status(403)
+          .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
+      }
 
       const monthRecord = await getLatestMonthSubmissionRecord(
         username,
@@ -1254,10 +1277,10 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const teamId = String(req.user.teamId || '');
+      const scope = getAdminTeamScope(req);
       const users = await listUsersFromDb({
         role: 'user',
-        teamId: teamId || null,
+        ...(scope !== null ? { teamId: scope } : {}),
       });
 
       return res.json({
@@ -1287,7 +1310,11 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const users = await listUsersFromDb({ role: 'user' });
+      const scope = getAdminTeamScope(req);
+      const users = await listUsersFromDb({
+        role: 'user',
+        ...(scope !== null ? { teamId: scope } : {}),
+      });
 
       const summaries = await Promise.all(
         users.map(async (user) => {
@@ -1330,7 +1357,7 @@ app.get(
 app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT id, username, role, team_id, active, email, employment_start, created_at
+      SELECT id, username, role, team_id, active, email, employment_start, created_at, is_full_admin
       FROM users
       ORDER BY username ASC
     `);
@@ -1344,7 +1371,8 @@ app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
 // POST /api/admin/users
 app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
-  const { username, password, role, teamId, email } = req.body || {};
+  const { username, password, role, teamId, email, isFullAdmin } =
+    req.body || {};
 
   if (!username || !password || !role) {
     return res
@@ -1354,6 +1382,13 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
   if (!['user', 'admin'].includes(role)) {
     return res.status(400).json({ ok: false, error: 'Invalid role' });
+  }
+
+  if (role === 'admin' && !req.user.isFullAdmin) {
+    return res.status(403).json({
+      ok: false,
+      error: 'Nur Voll-Admins dürfen neue Admin-Accounts anlegen',
+    });
   }
 
   try {
@@ -1373,10 +1408,18 @@ app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
 
     await db.query(
       `
-      INSERT INTO users (id, username, password_hash, role, team_id, email, active)
-      VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+      INSERT INTO users (id, username, password_hash, role, team_id, email, active, is_full_admin)
+      VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7)
     `,
-      [id, username, passwordHash, role, teamId || null, email || null]
+      [
+        id,
+        username,
+        passwordHash,
+        role,
+        teamId || null,
+        email || null,
+        !!isFullAdmin,
+      ]
     );
 
     const user = await findUserById(db, id);
@@ -1405,9 +1448,32 @@ app.patch(
       birthYear,
       isNonSmoker,
       isKader,
+      isFullAdmin,
     } = req.body || {};
 
     try {
+      // Sicherheitslücke verhindern: Ein team-beschränkter Admin könnte
+      // sonst über diesen Endpoint (der für den Mitarbeiter-Tab bewusst
+      // für alle Admins offen ist) einfach das eigene Team oder das eines
+      // anderen Admin-Accounts ändern und so die Team-Beschränkung
+      // umgehen. Nur Voll-Admins dürfen deshalb Admin-Accounts bearbeiten
+      // — normale Mitarbeiter-Accounts bleiben für alle Admins offen.
+      const existingUser = await db.query(
+        'SELECT role FROM users WHERE id = $1',
+        [id]
+      );
+      if (!existingUser.rows[0]) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+      const targetIsAdmin =
+        existingUser.rows[0].role === 'admin' || role === 'admin';
+      if (targetIsAdmin && !req.user.isFullAdmin) {
+        return res.status(403).json({
+          ok: false,
+          error: 'Nur Voll-Admins dürfen Admin-Accounts bearbeiten',
+        });
+      }
+
       const result = await db.query(
         `
       UPDATE users
@@ -1419,10 +1485,11 @@ app.patch(
         birth_year = COALESCE($6, birth_year),
         is_non_smoker = COALESCE($7, is_non_smoker),
         is_kader = COALESCE($8, is_kader),
+        is_full_admin = COALESCE($9, is_full_admin),
         updated_at = NOW()
         WHERE id = $1
         RETURNING id, username, role, team_id, active, email, employment_start,
-                  birth_year, is_non_smoker, is_kader
+                  birth_year, is_non_smoker, is_kader, is_full_admin
     `,
         [
           id,
@@ -1433,6 +1500,7 @@ app.patch(
           birthYear ? Number(birthYear) : null,
           isNonSmoker != null ? !!isNonSmoker : null,
           isKader != null ? !!isKader : null,
+          isFullAdmin != null ? !!isFullAdmin : null,
         ]
       );
 

@@ -21,6 +21,7 @@
 
 const crypto = require('crypto');
 const { sendAbsenceRequestAlert, sendAbsenceChangeToHR } = require('./cron');
+const { getAdminTeamScope, hasTeamAccess } = require('./auth');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mapping-Helpers
@@ -657,8 +658,12 @@ function registerAbsenceRoutes(
     async (req, res) => {
       try {
         const status = String(req.query.status || 'pending');
+        const scope = getAdminTeamScope(req);
 
-        const users = await listUsersFromDb(db);
+        let users = await listUsersFromDb(db);
+        if (scope !== null) {
+          users = users.filter((u) => (u.teamId || null) === scope);
+        }
 
         const nested = await Promise.all(
           users.map((u) => listUserAbsencesFromDb(db, u.username))
@@ -706,6 +711,11 @@ function registerAbsenceRoutes(
         const targetUser = await findUserByUsername(username);
         if (!username || !targetUser) {
           return res.status(400).json({ ok: false, error: 'Invalid username' });
+        }
+        if (!hasTeamAccess(req, targetUser.teamId || null)) {
+          return res
+            .status(403)
+            .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
         }
         if (!id) {
           return res.status(400).json({ ok: false, error: 'Missing id' });

@@ -1870,6 +1870,14 @@ if (absenceSaveBtn) {
       const hoursRaw = document.getElementById('absenceHours')?.value;
       hours = hoursRaw ? Number(hoursRaw) : null;
       days = hours ? hours / 8 : 1;
+    } else if (type === 'kompensation') {
+      // Rein informell — hat keinen Einfluss auf die ÜZ1-Berechnung, die
+      // richtet sich nach den tatsächlichen Stempelungen an diesem Tag.
+      const hoursRaw = document.getElementById(
+        'absenceKompensationHours'
+      )?.value;
+      hours = hoursRaw ? Number(hoursRaw) : null;
+      days = hours ? hours / 8 : countAbsenceWorkdays(from, to);
     } else if (type === 'arzt') {
       const startMinutes = timeValueToMinutes(startTime);
       const endMinutes = timeValueToMinutes(endTime);
@@ -2132,10 +2140,12 @@ function updateAbsenceFormForType() {
   const type = absenceTypeEl?.value;
   const ferienExtra = document.getElementById('absenceFerienExtra');
   const krankExtra = document.getElementById('absenceKrankExtra');
+  const kompensationExtra = document.getElementById('absenceKompensationExtra');
 
   ferienExtra?.classList.toggle('hidden', type !== 'ferien');
   krankExtra?.classList.toggle('hidden', type !== 'krank');
   absenceArztExtraEl?.classList.toggle('hidden', type !== 'arzt');
+  kompensationExtra?.classList.toggle('hidden', type !== 'kompensation');
 
   const isDoctor = type === 'arzt';
 
@@ -3322,6 +3332,9 @@ function renderAdminAbsenceList(absences) {
   absences.forEach((a) => {
     const item = document.createElement('div');
     item.className = 'admin-absence-item';
+    if (String(a.type || '').toLowerCase() === 'kompensation') {
+      item.classList.add('is-kompensation');
+    }
 
     const top = document.createElement('div');
     top.className = 'admin-absence-top';
@@ -3827,6 +3840,9 @@ function renderAbsenceListForCurrentYear() {
   items.forEach((req) => {
     const container = document.createElement('div');
     container.className = 'absence-item';
+    if (String(req.type || '').toLowerCase() === 'kompensation') {
+      container.classList.add('is-kompensation');
+    }
     container.dataset.absenceId = req.id;
 
     const header = document.createElement('div');
@@ -4862,11 +4878,6 @@ function isDateLocked(dateKey) {
 function applyWeekLockUI() {
   const locked = isCurrentWeekLocked();
 
-  // Pikett-Liste neu rendern, damit Sperr-Status sofort korrekt angezeigt
-  // wird — vorher blieb sie bis zu einem zufälligen Monatswechsel auf dem
-  // (evtl. veralteten) Stand von vor dem Laden der Week-Locks stehen.
-  renderPikettList();
-
   // Inputs in day-content deaktivieren
   document
     .querySelectorAll(
@@ -5213,6 +5224,59 @@ if (adminTeamFilterPayrollEl) {
     adminActiveTeamFilterPayroll = saved;
   }
 }
+
+// Team-beschränkte Admins sehen serverseitig ohnehin nur ihr eigenes Team —
+// die Filter-Dropdowns fix darauf setzen und deaktivieren, damit nicht der
+// Eindruck entsteht, man könnte auf "Alle Teams" wechseln.
+//
+// Voll-Admins: eine evtl. gespeicherte Team-Einschränkung aus einer früheren
+// Zeit als eingeschränkter Admin (localStorage) explizit zurücksetzen, sonst
+// bleibt "Voll-Zugriff" wirkungslos, solange noch ein alter Team-Filter
+// gespeichert ist.
+(() => {
+  const me = getCurrentUser();
+  if (!me) return;
+
+  if (me.isFullAdmin) {
+    adminActiveTeamFilter = '';
+    adminActiveTeamFilterAbsences = '';
+    adminActiveTeamFilterPayroll = '';
+    localStorage.removeItem(TEAM_FILTER_KEY);
+    localStorage.removeItem(TEAM_FILTER_KEY_ABSENCES);
+    localStorage.removeItem(TEAM_FILTER_KEY_PAYROLL);
+
+    [
+      adminTeamFilterEl,
+      adminTeamFilterAbsencesEl,
+      adminTeamFilterPayrollEl,
+    ].forEach((el) => {
+      if (!el) return;
+      el.value = '';
+      el.disabled = false;
+      el.title = '';
+    });
+    return;
+  }
+
+  if (!me.teamId) return;
+
+  adminActiveTeamFilter = me.teamId;
+  adminActiveTeamFilterAbsences = me.teamId;
+  adminActiveTeamFilterPayroll = me.teamId;
+  // Anlagen ignoriert adminActiveTeamFilter komplett (siehe
+  // loadAdminAnlagenSummary), daher kein Sonderfall hier nötig.
+
+  [
+    adminTeamFilterEl,
+    adminTeamFilterAbsencesEl,
+    adminTeamFilterPayrollEl,
+  ].forEach((el) => {
+    if (!el) return;
+    el.value = me.teamId;
+    el.disabled = true;
+    el.title = 'Als teambeschränkter Admin nur dein eigenes Team sichtbar';
+  });
+})();
 adminTeamFilterEl?.addEventListener('change', () => {
   localStorage.setItem(TEAM_FILTER_KEY, adminTeamFilterEl.value);
 });
@@ -5565,11 +5629,11 @@ function loadAdminAnlagenSummary({ force } = {}) {
 
   adminAnlagenList.innerHTML = `<div class="admin-day-drawer-loading">Lade Anlagen …</div>`;
 
-  const anlagenTeamParam = adminActiveTeamFilter
-    ? `&teamId=${encodeURIComponent(adminActiveTeamFilter)}`
-    : '';
+  // Anlagen sind bewusst teamübergreifend — der geteilte Team-Filter (der
+  // auch Absenzen/Konten/Übersicht steuert) wird hier absichtlich NICHT
+  // angewendet, da dieselbe Baustelle oft von mehreren Teams bearbeitet wird.
   authFetch(
-    `/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}${anlagenTeamParam}`
+    `/api/admin/anlagen-summary?status=${encodeURIComponent(anlagenStatusFilter)}`
   )
     .then((res) => res.json())
     .then((data) => {
@@ -5615,9 +5679,7 @@ function renderAnlagenList(anlagen) {
 
     const kom = document.createElement('div');
     kom.className = 'anlagen-komnr';
-    kom.textContent = a.title
-      ? `${a.title} · ${a.komNr || '–'}`
-      : a.komNr || '–';
+    kom.textContent = a.komNr || '–';
 
     const meta = document.createElement('div');
     meta.className = 'anlagen-meta';
@@ -5700,58 +5762,7 @@ function renderAnlagenDetail(data) {
 
   const title = document.createElement('div');
   title.className = 'anlagen-detail-title';
-
-  const titlePrefix = document.createElement('span');
-  titlePrefix.textContent = `Kom.-Nr. ${komNr} (`;
-
-  const titleInput = document.createElement('input');
-  titleInput.type = 'text';
-  titleInput.className = 'anlagen-title-input';
-  titleInput.placeholder = 'Titel hinzufügen …';
-  titleInput.value = data.title || '';
-  titleInput.size = Math.max(12, (data.title || '').length || 14);
-
-  const titleSuffix = document.createElement('span');
-  titleSuffix.textContent = ')';
-
-  const saveTitle = () => {
-    const newTitle = titleInput.value.trim();
-    if (newTitle === (data.title || '')) return; // keine Änderung
-
-    authFetch('/api/admin/anlagen-title', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ komNr, title: newTitle }),
-    })
-      .then((res) => res.json())
-      .then((result) => {
-        if (!result.ok) throw new Error(result.error || 'Fehler');
-        data.title = result.title || '';
-        anlagenDetailCache.delete(komNr);
-        loadAdminAnlagenSummary({ force: true });
-        showToast('Titel gespeichert.');
-      })
-      .catch((err) => {
-        console.error(err);
-        showToast('Titel konnte nicht gespeichert werden.');
-        titleInput.value = data.title || ''; // zurücksetzen
-      });
-  };
-
-  titleInput.addEventListener('blur', saveTitle);
-  titleInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      titleInput.blur();
-    } else if (e.key === 'Escape') {
-      titleInput.value = data.title || '';
-      titleInput.blur();
-    }
-  });
-
-  title.appendChild(titlePrefix);
-  title.appendChild(titleInput);
-  title.appendChild(titleSuffix);
+  title.textContent = `Kom.-Nr. ${komNr}`;
 
   const sub = document.createElement('div');
   sub.className = 'anlagen-detail-sub';
@@ -6854,6 +6865,8 @@ function loadAdminSummary() {
                 row.dataset.date = d.dateKey;
 
                 if (d.status === 'ferien') row.classList.add('is-ferien');
+                if (d.status === 'kompensation')
+                  row.classList.add('is-kompensation');
                 if (d.status === 'absence') row.classList.add('is-absence');
 
                 const dayLeft = document.createElement('div');
@@ -8494,6 +8507,9 @@ function openNewUserModal() {
   modalRole.value = 'user';
   populateTeamDropdown();
   modalTeam.value = 'montage';
+  if (document.getElementById('modalIsFullAdmin'))
+    document.getElementById('modalIsFullAdmin').checked = false;
+  updateFullAdminRowVisibility();
   if (modalEmploymentStart) modalEmploymentStart.value = '';
   if (document.getElementById('modalBirthYear'))
     document.getElementById('modalBirthYear').value = '';
@@ -8534,6 +8550,16 @@ function updateVacPreview() {
   document.getElementById(id)?.addEventListener('change', updateVacPreview);
 });
 
+// Voll-Zugriff-Checkbox nur bei Rolle "Admin" anzeigen — für normale
+// Mitarbeiter ist das Feld irrelevant. Serverseitig ohnehin nur änderbar,
+// wenn der eingeloggte Admin selbst isFullAdmin ist (siehe PATCH-Route).
+function updateFullAdminRowVisibility() {
+  const row = document.getElementById('modalFullAdminRow');
+  if (!row) return;
+  row.classList.toggle('hidden', modalRole.value !== 'admin');
+}
+modalRole?.addEventListener('change', updateFullAdminRowVisibility);
+
 function openEditUserModal(userId) {
   const user = allUsers.find((u) => u.id === userId);
   if (!user) return;
@@ -8545,6 +8571,9 @@ function openEditUserModal(userId) {
   modalRole.value = user.role || 'user';
   populateTeamDropdown();
   modalTeam.value = user.teamId || 'montage';
+  if (document.getElementById('modalIsFullAdmin'))
+    document.getElementById('modalIsFullAdmin').checked = !!user.isFullAdmin;
+  updateFullAdminRowVisibility();
   if (modalEmploymentStart)
     modalEmploymentStart.value = user.employmentStart || '';
   if (document.getElementById('modalBirthYear'))
@@ -8585,10 +8614,19 @@ async function saveUserModal() {
     adminUserModalSave.disabled = true;
 
     if (!editingUserId) {
+      const isFullAdmin =
+        document.getElementById('modalIsFullAdmin')?.checked ?? false;
       const res = await authFetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, role, teamId }),
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          role,
+          teamId,
+          isFullAdmin,
+        }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
@@ -8599,6 +8637,8 @@ async function saveUserModal() {
       const isNonSmoker =
         document.getElementById('modalIsNonSmoker')?.checked ?? false;
       const isKader = document.getElementById('modalIsKader')?.checked ?? false;
+      const isFullAdmin =
+        document.getElementById('modalIsFullAdmin')?.checked ?? false;
       const body = {
         email,
         role,
@@ -8607,6 +8647,7 @@ async function saveUserModal() {
         birthYear,
         isNonSmoker,
         isKader,
+        isFullAdmin,
       };
       if (password) body.password = password;
 

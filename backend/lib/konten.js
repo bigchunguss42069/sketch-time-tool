@@ -27,6 +27,7 @@ const {
 const { toNumber, round1 } = require('./compute');
 
 const { getPayrollYearConfig } = require('./constants');
+const { getAdminTeamScope, hasTeamAccess } = require('./auth');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure Hilfsfunktionen (db-unabhängig)
@@ -808,7 +809,11 @@ function createKontenService(db) {
       requireAdmin,
       async (req, res) => {
         try {
-          const users = await listUsersFromDb({ role: 'user' });
+          const scope = getAdminTeamScope(req);
+          const users = await listUsersFromDb({
+            role: 'user',
+            ...(scope !== null ? { teamId: scope } : {}),
+          });
           const rows = await listKontenRowsForUsers(users);
           return res.json({ ok: true, users: rows });
         } catch (err) {
@@ -834,6 +839,11 @@ function createKontenService(db) {
               .status(400)
               .json({ ok: false, error: 'Invalid username' });
           }
+          if (!hasTeamAccess(req, targetUser.teamId || null)) {
+            return res
+              .status(403)
+              .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
+          }
           const konto = await updateKontenManualValues({
             username,
             values: { ...req.body, updatedBy: req.user.username },
@@ -857,6 +867,17 @@ function createKontenService(db) {
       async (req, res) => {
         const username = String(req.params.username || '');
         try {
+          const targetUser = await findUserByUsername(username);
+          if (!targetUser) {
+            return res
+              .status(400)
+              .json({ ok: false, error: 'Invalid username' });
+          }
+          if (!hasTeamAccess(req, targetUser.teamId || null)) {
+            return res
+              .status(403)
+              .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
+          }
           const result = await db.query(
             `SELECT field, old_value, new_value, admin_username, reason, created_at
            FROM konto_adjustments WHERE username = $1
@@ -881,6 +902,16 @@ function createKontenService(db) {
       async (req, res) => {
         const username = String(req.params.username || '');
         const field = String(req.query.field || '');
+
+        const targetUser = await findUserByUsername(username);
+        if (!targetUser) {
+          return res.status(400).json({ ok: false, error: 'Invalid username' });
+        }
+        if (!hasTeamAccess(req, targetUser.teamId || null)) {
+          return res
+            .status(403)
+            .json({ ok: false, error: 'Kein Zugriff auf dieses Team' });
+        }
 
         const allowedFields = [
           'ueZ1Correction',

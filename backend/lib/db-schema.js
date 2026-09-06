@@ -66,6 +66,13 @@ async function ensureUsersTable(db) {
   await db.query(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_kader BOOLEAN NOT NULL DEFAULT FALSE`
   );
+  // Team-Zugriffsbeschränkung für Admins: false (Default) = nur eigenes
+  // Team sichtbar/bearbeitbar in Absenzen/Konten/Übersicht/Lohnabrechnung.
+  // true = voller Zugriff auf alle Teams (z. B. HR, Geschäftsleitung).
+  // Betrifft nur role='admin' — für normale User ohne Bedeutung.
+  await db.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_full_admin BOOLEAN NOT NULL DEFAULT FALSE`
+  );
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS dino_scores (
@@ -486,18 +493,6 @@ async function ensureAnlagenTables(db) {
     CREATE TABLE IF NOT EXISTS anlagen_index_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       payload JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Frei editierbarer Titel pro Kom-Nr (global, teamunabhängig — dieselbe
-  // Baustelle wird oft von mehreren Teams bearbeitet). Reine
-  // Ordnungshilfe im Anlagen-Tab, keine Versionshistorie nötig.
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS anlagen_titles (
-      kom_nr TEXT PRIMARY KEY,
-      title TEXT NOT NULL DEFAULT '',
-      updated_by TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);

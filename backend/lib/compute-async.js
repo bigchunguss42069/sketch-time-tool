@@ -39,6 +39,7 @@ const {
   computeNetWorkingHoursFromStamps,
   computeDailyWorkingHours,
   computeNonPikettHours,
+  excludeSollNeutralAbsences,
 } = require('./compute');
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure Funktionen (keine DB-Abhängigkeit)
@@ -91,6 +92,28 @@ function buildMonthOverviewFromSubmission(
           monthStartKey,
           monthEndKey
         );
+
+  // Kompensationstage separat erkennen, damit die Übersicht "Kompensation"
+  // statt generisch "Absenz" anzeigen kann.
+  const kompensationDaysSet = new Set();
+  (Array.isArray(submission?.absences) ? submission.absences : []).forEach(
+    (a) => {
+      if (String(a?.type || '').toLowerCase() !== 'kompensation') return;
+      const st = String(a?.status || '').toLowerCase();
+      if (st !== 'accepted' && st !== 'cancel_requested') return;
+      if (!a.from || !a.to) return;
+      const startKey = a.from <= a.to ? a.from : a.to;
+      const endKey = a.from <= a.to ? a.to : a.from;
+      if (endKey < monthStartKey || startKey > monthEndKey) return;
+      const cursor2 = new Date(startKey + 'T00:00:00');
+      const end2 = new Date(endKey + 'T00:00:00');
+      while (cursor2 <= end2) {
+        const k = formatDateKey(cursor2);
+        if (k >= monthStartKey && k <= monthEndKey) kompensationDaysSet.add(k);
+        cursor2.setDate(cursor2.getDate() + 1);
+      }
+    }
+  );
 
   let monthTotalHours = 0;
   const weekMap = new Map();
@@ -154,6 +177,7 @@ function buildMonthOverviewFromSubmission(
     if (isBernHolidayKey(dateKey)) status = 'holiday';
     else if (isCompanyBridgeDay(dateKey)) status = 'bridge';
     else if (ferien) status = 'ferien';
+    else if (kompensationDaysSet.has(dateKey)) status = 'kompensation';
     else if (hasAcceptedAbsence) status = 'absence';
     else if (hasStamps) status = 'ok';
     else if (nonPikett > 0) status = 'ok';
@@ -260,12 +284,12 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
     const monthStartKey = formatDateKey(new Date(year, monthIndex, 1));
     const monthEndKey = formatDateKey(new Date(year, monthIndex + 1, 0));
     const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-      payload?.absences,
+      excludeSollNeutralAbsences(payload?.absences),
       monthStartKey,
       monthEndKey
     );
     const vacationDaysSet = buildAcceptedVacationDaysSet(
-      payload?.absences,
+      excludeSollNeutralAbsences(payload?.absences),
       monthStartKey,
       monthEndKey
     );
@@ -336,12 +360,12 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
         : {};
 
     const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-      submission?.absences,
+      excludeSollNeutralAbsences(submission?.absences),
       fromKey,
       toKey
     );
     const vacationDaysSet = buildAcceptedVacationDaysSet(
-      submission?.absences,
+      excludeSollNeutralAbsences(submission?.absences),
       fromKey,
       toKey
     );
@@ -428,12 +452,12 @@ function createComputeAsyncService(getDailySoll, fetchEmpStartKey) {
     let ueZ3 = 0;
 
     const acceptedAbsenceDays = buildAcceptedAbsenceHoursMap(
-      submission?.absences,
+      excludeSollNeutralAbsences(submission?.absences),
       fromKey,
       toKey
     );
     const vacationDaysSet = buildAcceptedVacationDaysSet(
-      submission?.absences,
+      excludeSollNeutralAbsences(submission?.absences),
       fromKey,
       toKey
     );

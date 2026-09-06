@@ -249,6 +249,27 @@ function buildAcceptedAbsenceHoursMap(
 }
 
 /**
+ * Filtert Absenzen heraus, die NICHT in die Soll-Berechnung einfliessen
+ * sollen — aktuell nur "kompensation". Anders als alle anderen Absenztypen
+ * setzt Kompensation das Tagessoll NICHT auf 0 (der Tag soll sich wie ein
+ * ganz normaler, ungestempelter Arbeitstag verhalten, damit die
+ * tatsächlichen Stempel über die reale ÜZ1-Auswirkung entscheiden statt
+ * eines geplanten Werts). Für Anzeige-/Planungszwecke (Admin-Übersicht,
+ * Kalender) soll Kompensation aber weiterhin sichtbar sein — deshalb wird
+ * NICHT direkt in buildAcceptedAbsenceHoursMap gefiltert, sondern gezielt
+ * an den Stellen, die tatsächlich das Tagessoll berechnen.
+ *
+ * @param {Array} absencesArray
+ * @returns {Array}
+ */
+function excludeSollNeutralAbsences(absencesArray) {
+  if (!Array.isArray(absencesArray)) return absencesArray;
+  return absencesArray.filter(
+    (a) => String(a?.type || '').toLowerCase() !== 'kompensation'
+  );
+}
+
+/**
  * Baut ein Set von Datums-Keys, die als akzeptierte Ferien-Tage gelten.
  * Einzige Quelle der Wahrheit für "ist Ferien" in der Berechnung —
  * ersetzt das frontend-synchronisierte `dayData.flags.ferien`.
@@ -565,6 +586,7 @@ module.exports = {
 
   // Absenzen
   buildAcceptedAbsenceHoursMap,
+  excludeSollNeutralAbsences,
   buildAcceptedVacationDaysSet,
   computeAbsenceDaysInPeriod,
 

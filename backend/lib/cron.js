@@ -301,6 +301,7 @@ async function sendAbsenceChangeToHR({
     ferien: 'Ferien',
     krank: 'Krank',
     arzt: 'Arztbesuch',
+    kompensation: 'Kompensation',
     unfall: 'Unfall',
     militaer: 'Militär',
     mutterschaft: 'Mutterschaft',

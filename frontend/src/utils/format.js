@@ -350,6 +350,7 @@ export function adminStatusText(status) {
   if (status === 'ok') return 'OK';
   if (status === 'ok-unverteilt') return 'Unverteilt';
   if (status === 'ferien') return 'Ferien';
+  if (status === 'kompensation') return 'Komp.';
   if (status === 'absence') return 'Absenz';
   if (status === 'holiday') return 'Feiertag';
   if (status === 'bridge') return 'Brückentag';
@@ -370,6 +371,7 @@ export function absenceTypeLabel(type) {
     ferien: 'Ferien',
     krank: 'Krank',
     arzt: 'Arztbesuch',
+    kompensation: 'Kompensation',
     unfall: 'Unfall',
     militaer: 'Militär',
     bezahlteabwesenheit: 'Bezahlte Abwesenheit',

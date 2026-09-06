@@ -144,6 +144,7 @@ function mapDbUser(row) {
     role: row.role,
     teamId: row.team_id || null,
     active: row.active,
+    isFullAdmin: !!row.is_full_admin,
     email: row.email || null,
     employmentStart: row.employment_start
       ? String(
@@ -190,7 +191,7 @@ async function findUserById(db, id) {
   if (!db) return null;
 
   const result = await db.query(
-    `SELECT id, username, role, team_id, active
+    `SELECT id, username, role, team_id, active, is_full_admin
      FROM users WHERE id = $1 LIMIT 1`,
     [id]
   );
@@ -213,7 +214,7 @@ async function findUserByCredentials(db, username, password) {
   if (!db) return null;
 
   const result = await db.query(
-    `SELECT id, username, password_hash, role, team_id, active
+    `SELECT id, username, password_hash, role, team_id, active, is_full_admin
      FROM users WHERE username = $1 LIMIT 1`,
     [username]
   );
@@ -287,6 +288,37 @@ function requireAdmin(req, res, next) {
     return res.status(403).json({ ok: false, error: 'Admin role required' });
   }
   next();
+}
+
+/**
+ * Gibt den effektiven Team-Scope eines Admins zurück: `null` bedeutet
+ * uneingeschränkten Zugriff (isFullAdmin), sonst die eigene teamId, auf
+ * die der Zugriff beschränkt ist.
+ *
+ * @param {object} req
+ * @returns {string|null}
+ */
+function getAdminTeamScope(req) {
+  if (!req.user) return undefined;
+  if (req.user.isFullAdmin) return null;
+  return req.user.teamId || null;
+}
+
+/**
+ * Prüft, ob ein team-beschränkter Admin auf eine bestimmte teamId zugreifen
+ * darf. Voll-Admins (scope === null) dürfen immer. Ist der Admin
+ * eingeschränkt, muss targetTeamId exakt mit seiner eigenen teamId
+ * übereinstimmen.
+ *
+ * @param {object} req
+ * @param {string|null} targetTeamId
+ * @returns {boolean}
+ */
+function hasTeamAccess(req, targetTeamId) {
+  const scope = getAdminTeamScope(req);
+  if (scope === null) return true; // Voll-Admin
+  if (!scope) return false; // eingeschränkt, aber selbst keinem Team zugeordnet
+  return scope === targetTeamId;
 }
 
 // Rate Limiter für Login-Endpoint
@@ -567,6 +599,8 @@ module.exports = {
   // Middleware
   createRequireAuth,
   requireAdmin,
+  getAdminTeamScope,
+  hasTeamAccess,
 
   // Routes
   registerAuthRoutes,
