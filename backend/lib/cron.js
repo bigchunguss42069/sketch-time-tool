@@ -219,6 +219,7 @@ async function sendAbsenceRequestAlert({
   const TYPE_LABELS = {
     ferien: 'Ferien',
     krank: 'Krank / Arztbesuch',
+    kompensation: 'Kompensation',
     unfall: 'Unfall',
     militaer: 'Militär',
     mutterschaft: 'Mutterschaft',
