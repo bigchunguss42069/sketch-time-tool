@@ -205,6 +205,7 @@ async function sendAbsenceRequestAlert({
   days,
   hours,
   comment,
+  isAutoAccepted,
 }) {
   const teamEmailMap = {
     montage: process.env.ALERT_EMAIL_MONTAGE,
@@ -247,7 +248,9 @@ async function sendAbsenceRequestAlert({
     await transporter.sendMail({
       from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
       to,
-      subject: `Neue Absenz-Anfrage: ${username} — ${typeLabel}`,
+      subject: isAutoAccepted
+        ? `Absenz-Meldung: ${username} — ${typeLabel}`
+        : `Neue Absenz-Anfrage: ${username} — ${typeLabel}`,
       text: [
         `Mitarbeiter: ${username}`,
         `Typ: ${typeLabel}`,
@@ -255,8 +258,10 @@ async function sendAbsenceRequestAlert({
         `Dauer: ${durationLabel}`,
         comment ? `Kommentar: ${comment}` : '',
         '',
-        `Bitte in der App unter Absenzen & Konten genehmigen oder ablehnen:`,
-        process.env.APP_URL || '',
+        isAutoAccepted
+          ? `Wurde automatisch akzeptiert — keine Aktion nötig, nur zur Info.`
+          : `Bitte in der App unter Absenzen & Konten genehmigen oder ablehnen:`,
+        isAutoAccepted ? '' : process.env.APP_URL || '',
       ]
         .filter(Boolean)
         .join('\n'),

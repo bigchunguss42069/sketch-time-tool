@@ -547,20 +547,22 @@ function registerAbsenceRoutes(
         decidedBy: isAutoAccepted ? 'system' : null,
       });
 
-      // Email-Alert — nur für pending Anfragen
-      // Krankheit und Arztbesuche werden automatisch akzeptiert.
-      if (!isAutoAccepted) {
-        sendAbsenceRequestAlert({
-          username,
-          teamId: teamId || '',
-          type,
-          fromDate: from,
-          toDate: to,
-          days: Number(days) || 0,
-          hours: Number(hours) || 0,
-          comment,
-        }).catch(() => {});
-      }
+      // Email-Alert an das zuständige Team — für ALLE Absenztypen, auch
+      // automatisch akzeptierte (Krank/Arzt), rein organisatorisch zur
+      // Info. Die separate HR-Mail (sendAbsenceChangeToHR) ist davon
+      // unabhängig und läuft ohnehin nur über die Admin-Entscheidung,
+      // die Krank/Arzt nie durchlaufen.
+      sendAbsenceRequestAlert({
+        username,
+        teamId: teamId || '',
+        type,
+        fromDate: from,
+        toDate: to,
+        days: Number(days) || 0,
+        hours: Number(hours) || 0,
+        comment,
+        isAutoAccepted,
+      }).catch(() => {});
 
       console.log(
         `[AUDIT] ABSENCE_REQUEST user=${username} team=${teamId} type=${type} from=${from} to=${to}`
