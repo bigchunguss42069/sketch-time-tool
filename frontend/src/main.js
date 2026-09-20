@@ -1001,7 +1001,10 @@ let _draftLoadComplete = false;
 
 function scheduleDraftSync() {
   if (_draftSyncTimer) clearTimeout(_draftSyncTimer);
-  _draftSyncTimer = setTimeout(() => syncDraftToServer(), 3000);
+  _draftSyncTimer = setTimeout(() => {
+    _draftSyncTimer = null;
+    syncDraftToServer();
+  }, 3000);
 }
 
 // Wie weit rückwirkend Tage im laufenden Sync mitgeschickt werden. Älteres
@@ -1028,26 +1031,29 @@ function getDayStoreWithinSyncWindow() {
 }
 
 // savedAt nur beim echten Sync updaten:
+let _draftSyncInFlight = false;
+
 async function syncDraftToServer() {
   const user = getCurrentUser();
   if (!user) return;
 
-  const now = new Date();
-  const savedAt = now.toISOString();
-
-  // WICHTIG: den dayStore innerhalb des Sync-Fensters senden, nicht nur
-  // den aktuellen Kalendermonat (sonst Datenverlust bei Korrekturen über
-  // Monatsgrenzen hinweg) und nicht die komplette Historie (sonst wächst
-  // der Payload über Jahre unbegrenzt). Älteres bleibt serverseitig
-  // unangetastet dank Merge statt Replace.
-  const basedOn = localStorage.getItem(STORAGE_KEY + '_savedAt') || null;
-  const data = {
-    dayStore: getDayStoreWithinSyncWindow(),
-    pikettStore,
-    savedAt,
-  };
-
+  _draftSyncInFlight = true;
   try {
+    const now = new Date();
+    const savedAt = now.toISOString();
+
+    // WICHTIG: den dayStore innerhalb des Sync-Fensters senden, nicht nur
+    // den aktuellen Kalendermonat (sonst Datenverlust bei Korrekturen über
+    // Monatsgrenzen hinweg) und nicht die komplette Historie (sonst wächst
+    // der Payload über Jahre unbegrenzt). Älteres bleibt serverseitig
+    // unangetastet dank Merge statt Replace.
+    const basedOn = localStorage.getItem(STORAGE_KEY + '_savedAt') || null;
+    const data = {
+      dayStore: getDayStoreWithinSyncWindow(),
+      pikettStore,
+      savedAt,
+    };
+
     const res = await authFetch('/api/draft/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1072,6 +1078,8 @@ async function syncDraftToServer() {
   } catch (err) {
     console.error('Draft sync failed', err);
     _draftSyncFailed = true;
+  } finally {
+    _draftSyncInFlight = false;
   }
 }
 
@@ -9747,9 +9755,16 @@ function reloadAllDataForCurrentUser() {
       scheduleDraftSync();
     }
 
-    // Polling: alle 30s Server-Stand abholen (Multi-Device Sync)
+    // Polling: alle 30s Server-Stand abholen (Multi-Device Sync).
+    // Ausgesetzt, solange ein eigener Sync noch aussteht (debounced Timer)
+    // oder gerade läuft — sonst kann der Poll kurzzeitig einen älteren
+    // Server-Stand sehen, bevor der eigene Sync durchgekommen ist (Race
+    // Condition, sichtbar in stamp_sync_anomalies). Die Union-Merge-
+    // Absicherung fängt das zwar ab, aber so entsteht die Überschneidung
+    // erst gar nicht.
     if (!import.meta.env.DEV) {
       setInterval(async () => {
+        if (_draftSyncTimer || _draftSyncInFlight) return;
         if (_draftLoadComplete) await loadDraftFromServer();
       }, 30_000);
     }
