@@ -1035,6 +1035,20 @@ function getDayStoreWithinSyncWindow() {
 // savedAt nur beim echten Sync updaten:
 let _draftSyncInFlight = false;
 
+let _draftRetryTimer = null;
+
+// Änderungen sind lokal gesichert, aber (noch) nicht auf dem Server: Marker
+// behalten und in 30 s erneut versuchen (zusätzlich zu online / App-Start).
+function markDraftSyncFailed() {
+  _draftSyncFailed = true;
+  localStorage.setItem(STORAGE_KEY + '_pendingSync', '1');
+  if (_draftRetryTimer) return;
+  _draftRetryTimer = setTimeout(() => {
+    _draftRetryTimer = null;
+    scheduleDraftSync();
+  }, 30_000);
+}
+
 async function syncDraftToServer() {
   const user = getCurrentUser();
   if (!user) return;
@@ -1069,6 +1083,14 @@ async function syncDraftToServer() {
       localStorage.removeItem(STORAGE_KEY + '_pendingSync');
       _draftSyncFailed = false;
       showToast('Daten von anderem Gerät übernommen');
+      return;
+    }
+
+    // Netzwerkfehler (authFetch liefert dann Status 599, KEINE Exception) und
+    // Serverfehler dürfen nicht als Erfolg gelten — sonst wurde der Pending-
+    // Marker gelöscht und der Stempel blieb nur auf dem Gerät.
+    if (!res.ok) {
+      markDraftSyncFailed();
       return;
     }
 
@@ -9805,7 +9827,13 @@ function reloadAllDataForCurrentUser() {
     // Falls beim letzten Verlassen der App ein Sync nicht durchkam (z. B.
     // fehlendes Netz), jetzt beim Start sofort erneut versuchen, statt
     // auf die nächste manuelle Änderung zu warten.
-    if (localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1') {
+    // Einmalig pro Gerät: frühere Fehlversuche wurden fälschlich als Erfolg
+    // verbucht (Marker gelöscht) -> lokalen Stand einmal hochladen.
+    if (
+      localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1' ||
+      localStorage.getItem(STORAGE_KEY + '_syncHeal1') !== '1'
+    ) {
+      localStorage.setItem(STORAGE_KEY + '_syncHeal1', '1');
       scheduleDraftSync();
     }
     flushLiveStampIfDirty();
