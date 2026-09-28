@@ -409,6 +409,15 @@ function registerAbsenceRoutes(
   computeTransmissionTotals,
   deductVacationDaysForAcceptedAbsence
 ) {
+  if (
+    typeof deductVacationDaysForAcceptedAbsence !== 'function' ||
+    typeof restoreVacationDaysForCancelledAbsence !== 'function'
+  ) {
+    throw new Error(
+      'registerAbsenceRoutes: deductVacationDaysForAcceptedAbsence/restoreVacationDaysForCancelledAbsence fehlen — Verdrahtung in server.js prüfen'
+    );
+  }
+
   // GET /api/absences
   app.get('/api/absences', requireAuth, async (req, res) => {
     try {

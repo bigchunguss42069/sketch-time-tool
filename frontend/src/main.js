@@ -817,14 +817,16 @@ document.addEventListener('visibilitychange', () => {
   if (!_draftLoadComplete) return;
   if (document.visibilityState === 'hidden') {
     syncDraftViaBeacon();
+  } else if (document.visibilityState === 'visible') {
+    flushLiveStampIfDirty();
   }
 });
-
 // Sobald die Verbindung wiederkommt (z. B. nach schlechtem Empfang im
 // Liftschacht/Keller), einen zuvor fehlgeschlagenen Sync automatisch
 // nachholen, statt auf die nächste manuelle Änderung zu warten.
 window.addEventListener('online', () => {
   if (!_draftLoadComplete) return;
+  flushLiveStampIfDirty();
   if (_draftSyncFailed) {
     scheduleDraftSync();
   }
@@ -4178,6 +4180,7 @@ async function syncMyAbsencesFromServer() {
 
     // Render the list immediately from the freshly synced server data
     renderAbsenceListForCurrentYear();
+    renderStampCard(); // Ferien-Overlay ggf. ein-/ausblenden
 
     // Keep the rest of the dashboard in sync too
     await updateOvertimeYearCard();
@@ -8833,6 +8836,22 @@ function getTodayKey() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Prüft, ob heute eine akzeptierte, GANZTÄGIGE Ferien-Absenz vorliegt (keine
+// Stunden eingetragen = ganzer Tag). Bei halben Ferientagen wird weiterhin
+// normal gestempelt, da dort tatsächlich noch gearbeitet wird.
+function isTodayFullDayFerien() {
+  const todayKey = getTodayKey();
+  return absenceRequests.some((r) => {
+    if (String(r.type || '').toLowerCase() !== 'ferien') return false;
+    if (String(r.status || '').toLowerCase() !== 'accepted') return false;
+    if (r.hours) return false; // halber Tag zählt nicht
+    if (!r.from || !r.to) return false;
+    const from = r.from <= r.to ? r.from : r.to;
+    const to = r.from <= r.to ? r.to : r.from;
+    return todayKey >= from && todayKey <= to;
+  });
+}
+
 function getStampNet(stamps) {
   if (!Array.isArray(stamps) || stamps.length === 0) return null;
   let total = 0;
@@ -8992,6 +9011,11 @@ function renderStampCard() {
   const dayData = getOrCreateDayData(todayKey);
   const stamps = dayData.stamps || [];
 
+  const ferienOverlay = document.getElementById('stampCardFerienOverlay');
+  if (ferienOverlay) {
+    ferienOverlay.classList.toggle('hidden', !isTodayFullDayFerien());
+  }
+
   if (stampCardDate) stampCardDate.textContent = formatDateDE(todayKey);
 
   const stamped = isStampedIn(stamps);
@@ -9121,6 +9145,8 @@ function checkBreakCompliance(stamps) {
 // Stamp Button
 if (stampBtn) {
   stampBtn.addEventListener('click', () => {
+    if (isTodayFullDayFerien()) return; // ganztägige Ferien — Overlay blockiert bereits visuell
+
     const todayKey = getTodayKey();
     const dayData = getOrCreateDayData(todayKey);
     const stamped = isStampedIn(dayData.stamps);
@@ -9158,16 +9184,44 @@ document.getElementById('breakWarningOkBtn')?.addEventListener('click', () => {
   if (modal) modal.style.display = 'none';
 });
 
+// Live-Stempelstatus (speist Präsenz-Tab und die 18:00-Warnmail).
+// Nachsenden bei fehlendem Empfang / App-Wechsel direkt nach dem Stempeln.
+let _liveStampSeq = 0;
+let _liveStampInFlight = 0;
+
 async function sendLiveStamp(todayKey, stamps) {
+  const dirtyKey = STORAGE_KEY + '_liveDirty';
+  const seq = ++_liveStampSeq;
+  localStorage.setItem(dirtyKey, todayKey);
+  _liveStampInFlight++;
   try {
-    await authFetch('/api/stamps/live', {
+    const res = await authFetch('/api/stamps/live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ todayKey, stamps }),
+      keepalive: true,
     });
+    // Nur die zuletzt gestartete Anfrage darf den Marker löschen
+    if (res.ok && seq === _liveStampSeq) {
+      localStorage.removeItem(dirtyKey);
+    }
   } catch (err) {
     console.error('Live stamp send failed', err);
+  } finally {
+    _liveStampInFlight--;
   }
+}
+
+function flushLiveStampIfDirty() {
+  const dirtyKey = STORAGE_KEY + '_liveDirty';
+  const dayKey = localStorage.getItem(dirtyKey);
+  if (!dayKey || _liveStampInFlight > 0) return;
+  const stamps = dayStore[dayKey]?.stamps;
+  if (!Array.isArray(stamps) || stamps.length === 0) {
+    localStorage.removeItem(dirtyKey);
+    return;
+  }
+  sendLiveStamp(dayKey, stamps);
 }
 
 // Edit-Log in dayStore mitschreiben
@@ -9754,6 +9808,7 @@ function reloadAllDataForCurrentUser() {
     if (localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1') {
       scheduleDraftSync();
     }
+    flushLiveStampIfDirty();
 
     // Polling: alle 30s Server-Stand abholen (Multi-Device Sync).
     // Ausgesetzt, solange ein eigener Sync noch aussteht (debounced Timer)
@@ -9765,6 +9820,7 @@ function reloadAllDataForCurrentUser() {
     if (!import.meta.env.DEV) {
       setInterval(async () => {
         if (_draftSyncTimer || _draftSyncInFlight) return;
+        flushLiveStampIfDirty();
         if (_draftLoadComplete) await loadDraftFromServer();
       }, 30_000);
     }

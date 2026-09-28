@@ -677,9 +677,10 @@ function createKontenService(db) {
 
       const ensured = await ensureKontenUserRecord({ username, client });
 
+      const oldVal = Number(ensured.konto.vacationDays) || 0;
       const nextKonto = {
         ...ensured.konto,
-        vacationDays: (Number(ensured.konto.vacationDays) || 0) + vacDays,
+        vacationDays: oldVal + vacDays,
         updatedAt: new Date().toISOString(),
         updatedBy: updatedBy || username,
       };
@@ -691,6 +692,21 @@ function createKontenService(db) {
         teamId: ensured.teamId,
         konto: nextKonto,
       });
+
+      await client.query(
+        `INSERT INTO konto_adjustments
+           (user_id, username, admin_username, field, old_value, new_value, reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          ensured.userId,
+          ensured.username,
+          updatedBy || username,
+          'vacationDays',
+          oldVal,
+          nextKonto.vacationDays,
+          `Absenz storniert: ${absence?.from || '?'} – ${absence?.to || '?'}`,
+        ]
+      );
 
       await client.query('COMMIT');
       return vacDays;
@@ -739,9 +755,10 @@ function createKontenService(db) {
         client,
       });
 
+      const oldVal = Number(ensured.konto.vacationDays) || 0;
       const nextKonto = {
         ...ensured.konto,
-        vacationDays: (Number(ensured.konto.vacationDays) || 0) - vacDays,
+        vacationDays: oldVal - vacDays,
         updatedAt: new Date().toISOString(),
         updatedBy: updatedBy || username,
       };
@@ -753,6 +770,21 @@ function createKontenService(db) {
         teamId: ensured.teamId,
         konto: nextKonto,
       });
+
+      await client.query(
+        `INSERT INTO konto_adjustments
+           (user_id, username, admin_username, field, old_value, new_value, reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          ensured.userId,
+          ensured.username,
+          updatedBy || username,
+          'vacationDays',
+          oldVal,
+          nextKonto.vacationDays,
+          `Absenz akzeptiert: ${absence?.from || '?'} – ${absence?.to || '?'}`,
+        ]
+      );
 
       await client.query('COMMIT');
       return vacDays;
