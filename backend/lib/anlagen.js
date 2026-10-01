@@ -559,6 +559,63 @@ function normalizeAnlagenIndexPayload(data) {
 }
 
 /**
+ * Führt die Datensätze derselben Kom-Nr aus mehreren Teams zusammen
+ * (z. B. wenn mehrere Teams an derselben Baustelle arbeiten). Ohne diese
+ * Funktion hat die Summary-Liste (Object.assign) das jeweils zuletzt
+ * verarbeitete Team "gewinnen" lassen, während die Detail-Ansicht beim
+ * ersten gefundenen Team stehen blieb (break) — beide haben für Kom-Nrn
+ * mit mehreren Teams nur einen Teil der echten Stunden gezeigt, und dabei
+ * nicht einmal denselben Teil.
+ *
+ * @param {object[]} records Records aus readAnlagenIndex().teams[*][komNr]
+ * @returns {object} Zusammengeführter Record mit identischer Form
+ */
+function mergeAnlagenRecords(records) {
+  const valid = (records || []).filter(Boolean);
+  if (valid.length === 0) return null;
+  if (valid.length === 1) return valid[0];
+
+  const merged = {
+    totalHours: 0,
+    lastActivity: null,
+    byOperation: {},
+    byUser: {},
+    errorDetails: {},
+    regieDetails: {},
+  };
+
+  const sumInto = (target, source) => {
+    Object.entries(source || {}).forEach(([key, hours]) => {
+      target[key] = (target[key] || 0) + (Number(hours) || 0);
+    });
+  };
+
+  let detailSeq = 0;
+  valid.forEach((rec) => {
+    merged.totalHours += Number(rec.totalHours) || 0;
+    if (
+      rec.lastActivity &&
+      (!merged.lastActivity || rec.lastActivity > merged.lastActivity)
+    ) {
+      merged.lastActivity = rec.lastActivity;
+    }
+    sumInto(merged.byOperation, rec.byOperation);
+    sumInto(merged.byUser, rec.byUser);
+    // errorDetails/regieDetails sind Detail-Listen (keine Summen) — per
+    // Index zusammenführen statt per vorhandenem Key, da sich Keys
+    // zwischen Teams überschneiden könnten.
+    Object.values(rec.errorDetails || {}).forEach((detail) => {
+      merged.errorDetails[`m${detailSeq++}`] = detail;
+    });
+    Object.values(rec.regieDetails || {}).forEach((detail) => {
+      merged.regieDetails[`m${detailSeq++}`] = detail;
+    });
+  });
+
+  return merged;
+}
+
+/**
  * @param {import('pg').Pool} db
  */
 async function readAnlagenIndex(db) {
@@ -1294,8 +1351,19 @@ function registerAnlagenRoutes(
       if (teamId && index.teams?.[teamId]) {
         teamObj = index.teams[teamId];
       } else if (!teamId) {
+        // Pro Kom-Nr alle Teams sammeln und zusammenführen, statt sie bei
+        // Namensgleichheit zu überschreiben (Object.assign-Bug — siehe
+        // mergeAnlagenRecords).
+        const byKomNr = {};
         Object.values(index.teams || {}).forEach((t) => {
-          if (typeof t === 'object') Object.assign(teamObj, t);
+          if (typeof t !== 'object') return;
+          Object.entries(t).forEach(([komNr, rec]) => {
+            if (!byKomNr[komNr]) byKomNr[komNr] = [];
+            byKomNr[komNr].push(rec);
+          });
+        });
+        Object.entries(byKomNr).forEach(([komNr, recs]) => {
+          teamObj[komNr] = mergeAnlagenRecords(recs);
         });
       }
 
@@ -1372,13 +1440,20 @@ function registerAnlagenRoutes(
       if (teamId) {
         rec = index.teams?.[teamId]?.[komNr] || null;
       } else {
+        // Alle Teams sammeln, die diese Kom-Nr führen, und zusammenführen
+        // (nicht beim ersten Treffer abbrechen — siehe mergeAnlagenRecords).
+        const matches = [];
+        const matchingTeamIds = [];
         for (const [tid, teamObj] of Object.entries(index.teams || {})) {
           if (teamObj[komNr]) {
-            teamId = tid;
-            rec = teamObj[komNr];
-            break;
+            matches.push(teamObj[komNr]);
+            matchingTeamIds.push(tid);
           }
         }
+        rec = mergeAnlagenRecords(matches);
+        // teamId bleibt bei mehreren beteiligten Teams bewusst leer
+        // (nicht mehr eindeutig einem einzelnen Team zuordenbar).
+        teamId = matchingTeamIds.length === 1 ? matchingTeamIds[0] : '';
       }
 
       if (!rec)
