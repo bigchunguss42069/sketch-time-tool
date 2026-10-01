@@ -2770,7 +2770,7 @@ body {
   inset: 0;
   z-index: 5;
   border-radius: 32px;
-  background: #ffffff;
+  background: #1a2b5e;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2778,8 +2778,6 @@ body {
   gap: 14px;
   padding: 24px;
   text-align: center;
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
 }
 .stamp-card-ferien-cat {
   width: 96px;
@@ -2787,7 +2785,7 @@ body {
   image-rendering: pixelated;
 }
 .stamp-card-ferien-text {
-  color: #000000;
+  color: #fff;
   font-weight: 700;
   font-size: 15px;
 }
@@ -2947,19 +2945,14 @@ body {
   gap: 8px;
 }
 
-@media (max-width: 360px) {
-  .stamp-zulagen {
-    grid-template-columns: 1fr;
-  }
-  .stamp-meals {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .stamp-pill {
-  padding: 12px 10px;
+  /* Schrumpft fliessend mit der Breite, damit die Anordnung (2 oben,
+     3 unten) auf jedem Gerät erhalten bleibt, statt auf weniger Spalten
+     umzuspringen. clamp(min, bevorzugt, max) — der mittlere Wert skaliert
+     mit der Viewport-Breite (100vw). */
+  padding: clamp(8px, 3vw, 12px) clamp(4px, 2vw, 10px);
   border-radius: 18px;
-  font-size: 14px;
+  font-size: clamp(11px, 3.1vw, 14px);
   font-weight: 600;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
@@ -2967,6 +2960,9 @@ body {
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stamp-pill:hover {
