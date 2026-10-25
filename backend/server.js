@@ -220,7 +220,9 @@ const {
   getDailySoll,
   updateKontenFromSubmission,
   restoreVacationDaysForCancelledAbsence,
-  deductVacationDaysForAcceptedAbsence,
+    deductVacationDaysForAcceptedAbsence,
+  ensureYearCredited,
+  checkVacationRequest,
   registerKontenRoutes,
 } = createKontenService(db);
 
@@ -360,8 +362,9 @@ registerAbsenceRoutes(
   loadLatestMonthSubmission,
   updateKontenFromSubmission,
   computeMonthUeZ1,
-  computeTransmissionTotals,
-  deductVacationDaysForAcceptedAbsence
+    computeTransmissionTotals,
+  deductVacationDaysForAcceptedAbsence,
+  checkVacationRequest
 );
 
 registerAnlagenRoutes(
@@ -1672,6 +1675,7 @@ registerCronJobs(db, {
   autoTransmitForUser,
   autoLockPreviousWeek,
   listUsersFromDb,
+  ensureYearCredited,
 });
 
 // ============================================================================

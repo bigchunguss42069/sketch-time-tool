@@ -89,6 +89,7 @@ function mapAbsenceRow(row) {
     hours: row.hours == null ? null : Number(row.hours),
     startTime: row.start_time ? String(row.start_time).slice(0, 5) : null,
     endTime: row.end_time ? String(row.end_time).slice(0, 5) : null,
+    vacationDeductedByYear: row.vacation_deducted_by_year ?? null,
   };
 }
 
@@ -407,14 +408,16 @@ function registerAbsenceRoutes(
   updateKontenFromSubmission,
   computeMonthUeZ1,
   computeTransmissionTotals,
-  deductVacationDaysForAcceptedAbsence
+  deductVacationDaysForAcceptedAbsence,
+  checkVacationRequest
 ) {
   if (
     typeof deductVacationDaysForAcceptedAbsence !== 'function' ||
-    typeof restoreVacationDaysForCancelledAbsence !== 'function'
+    typeof restoreVacationDaysForCancelledAbsence !== 'function' ||
+    typeof checkVacationRequest !== 'function'
   ) {
     throw new Error(
-      'registerAbsenceRoutes: deductVacationDaysForAcceptedAbsence/restoreVacationDaysForCancelledAbsence fehlen — Verdrahtung in server.js prüfen'
+      'registerAbsenceRoutes: deductVacationDaysForAcceptedAbsence/restoreVacationDaysForCancelledAbsence/checkVacationRequest fehlen — Verdrahtung in server.js prüfen'
     );
   }
 
@@ -534,6 +537,18 @@ function registerAbsenceRoutes(
         : `abs-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
 
     try {
+      // Ferien: harter Block, wenn nicht genug Tage frei sind (aktuelles
+      // Jahr: Saldo, nächstes Jahr: Anspruch). Beantragte Tage zählen mit.
+      if (type === 'ferien') {
+        const check = await checkVacationRequest({
+          username,
+          absence: { type, from, to, hours },
+        });
+        if (!check.ok) {
+          return res.status(409).json({ ok: false, error: check.error });
+        }
+      }
+
       const absence = await insertAbsenceForUser(db, {
         id,
         userId: req.user.id,
@@ -743,6 +758,23 @@ function registerAbsenceRoutes(
 
         const previousStatus = item.status;
 
+        // Ferien: beim Akzeptieren erneut prüfen (Saldo/Anspruch können sich
+        // seit dem Antrag geändert haben) — auch der Admin kann nicht ins Minus.
+        if (
+          status === 'accepted' &&
+          previousStatus === 'pending' &&
+          item.type === 'ferien'
+        ) {
+          const check = await checkVacationRequest({
+            username,
+            absence: item,
+            excludeAbsenceId: item.id,
+          });
+          if (!check.ok) {
+            return res.status(409).json({ ok: false, error: check.error });
+          }
+        }
+
         const updated = await updateAbsenceStatus(db, {
           username,
           id,
@@ -785,7 +817,11 @@ function registerAbsenceRoutes(
         }
 
         let vacationDeducted = 0;
-        if (status === 'accepted' && previousStatus !== 'accepted') {
+        if (
+          status === 'accepted' &&
+          previousStatus !== 'accepted' &&
+          previousStatus !== 'cancel_requested'
+        ) {
           try {
             vacationDeducted = await deductVacationDaysForAcceptedAbsence({
               username,

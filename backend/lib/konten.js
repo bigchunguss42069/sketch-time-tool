@@ -118,30 +118,31 @@ function mapKontenSnapshotRow(row) {
 }
 
 /**
- * Berechnet Ferientage für eine Absenz (nur type='ferien').
+ * Berechnet Ferientage für eine Absenz (nur type='ferien'), aufgeteilt nach
+ * Kalenderjahr: { "2026": 3, "2027": 2 }. Jeder Tag zählt zu seinem eigenen Jahr.
  * Berücksichtigt Wochenenden, Feiertage und Brückentage.
  *
  * @param {object} absence
- * @returns {number}
+ * @returns {Object<string, number>}
  */
-function calculateAbsenceVacationDays(absence) {
-  if (!absence || !absence.from || !absence.to) return 0;
+function calculateAbsenceVacationDaysByYear(absence) {
+  const byYear = {};
+  if (!absence || !absence.from || !absence.to) return byYear;
 
   const type = String(absence.type || '').toLowerCase();
-  if (type !== 'ferien') return 0;
+  if (type !== 'ferien') return byYear;
 
   let fromDate = new Date(absence.from + 'T00:00:00');
   let toDate = new Date(absence.to + 'T00:00:00');
 
   if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()))
-    return 0;
+    return byYear;
   if (toDate < fromDate) {
     const tmp = fromDate;
     fromDate = toDate;
     toDate = tmp;
   }
 
-  let days = 0;
   const cursor = new Date(fromDate);
 
   while (cursor <= toDate) {
@@ -154,13 +155,64 @@ function calculateAbsenceVacationDays(absence) {
       !isBernHolidayKey(dateKey) &&
       !isCompanyBridgeDay(dateKey)
     ) {
-      days += absence.hours ? 0.5 : 1;
+      const yearStr = String(cursor.getFullYear());
+      byYear[yearStr] = (byYear[yearStr] || 0) + (absence.hours ? 0.5 : 1);
     }
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  return days;
+  return byYear;
 }
+
+/**
+ * Berechnet Ferientage für eine Absenz (nur type='ferien') — Summe über alle Jahre.
+ *
+ * @param {object} absence
+ * @returns {number}
+ */
+function calculateAbsenceVacationDays(absence) {
+  return Object.values(calculateAbsenceVacationDaysByYear(absence)).reduce(
+    (sum, days) => sum + days,
+    0
+  );
+}
+
+/**
+ * Neuestes bereits gutgeschriebenes Jahr (Zahl) oder null.
+ *
+ * @param {object} creditedYears
+ * @returns {number|null}
+ */
+function getCreditedMaxYear(creditedYears) {
+  const years = Object.keys(creditedYears || {})
+    .filter((y) => creditedYears[y])
+    .map(Number)
+    .filter(Number.isFinite);
+  return years.length ? Math.max(...years) : null;
+}
+
+/** Aktuelles Kalenderjahr in Zürcher Zeit. */
+function getZurichYear() {
+  return Number(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Zurich',
+      year: 'numeric',
+    }).format(new Date())
+  );
+}
+
+/** Heutiges Datum (YYYY-MM-DD) in Zürcher Zeit. */
+function getZurichTodayKey() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Zurich',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+const roundDays = (n) => Math.round(n * 100) / 100;
+const fmtDays = (n) => String(roundDays(n)).replace('.', ',');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Factory — db-gebundene Funktionen
@@ -527,7 +579,6 @@ function createKontenService(db) {
         client,
       });
       const mk = kontenMonthKey(year, monthIndex);
-      const yearStr = String(year);
 
       const snapResult = await client.query(
         `SELECT ue_z1, ue_z1_positive, ue_z2, ue_z3, vorarbeit_balance
@@ -551,27 +602,13 @@ function createKontenService(db) {
         updatedBy: updatedBy || username,
       };
 
-      if (!nextKonto.creditedYears[yearStr]) {
-        const creditOldVal = nextKonto.vacationDays;
-        const creditAmount = Number(nextKonto.vacationDaysPerYear) || 0;
-        nextKonto.vacationDays += creditAmount;
-        nextKonto.creditedYears[yearStr] = true;
-
-        await client.query(
-          `INSERT INTO konto_adjustments
-             (user_id, username, admin_username, field, old_value, new_value, reason)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            ensured.userId,
-            ensured.username,
-            'system',
-            'vacationDays',
-            creditOldVal,
-            nextKonto.vacationDays,
-            `Jahresgutschrift ${yearStr}`,
-          ]
-        );
-      }
+      await applyYearCredit({
+        client,
+        konto: nextKonto,
+        userId: ensured.userId,
+        username: ensured.username,
+        year,
+      });
 
       const { ueZ1: monthUeZ1 } = await computeMonthUeZ1(
         payload,
@@ -653,6 +690,273 @@ function createKontenService(db) {
   }
 
   /**
+   * Schreibt das Ferien-Jahr gut (einmalig, Flag creditedYears) und verrechnet
+   * danach alle bereits akzeptierten, noch nicht abgezogenen Ferientage dieses
+   * Jahres ("geplant"). Muss innerhalb einer Transaktion laufen; der Aufrufer
+   * persistiert das Konto danach.
+   *
+   * @param {{ client: import('pg').PoolClient, konto: object, userId: string, username: string, year: number|string }} params
+   * @returns {Promise<boolean>} true wenn gutgeschrieben wurde
+   */
+  async function applyYearCredit({ client, konto, userId, username, year }) {
+    const yearStr = String(year);
+    if (konto.creditedYears[yearStr]) return false;
+
+    const creditOldVal = konto.vacationDays;
+    konto.vacationDays += Number(konto.vacationDaysPerYear) || 0;
+    konto.creditedYears[yearStr] = true;
+
+    await client.query(
+      `INSERT INTO konto_adjustments
+         (user_id, username, admin_username, field, old_value, new_value, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        userId,
+        username,
+        'system',
+        'vacationDays',
+        creditOldVal,
+        konto.vacationDays,
+        `Jahresgutschrift ${yearStr}`,
+      ]
+    );
+
+    // Geplante (akzeptierte, aber noch nicht abgezogene) Ferientage verrechnen
+    const planned = await client.query(
+      `SELECT id, type, from_date, to_date, hours, vacation_deducted_by_year
+       FROM absences
+       WHERE user_id = $1 AND type = 'ferien'
+         AND status IN ('accepted', 'cancel_requested')
+         AND vacation_deducted_by_year IS NOT NULL
+       FOR UPDATE`,
+      [userId]
+    );
+
+    for (const row of planned.rows) {
+      const deducted = row.vacation_deducted_by_year || {};
+      if (deducted[yearStr] !== undefined) continue;
+
+      const from = formatDateKey(new Date(row.from_date));
+      const to = formatDateKey(new Date(row.to_date));
+      const days =
+        calculateAbsenceVacationDaysByYear({
+          type: row.type,
+          from,
+          to,
+          hours: row.hours,
+        })[yearStr] || 0;
+      if (!(days > 0)) continue;
+
+      const before = konto.vacationDays;
+      konto.vacationDays -= days;
+
+      await client.query(
+        `UPDATE absences SET vacation_deducted_by_year = $2::jsonb WHERE id = $1`,
+        [row.id, JSON.stringify({ ...deducted, [yearStr]: days })]
+      );
+      await client.query(
+        `INSERT INTO konto_adjustments
+           (user_id, username, admin_username, field, old_value, new_value, reason)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          userId,
+          username,
+          'system',
+          'vacationDays',
+          before,
+          konto.vacationDays,
+          `Ferien ${yearStr} verrechnet: ${from} – ${to}`,
+        ]
+      );
+    }
+
+    return true;
+  }
+
+  /**
+   * Stellt sicher, dass das Jahr (Standard: aktuelles Kalenderjahr) gutgeschrieben
+   * ist. Idempotent. Läuft nachts im Cron und lazy beim Laden des Kontos.
+   *
+   * @param {{ username: string, year?: number }} params
+   * @returns {Promise<boolean>} true wenn jetzt gutgeschrieben wurde
+   */
+  async function ensureYearCredited({ username, year }) {
+    if (!db) return false;
+    const targetYear = year || getZurichYear();
+
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const ensured = await ensureKontenUserRecord({ username, client });
+
+      if (ensured.konto.creditedYears[String(targetYear)]) {
+        await client.query('COMMIT');
+        return false;
+      }
+
+      // Noch nicht eingetretene Mitarbeiter bekommen noch keine Gutschrift
+      const empStart = await fetchEmpStartKey(ensured.userId);
+      if (empStart && empStart > getZurichTodayKey()) {
+        await client.query('COMMIT');
+        return false;
+      }
+
+      const nextKonto = {
+        ...ensured.konto,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'system',
+      };
+      await applyYearCredit({
+        client,
+        konto: nextKonto,
+        userId: ensured.userId,
+        username: ensured.username,
+        year: targetYear,
+      });
+      await persistKontenUserRecord({
+        client,
+        userId: ensured.userId,
+        username: ensured.username,
+        teamId: ensured.teamId,
+        konto: nextKonto,
+      });
+
+      await client.query('COMMIT');
+      return true;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Lädt den Planungsstand der Ferien eines Users: Saldo, bereits beantragte
+   * Tage im gutgeschriebenen Zeitraum und geplante Tage je noch nicht
+   * gutgeschriebenem Jahr.
+   *
+   * @param {{ username: string, excludeAbsenceId?: string|null }} params
+   */
+  async function loadVacationPlanning({ username, excludeAbsenceId = null }) {
+    const ensured = await ensureKontenUserRecord({ username });
+    const konto = ensured.konto;
+    const creditedMax = getCreditedMaxYear(konto.creditedYears);
+
+    const result = await db.query(
+      `SELECT id, type, from_date, to_date, hours, status, vacation_deducted_by_year
+       FROM absences
+       WHERE user_id = $1 AND type = 'ferien'
+         AND status IN ('pending', 'accepted', 'cancel_requested')`,
+      [ensured.userId]
+    );
+
+    let potReserved = 0;
+    const plannedByYear = {};
+
+    for (const row of result.rows) {
+      if (excludeAbsenceId && row.id === excludeAbsenceId) continue;
+
+      const byYear = calculateAbsenceVacationDaysByYear({
+        type: row.type,
+        from: formatDateKey(new Date(row.from_date)),
+        to: formatDateKey(new Date(row.to_date)),
+        hours: row.hours,
+      });
+
+      for (const [yearStr, days] of Object.entries(byYear)) {
+        const credited = creditedMax !== null && Number(yearStr) <= creditedMax;
+        if (credited) {
+          if (row.status === 'pending') potReserved += days;
+        } else {
+          // Akzeptierter Altbestand (Marker NULL) wurde bereits abgezogen
+          if (row.status !== 'pending' && row.vacation_deducted_by_year == null)
+            continue;
+          plannedByYear[yearStr] = (plannedByYear[yearStr] || 0) + days;
+        }
+      }
+    }
+
+    return {
+      konto,
+      creditedMax,
+      perYear: Number(konto.vacationDaysPerYear) || 0,
+      potReserved: roundDays(potReserved),
+      plannedByYear,
+    };
+  }
+
+  /**
+   * Prüft einen Ferienantrag (harter Block, auch für Admins):
+   * - Tage in gutgeschriebenen Jahren: Saldo minus bereits beantragte Tage
+   * - Tage im nächsten, noch nicht gutgeschriebenen Jahr: Anspruch minus
+   *   geplante/beantragte Tage
+   * - Jahre jenseits des nächsten Kalenderjahres sind nicht buchbar.
+   *
+   * @param {{ username: string, absence: object, excludeAbsenceId?: string|null }} params
+   * @returns {Promise<{ ok: boolean, error?: string }>}
+   */
+  async function checkVacationRequest({ username, absence, excludeAbsenceId }) {
+    const byYear = calculateAbsenceVacationDaysByYear(absence);
+    const years = Object.keys(byYear);
+    if (years.length === 0) return { ok: true };
+
+    try {
+      await ensureYearCredited({ username });
+    } catch (err) {
+      console.error(`[YearCredit] Fehler für ${username}:`, err.message);
+    }
+
+    const nowYear = getZurichYear();
+    const maxYear = nowYear + 1;
+    const lateYear = years.find((y) => Number(y) > maxYear);
+    if (lateYear) {
+      return {
+        ok: false,
+        error: `Ferien können nur bis Ende ${maxYear} beantragt werden.`,
+      };
+    }
+
+    const planning = await loadVacationPlanning({ username, excludeAbsenceId });
+
+    let needFromPot = 0;
+    for (const yearStr of years) {
+      const credited =
+        planning.creditedMax !== null && Number(yearStr) <= planning.creditedMax;
+      if (credited) {
+        needFromPot += byYear[yearStr];
+        continue;
+      }
+      const used = planning.plannedByYear[yearStr] || 0;
+      const free = roundDays(planning.perYear - used);
+      if (byYear[yearStr] > free + 1e-9) {
+        return {
+          ok: false,
+          error: `Nicht genug Ferientage für ${yearStr}: ${fmtDays(Math.max(0, free))} von ${fmtDays(planning.perYear)} Tagen frei, ${fmtDays(byYear[yearStr])} beantragt.`,
+        };
+      }
+    }
+
+    if (needFromPot > 0) {
+      const available = roundDays(
+        (Number(planning.konto.vacationDays) || 0) - planning.potReserved
+      );
+      if (needFromPot > available + 1e-9) {
+        const reservedNote =
+          planning.potReserved > 0
+            ? ` (${fmtDays(planning.potReserved)} bereits beantragt)`
+            : '';
+        return {
+          ok: false,
+          error: `Nicht genug Ferientage: ${fmtDays(Math.max(0, available))} verfügbar${reservedNote}, ${fmtDays(needFromPot)} beantragt.`,
+        };
+      }
+    }
+
+    return { ok: true };
+  }
+
+  /**
    * Stellt Ferientage zurück, wenn eine akzeptierte Absenz storniert wird.
    * Einzige Quelle der Wahrheit für Ferienverbrauch — reiner Sofort-
    * Ausgleich, unabhängig davon, ob/wann die betroffenen Monate
@@ -668,7 +972,16 @@ function createKontenService(db) {
   }) {
     if (!db) return 0;
 
-    const vacDays = calculateAbsenceVacationDays(absence);
+    // Neue Absenzen merken sich, was tatsächlich abgezogen wurde (geplante,
+    // noch nicht verrechnete Jahre gibt es nicht zurück). NULL = Altbestand.
+    const deductedByYear = absence?.vacationDeductedByYear;
+    const vacDays =
+      deductedByYear && typeof deductedByYear === 'object'
+        ? Object.values(deductedByYear).reduce(
+            (sum, d) => sum + (Number(d) || 0),
+            0
+          )
+        : calculateAbsenceVacationDays(absence);
     if (!(vacDays > 0)) return 0;
 
     const client = await db.connect();
@@ -742,8 +1055,8 @@ function createKontenService(db) {
   }) {
     if (!db) return 0;
 
-    const vacDays = calculateAbsenceVacationDays(absence);
-    if (!(vacDays > 0)) return 0;
+    const byYear = calculateAbsenceVacationDaysByYear(absence);
+    if (Object.keys(byYear).length === 0) return 0;
 
     const client = await db.connect();
     try {
@@ -754,6 +1067,32 @@ function createKontenService(db) {
         teamId,
         client,
       });
+
+      // Nur Tage in bereits gutgeschriebenen Jahren werden jetzt abgezogen.
+      // Spätere Jahre bleiben "geplant" und werden bei der Jahresgutschrift
+      // verrechnet (applyYearCredit). Bereits abgezogene Jahre nie doppelt.
+      const creditedMax = getCreditedMaxYear(ensured.konto.creditedYears);
+      const alreadyDeducted = absence?.vacationDeductedByYear || {};
+      const deductNow = { ...alreadyDeducted };
+      let vacDays = 0;
+      for (const [yearStr, days] of Object.entries(byYear)) {
+        if (alreadyDeducted[yearStr] !== undefined) continue;
+        if (creditedMax !== null && Number(yearStr) <= creditedMax) {
+          deductNow[yearStr] = days;
+          vacDays += days;
+        }
+      }
+
+      await client.query(
+        `UPDATE absences SET vacation_deducted_by_year = $3::jsonb
+         WHERE username = $1 AND id = $2`,
+        [username, absence.id, JSON.stringify(deductNow)]
+      );
+
+      if (!(vacDays > 0)) {
+        await client.query('COMMIT');
+        return 0;
+      }
 
       const oldVal = Number(ensured.konto.vacationDays) || 0;
       const nextKonto = {
@@ -819,13 +1158,39 @@ function createKontenService(db) {
     // GET /api/konten/me
     app.get('/api/konten/me', requireAuth, async (req, res) => {
       try {
+        try {
+          await ensureYearCredited({ username: req.user.username });
+        } catch (err) {
+          console.error('[YearCredit] konten/me:', err.message);
+        }
         const ensured = await ensureKontenUserRecord({
           username: req.user.username,
           teamId: req.user.teamId || null,
         });
         const transmittedMonths = await listKontenMonthKeys(req.user.username);
 
-        return res.json({ ok: true, konto: ensured.konto, transmittedMonths });
+        // Planung fürs nächste, noch nicht gutgeschriebene Jahr (Anzeige)
+        const planning = await loadVacationPlanning({
+          username: req.user.username,
+        });
+        const nextYear = getZurichYear() + 1;
+        let vacationPlanned = null;
+        if (planning.creditedMax === null || nextYear > planning.creditedMax) {
+          const used = roundDays(planning.plannedByYear[nextYear] || 0);
+          vacationPlanned = {
+            year: nextYear,
+            used,
+            perYear: planning.perYear,
+            free: roundDays(planning.perYear - used),
+          };
+        }
+
+        return res.json({
+          ok: true,
+          konto: ensured.konto,
+          vacationPlanned,
+          transmittedMonths,
+        });
       } catch (err) {
         console.error('Failed to load my konto', err);
         return res
@@ -1026,6 +1391,8 @@ function createKontenService(db) {
     updateKontenFromSubmission,
     restoreVacationDaysForCancelledAbsence,
     deductVacationDaysForAcceptedAbsence,
+    ensureYearCredited,
+    checkVacationRequest,
     registerKontenRoutes,
   };
 }
@@ -1041,6 +1408,7 @@ module.exports = {
   mapKontenRow,
   mapKontenSnapshotRow,
   calculateAbsenceVacationDays,
+  calculateAbsenceVacationDaysByYear,
 
   // Factory
   createKontenService,

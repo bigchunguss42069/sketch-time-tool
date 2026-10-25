@@ -126,6 +126,13 @@ const overtimeYearSourceEl = document.getElementById('overtimeYearSource');
  * Dashboard / vacation and absences DOM handles
  */
 const vacationYearSummaryEl = document.getElementById('vacationYearSummary');
+const vacationNextYearRowEl = document.getElementById('vacationNextYearRow');
+const vacationNextYearLabelEl = document.getElementById(
+  'vacationNextYearLabel'
+);
+const vacationNextYearSummaryEl = document.getElementById(
+  'vacationNextYearSummary'
+);
 // Abwesenheiten (Ferien-Card & Formular)
 const absenceListEl = document.getElementById('absenceList');
 const absenceTypeEl = document.getElementById('absenceType');
@@ -1207,7 +1214,8 @@ async function loadMyKontoFromServer() {
     if (!data.ok) return null;
 
     return {
-      konto: data.konto,
+            konto: data.konto,
+      vacationPlanned: data.vacationPlanned || null,
       transmittedMonths: new Set(data.transmittedMonths || []),
     };
   } catch (e) {
@@ -3845,13 +3853,18 @@ function renderAbsenceListForCurrentYear() {
 
   const { year } = getCurrentDashboardMonthInfo();
 
-  const items = getAbsencesForYear(year)
-    .filter((a) => {
-      // Stornierte Nicht-Krank Absenzen ausblenden
-      if (a.status === 'cancelled' && a.type !== 'krank') return false;
-      return true;
-    })
-    .slice();
+    // Stornierte Nicht-Krank Absenzen ausblenden
+  const isVisible = (a) => !(a.status === 'cancelled' && a.type !== 'krank');
+  const yearItems = getAbsencesForYear(year).filter(isVisible);
+  // Absenzen, die erst in einem späteren Jahr beginnen (z. B. Ferien fürs
+  // nächste Jahr), erscheinen darunter in einem eigenen Block.
+  const laterItems = absenceRequests.filter((a) => {
+    const start = new Date(a.from);
+    return (
+      isVisible(a) && !Number.isNaN(start.getTime()) && start.getFullYear() > year
+    );
+  });
+  const items = [...yearItems, ...laterItems];
   absenceListEl.innerHTML = '';
 
   if (items.length === 0) {
@@ -3869,7 +3882,18 @@ function renderAbsenceListForCurrentYear() {
     return da - db;
   });
 
+    let lastGroupYear = null;
   items.forEach((req) => {
+    const startYear = new Date(req.from).getFullYear();
+    const itemYear = startYear > year ? startYear : year;
+    if (itemYear > year && itemYear !== lastGroupYear) {
+      const groupHeading = document.createElement('div');
+      groupHeading.className = 'absence-year-heading';
+      groupHeading.textContent = String(itemYear);
+      absenceListEl.appendChild(groupHeading);
+      lastGroupYear = itemYear;
+    }
+
     const container = document.createElement('div');
     container.className = 'absence-item';
     if (String(req.type || '').toLowerCase() === 'kompensation') {
@@ -3892,7 +3916,7 @@ function renderAbsenceListForCurrentYear() {
       ? req.to
       : formatShortDate(toDate);
 
-    const daysForYear = computeAbsenceDaysForYear(req, year);
+        const daysForYear = computeAbsenceDaysForYear(req, itemYear);
     const typeLabel = absenceTypeLabel(req.type);
 
     // Anzeige: nur Stunden wenn < 1 Tag, nur Tage wenn ganze Tage, kombiniert wenn beides
@@ -4254,7 +4278,17 @@ async function updateOvertimeYearCard() {
     overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
 
     if (vacationYearSummaryEl) {
-      vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
+            vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
+    }
+
+    if (vacationNextYearRowEl) {
+      const plannedInfo = serverData?.vacationPlanned;
+      const showPlanned = !!(plannedInfo && plannedInfo.used > 0);
+      vacationNextYearRowEl.style.display = showPlanned ? '' : 'none';
+      if (showPlanned) {
+        vacationNextYearLabelEl.textContent = `Ferien ${plannedInfo.year}:`;
+                vacationNextYearSummaryEl.textContent = `${formatDays(plannedInfo.free)} / ${formatDays(plannedInfo.perYear)} Tage`;
+      }
     }
 
     if (overtimeYearSourceEl) {

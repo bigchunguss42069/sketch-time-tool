@@ -841,6 +841,14 @@ body {
   color: var(--danger);
 }
 
+.absence-year-heading {
+  margin: 14px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
 /* ============================================================
    Special Section (Spezialbuchungen)
    ============================================================ */

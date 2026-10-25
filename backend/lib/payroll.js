@@ -20,6 +20,7 @@
 
 const PDFDocument = require('pdfkit');
 const { getAdminTeamScope, hasTeamAccess } = require('./auth');
+const { calculateAbsenceVacationDaysByYear } = require('./konten');
 const {
   formatDateKey,
   formatDateDisplayEU,
@@ -584,7 +585,8 @@ function createPayrollService(
     // Korrekturen aus Konten
     const kontoRes = await db.query(
       `SELECT ue_z1, ue_z1_correction, ue_z2, ue_z2_correction,
-              ue_z3, ue_z3_correction, vacation_days
+              ue_z3, ue_z3_correction, vacation_days,
+              vacation_days_per_year, credited_years
        FROM konten WHERE username = $1`,
       [user.username]
     );
@@ -624,6 +626,57 @@ function createPayrollService(
       reason: row.reason,
       date: formatDateDisplayEU(formatDateKey(new Date(row.created_at))),
     }));
+
+    // Verrechnung bereits geplanter Ferien bei der Jahresgutschrift
+    const vacationSettleRes = await db.query(
+      `SELECT old_value, new_value, reason, created_at
+       FROM konto_adjustments
+       WHERE username = $1 AND field = 'vacationDays'
+         AND admin_username = 'system' AND reason LIKE 'Ferien % verrechnet:%'
+         AND created_at::date >= $2 AND created_at::date <= $3
+       ORDER BY created_at ASC`,
+      [user.username, fromKey, toKey]
+    );
+    const vacationSettlements = vacationSettleRes.rows.map((row) => ({
+      amount: r1(Number(row.old_value) - Number(row.new_value)),
+      reason: String(row.reason || '').replace(/^Ferien (\d{4}) verrechnet: /, 'Ferien $1 verrechnet ('),
+      date: formatDateDisplayEU(formatDateKey(new Date(row.created_at))),
+    }));
+
+    // Akzeptierte, noch nicht verrechnete Ferien kommender Jahre ("geplant")
+    const creditedYearsObj = kontoRow.credited_years || {};
+    const creditedYearNums = Object.keys(creditedYearsObj)
+      .filter((y) => creditedYearsObj[y])
+      .map(Number);
+    const creditedMaxYear = creditedYearNums.length
+      ? Math.max(...creditedYearNums)
+      : null;
+    const vacationPlanned = {};
+    if (creditedMaxYear !== null) {
+      const plannedRes = await db.query(
+        `SELECT type, from_date, to_date, hours, vacation_deducted_by_year
+         FROM absences
+         WHERE username = $1 AND type = 'ferien'
+           AND status IN ('accepted', 'cancel_requested')
+           AND vacation_deducted_by_year IS NOT NULL`,
+        [user.username]
+      );
+      for (const row of plannedRes.rows) {
+        const deducted = row.vacation_deducted_by_year || {};
+        const byYear = calculateAbsenceVacationDaysByYear({
+          type: row.type,
+          from: formatDateKey(new Date(row.from_date)),
+          to: formatDateKey(new Date(row.to_date)),
+          hours: row.hours,
+        });
+        for (const [yearStr, days] of Object.entries(byYear)) {
+          if (Number(yearStr) <= creditedMaxYear) continue;
+          if (deducted[yearStr] !== undefined) continue;
+          vacationPlanned[yearStr] = r1((vacationPlanned[yearStr] || 0) + days);
+        }
+      }
+    }
+    const vacationPerYear = Number(kontoRow.vacation_days_per_year) || 0;
 
     // Absenzen direkt aus DB
     const dbAbsResult = await db.query(
@@ -691,6 +744,9 @@ function createPayrollService(
         ferienVerbrauch: r1(totals.ferienDays),
         ferienSaldo,
         vacationCredits,
+        vacationSettlements,
+        vacationPlanned,
+        vacationPerYear,
       },
       teamId: user.teamId || null,
       auditRows,
@@ -997,10 +1053,21 @@ function createPayrollService(
           `+${credit.amount}d`,
         ]);
       }
+      for (const settle of row.overtime.vacationSettlements || []) {
+        ferienLines.push([`${settle.reason}) (${settle.date})`, `−${settle.amount}d`]);
+      }
       ferienLines.push(
         ['Verbrauch Periode', `${row.overtime.ferienVerbrauch}d`],
         ['Saldo', `${row.overtime.ferienSaldo}d`]
       );
+      for (const [plannedYear, plannedDays] of Object.entries(
+        row.overtime.vacationPlanned || {}
+      )) {
+        ferienLines.push([
+          `Geplant ${plannedYear} (akzeptiert, noch nicht verrechnet)`,
+          `${plannedDays}d von ${row.overtime.vacationPerYear}d Anspruch`,
+        ]);
+      }
       writeMetricLines(ferienLines);
 
       sectionTitle('Veränderung in dieser Lohnperiode');

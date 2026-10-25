@@ -149,8 +149,14 @@ async function checkAndSendStampAlerts(db) {
  */
 function registerCronJobs(
   db,
-  { autoTransmitForUser, autoLockPreviousWeek, listUsersFromDb }
+  { autoTransmitForUser, autoLockPreviousWeek, listUsersFromDb, ensureYearCredited }
 ) {
+  if (typeof ensureYearCredited !== 'function') {
+    throw new Error(
+      'registerCronJobs: ensureYearCredited fehlt — Verdrahtung in server.js prüfen'
+    );
+  }
+
   // 18:00 Mo-Fr — Stamp-Alert
   cron.schedule(
     '0 18 * * 1-5',
@@ -172,6 +178,20 @@ function registerCronJobs(
       console.log('[AutoTransmit] Starte tägliche Auto-Übertragung...');
       try {
         const users = await listUsersFromDb({ role: 'user' });
+
+        // Jahresgutschrift zuerst (idempotent) — am 1.1. also vor dem
+        // Transmit, damit der Ferien-Saldo ab Jahresbeginn stimmt.
+        for (const user of users) {
+          try {
+            await ensureYearCredited({ username: user.username });
+          } catch (err) {
+            console.error(
+              `[YearCredit] Fehler bei ${user.username}:`,
+              err.message
+            );
+          }
+        }
+
         for (const user of users) {
           try {
             await autoTransmitForUser(user);

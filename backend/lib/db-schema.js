@@ -280,6 +280,11 @@ async function ensureAbsencesTable(db) {
     `ALTER TABLE absences ADD COLUMN IF NOT EXISTS start_time TIME`
   );
   await db.query(`ALTER TABLE absences ADD COLUMN IF NOT EXISTS end_time TIME`);
+  // Ferienplanung: pro Jahr bereits vom Saldo abgezogene Ferientage, z. B.
+  // {"2026": 3}. NULL = Altbestand (beim Akzeptieren komplett abgezogen).
+  await db.query(
+    `ALTER TABLE absences ADD COLUMN IF NOT EXISTS vacation_deducted_by_year JSONB`
+  );
 
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_absences_username_created
