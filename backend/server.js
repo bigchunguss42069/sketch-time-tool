@@ -455,10 +455,10 @@ app.post(
           const teamName = (
             TEAMS.find((t) => t.id === user.teamId)?.name || 'Kein_Team'
           )
-            .replace(/\s+/g, '_')
-            .replace(/[^a-z0-9_\-]/gi, '');
+                      .replace(/\s+/g, '_')
+            .replace(/[^\p{L}\p{N}_\-]/gu, '');
           const safeName = (user.username || 'user').replace(
-            /[^a-z0-9_\-]/gi,
+            /[^\p{L}\p{N}_\-]/gu,
             '_'
           );
           archive.append(pdfBuffer, {

@@ -1080,16 +1080,19 @@ async function syncDraftToServer() {
     const res = await authFetch('/api/draft/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data, basedOn }),
+            body: JSON.stringify({ data, basedOn }),
+      timeoutMs: 20_000,
     });
 
     if (res.status === 409) {
       // Anderes Gerät hat neuere Daten — Server-Stand laden
       console.warn('Draft conflict: reloading from server');
-      await loadDraftFromServer();
-      localStorage.removeItem(STORAGE_KEY + '_pendingSync');
-      _draftSyncFailed = false;
-      showToast('Daten von anderem Gerät übernommen');
+            await loadDraftFromServer();
+      // Lokale Änderungen (z. B. ein Stempel, dessen Sync-Antwort bei
+      // schlechtem Empfang verloren ging) müssen trotzdem hochgeladen werden.
+      // Der Server merged ohnehin, daher gefahrlos.
+      localStorage.setItem(STORAGE_KEY + '_pendingSync', '1');
+      scheduleDraftSync();
       return;
     }
 
@@ -1170,6 +1173,7 @@ function getCurrentUser() {
 
 // Wrapper for fetch that automatically adds Authorization header
 function authFetch(path, options = {}) {
+  const { timeoutMs, ...fetchOptions } = options;
   const token = getAuthToken();
   const headers = {
     ...(options.headers || {}),
@@ -1179,9 +1183,10 @@ function authFetch(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  return fetch(`${BACKEND_BASE_URL}${path}`, {
-    ...options,
+    return fetch(`${BACKEND_BASE_URL}${path}`, {
+    ...fetchOptions,
     headers,
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   })
     .then((res) => {
       // Nur bei echtem 401 (Server sagt Token ungültig) ausloggen
@@ -9254,8 +9259,9 @@ async function sendLiveStamp(todayKey, stamps) {
     const res = await authFetch('/api/stamps/live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ todayKey, stamps }),
+            body: JSON.stringify({ todayKey, stamps }),
       keepalive: true,
+      timeoutMs: 20_000,
     });
     // Nur die zuletzt gestartete Anfrage darf den Marker löschen
     if (res.ok && seq === _liveStampSeq) {
@@ -9633,8 +9639,9 @@ if (todayBtn) {
 }
 
 async function loadDraftFromServer() {
+  let needsPush = false;
   try {
-    const res = await authFetch('/api/draft/load');
+    const res = await authFetch('/api/draft/load', { timeoutMs: 20_000 });
     const data = await res.json();
 
     if (!data.ok || !data.draft) return;
@@ -9691,6 +9698,7 @@ async function loadDraftFromServer() {
               if (s && s.type && s.time) mergedMap.set(stampKey(s), s);
             });
             const mergedStamps = Array.from(mergedMap.values());
+            if (mergedStamps.length > serverStamps.length) needsPush = true;
 
             cleanedServerDayStore[dateKey] = {
               ...serverDay,
@@ -9703,11 +9711,17 @@ async function loadDraftFromServer() {
         // den gesamten dayStore, kein Monats-Feld mehr nötig.
         Object.assign(dayStore, cleanedServerDayStore);
 
-        try {
+                try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(dayStore));
           localStorage.setItem(STORAGE_KEY + '_savedAt', data.updatedAt);
         } catch (err) {
           console.error('Failed to write draft to localStorage', err);
+        }
+
+        // Lokal waren Stempel vorhanden, die dem Server fehlten: hochladen
+        if (needsPush) {
+          localStorage.setItem(STORAGE_KEY + '_pendingSync', '1');
+          scheduleDraftSync();
         }
       }
       if (Array.isArray(draft.pikettStore)) {
