@@ -847,8 +847,24 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #64748b;
+
 }
 
+
+/* Datumsfelder dürfen auf schmalen Geräten schrumpfen statt zu überlaufen */
+.absence-form-row--two {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.absence-form-row--two .absence-label {
+  min-width: 0;
+}
+
+.absence-form-row--two .absence-input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
 /* ============================================================
    Special Section (Spezialbuchungen)
    ============================================================ */
@@ -4512,6 +4528,17 @@ body.in-admin-view #view-admin {
   color: #f59e0b;
   flex-shrink: 0;
   cursor: default;
+}
+
+.admin-open-stamp-warning {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff1f2;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 /* Break Warning Modal */

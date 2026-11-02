@@ -870,6 +870,24 @@ app.get(
             };
           });
 
+                    // Vergangene Tage, deren letzter Stempel ein 'in' ist: der
+          // Ausstempel fehlt vermutlich (nicht synchronisiert).
+          const todayKey = formatDateKey(new Date());
+          const openStampDays = Object.entries(submission.days || {})
+            .filter(([dateKey, dayData]) => {
+              if (dateKey >= todayKey) return false;
+              const stamps = Array.isArray(dayData?.stamps)
+                ? [...dayData.stamps].sort((a, b) =>
+                    String(a.time).localeCompare(String(b.time))
+                  )
+                : [];
+              return (
+                stamps.length > 0 && stamps[stamps.length - 1].type === 'in'
+              );
+            })
+            .map(([dateKey]) => dateKey)
+            .sort();
+
           return {
             userId: user.id,
             username: user.username,
@@ -881,6 +899,7 @@ app.get(
               year,
               monthIndex,
               monthLabel,
+              openStampDays,
               transmitted: true,
               sentAt: monthRecord.meta.sentAt,
               monthTotalHours: overview.monthTotalHours,

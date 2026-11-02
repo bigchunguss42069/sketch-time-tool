@@ -824,8 +824,13 @@ document.addEventListener('visibilitychange', () => {
   if (!_draftLoadComplete) return;
   if (document.visibilityState === 'hidden') {
     syncDraftViaBeacon();
-  } else if (document.visibilityState === 'visible') {
+    } else if (document.visibilityState === 'visible') {
     flushLiveStampIfDirty();
+    // Ein Beacon beim Verlassen liefert keine Bestätigung. Steht noch etwas
+    // aus, sofort beim Zurückkehren erneut hochladen.
+    if (localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1') {
+      scheduleDraftSync();
+    }
   }
 });
 // Sobald die Verbindung wiederkommt (z. B. nach schlechtem Empfang im
@@ -7074,8 +7079,23 @@ function loadAdminSummary() {
         }
 
         // Assemble card
-        card.appendChild(header);
+                card.appendChild(header);
         card.appendChild(monthRow);
+
+        // Vergangene Tage, deren letzter Stempel ein Einstempeln ist:
+        // vermutlich fehlt der Ausstempel (z. B. nicht synchronisiert).
+        const openDays = Array.isArray(u.month?.openStampDays)
+          ? u.month.openStampDays
+          : [];
+        if (openDays.length > 0) {
+          const warn = document.createElement('div');
+          warn.className = 'admin-open-stamp-warning';
+          warn.textContent = `Ausstempeln fehlt vermutlich: ${openDays
+            .map((k) => formatShortDateFromKey(k))
+            .join(', ')}`;
+          card.appendChild(warn);
+        }
+
         card.appendChild(weekList);
 
         adminSummaryContainer.appendChild(card);
@@ -9650,7 +9670,9 @@ async function loadDraftFromServer() {
     const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
 
     const localRaw = localStorage.getItem(STORAGE_KEY + '_savedAt');
-    const localTime = localRaw ? new Date(localRaw).getTime() : 0;
+        const localTime = localRaw ? new Date(localRaw).getTime() : 0;
+    const localIsDirty =
+      localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1';
 
     if (serverTime > localTime) {
       if (draft.dayStore && typeof draft.dayStore === 'object') {
@@ -9700,10 +9722,22 @@ async function loadDraftFromServer() {
             const mergedStamps = Array.from(mergedMap.values());
             if (mergedStamps.length > serverStamps.length) needsPush = true;
 
-            cleanedServerDayStore[dateKey] = {
-              ...serverDay,
-              stamps: mergedStamps,
-            };
+                        // Ungesendete lokale Änderungen haben Vorrang vor dem Server-Stand
+            // dieses Tages, sonst überschreibt ein neuerer Server-Stand
+            // lokal erfasste Kommissionen und Stunden. Danach wird hochgeladen.
+            if (localIsDirty && localDay) {
+              cleanedServerDayStore[dateKey] = {
+                ...serverDay,
+                ...localDay,
+                stamps: mergedStamps,
+              };
+              needsPush = true;
+            } else {
+              cleanedServerDayStore[dateKey] = {
+                ...serverDay,
+                stamps: mergedStamps,
+              };
+            }
           }
         );
 
