@@ -997,11 +997,12 @@ function registerAnlagenRoutes(
     requireAdmin,
     exportPdfBody,
     async (req, res) => {
-      const teamId = String(req.body?.teamId || req.user.teamId || '');
+           // Wie anlagen-detail: ohne teamId werden alle Teams zusammengeführt,
+      // die diese Kom-Nr führen (sonst fehlen im PDF die Stunden der anderen
+      // Teams, obwohl sie in der Anlagen-Ansicht sichtbar sind).
+      const teamId = String(req.body?.teamId || '');
       const komNr = normalizeKomNr(req.body?.komNr);
 
-      if (!teamId)
-        return res.status(400).json({ ok: false, error: 'Missing teamId' });
       if (!komNr)
         return res.status(400).json({ ok: false, error: 'Missing komNr' });
 
@@ -1009,17 +1010,42 @@ function registerAnlagenRoutes(
       const ledger = await readAnlagenLedger(db);
       const meta = await readAnlagenArchive(db);
 
-      const teamObj =
-        index.teams?.[teamId] && typeof index.teams[teamId] === 'object'
-          ? index.teams[teamId]
-          : {};
-      const rec = teamObj[komNr];
+      let rec;
+      let ledgerRec;
+      if (teamId) {
+        const teamObj =
+          index.teams?.[teamId] && typeof index.teams[teamId] === 'object'
+            ? index.teams[teamId]
+            : {};
+        rec = teamObj[komNr];
+        ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
+      } else {
+        const matches = [];
+        for (const teamObj of Object.values(index.teams || {})) {
+          if (teamObj && teamObj[komNr]) matches.push(teamObj[komNr]);
+        }
+        rec = mergeAnlagenRecords(matches);
+
+        ledgerRec = { byUser: {} };
+        for (const teamLedger of Object.values(ledger || {})) {
+          const part = teamLedger?.[komNr];
+          if (!part) continue;
+          for (const [uname, userData] of Object.entries(part.byUser || {})) {
+            if (!ledgerRec.byUser[uname]) {
+              ledgerRec.byUser[uname] = { byDate: {} };
+            }
+            const target = ledgerRec.byUser[uname].byDate;
+            for (const [dk, h] of Object.entries(userData?.byDate || {})) {
+              target[dk] = (target[dk] || 0) + (Number(h) || 0);
+            }
+          }
+        }
+      }
       if (!rec)
         return res
           .status(404)
           .json({ ok: false, error: 'KomNr not found in index' });
 
-      const ledgerRec = ledger?.[teamId]?.[komNr] || { byUser: {} };
       const m = meta?.[komNr] || null;
 
       function dataUrlToPngBuffer(url) {

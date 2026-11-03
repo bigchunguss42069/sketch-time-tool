@@ -6081,8 +6081,8 @@ function renderAnlagenDetail(data) {
 async function exportAnlagePdf(komNr) {
   if (!komNr) throw new Error('Kom.-Nr fehlt');
 
-  const user = getCurrentUser();
-  const teamId = user?.teamId || '';
+    // Ohne teamId: alle Teams zusammengeführt, wie in der Anlagen-Ansicht
+  const teamId = '';
 
   // 1) Detail laden
   const detailRes = await authFetch(
