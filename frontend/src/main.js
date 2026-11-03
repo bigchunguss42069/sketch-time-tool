@@ -8595,7 +8595,7 @@ function renderAdminUsers(users) {
                 <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
         ${
           getCurrentUser()?.isFullAdmin && u.active !== false && u.email
-            ? `<button class="admin-user-btn" data-action="invite" data-id="${u.id}" data-username="${escapeHtml(u.username)}" data-email="${escapeHtml(u.email)}">Einladung senden</button>`
+            ? `<button class="admin-user-btn" data-action="invite" data-id="${u.id}" data-username="${escapeHtml(u.username)}" data-email="${escapeHtml(u.email)}">Einladung Senden</button>`
             : ''
         }
         <button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}" data-username="${u.username}">Löschen</button>
@@ -9925,6 +9925,46 @@ initDinoGame({ authFetch, escapeHtml });
     } finally {
       resetSendBtn.disabled = false;
     }
+  });
+})();
+
+// Auge-Symbol zum Anzeigen/Verbergen bei Passwortfeldern
+(() => {
+  const eyeSvg =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  const eyeOffSvg =
+    '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a19.8 19.8 0 0 1 5.06-5.94M9.9 4.24A10.9 10.9 0 0 1 12 4c7 0 11 7 11 7a19.7 19.7 0 0 1-3.17 4.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+  [
+    'loginPassword',
+    'resetPasswordInput',
+    'resetPasswordConfirm',
+    'modalPassword',
+  ].forEach((id) => {
+    const input = document.getElementById(id);
+    if (!input || input.dataset.pwToggle) return;
+    input.dataset.pwToggle = '1';
+
+    const wrap = document.createElement('span');
+    wrap.className = 'pw-toggle-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pw-toggle-btn';
+    btn.setAttribute('aria-label', 'Passwort anzeigen');
+    btn.innerHTML = eyeSvg;
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute(
+        'aria-label',
+        show ? 'Passwort verbergen' : 'Passwort anzeigen'
+      );
+      btn.innerHTML = show ? eyeOffSvg : eyeSvg;
+    });
+    wrap.appendChild(btn);
   });
 })();
 

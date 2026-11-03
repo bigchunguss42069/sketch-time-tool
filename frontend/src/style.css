@@ -847,9 +847,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #64748b;
-
 }
-
 
 /* Datumsfelder dürfen auf schmalen Geräten schrumpfen statt zu überlaufen */
 .absence-form-row--two {
@@ -2662,6 +2660,36 @@ body {
   color: white;
   font-size: 13px;
   font-weight: 600;
+}
+
+/* Passwort anzeigen/verbergen */
+.pw-toggle-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.pw-toggle-wrap input {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 44px;
+}
+.pw-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 0;
+}
+.pw-toggle-btn:hover {
+  color: var(--text);
 }
 
 /* ============================================================
