@@ -824,7 +824,7 @@ document.addEventListener('visibilitychange', () => {
   if (!_draftLoadComplete) return;
   if (document.visibilityState === 'hidden') {
     syncDraftViaBeacon();
-    } else if (document.visibilityState === 'visible') {
+  } else if (document.visibilityState === 'visible') {
     flushLiveStampIfDirty();
     // Ein Beacon beim Verlassen liefert keine Bestätigung. Steht noch etwas
     // aus, sofort beim Zurückkehren erneut hochladen.
@@ -1085,14 +1085,14 @@ async function syncDraftToServer() {
     const res = await authFetch('/api/draft/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data, basedOn }),
+      body: JSON.stringify({ data, basedOn }),
       timeoutMs: 20_000,
     });
 
     if (res.status === 409) {
       // Anderes Gerät hat neuere Daten — Server-Stand laden
       console.warn('Draft conflict: reloading from server');
-            await loadDraftFromServer();
+      await loadDraftFromServer();
       // Lokale Änderungen (z. B. ein Stempel, dessen Sync-Antwort bei
       // schlechtem Empfang verloren ging) müssen trotzdem hochgeladen werden.
       // Der Server merged ohnehin, daher gefahrlos.
@@ -1188,7 +1188,7 @@ function authFetch(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-    return fetch(`${BACKEND_BASE_URL}${path}`, {
+  return fetch(`${BACKEND_BASE_URL}${path}`, {
     ...fetchOptions,
     headers,
     ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
@@ -1224,7 +1224,7 @@ async function loadMyKontoFromServer() {
     if (!data.ok) return null;
 
     return {
-            konto: data.konto,
+      konto: data.konto,
       vacationPlanned: data.vacationPlanned || null,
       transmittedMonths: new Set(data.transmittedMonths || []),
     };
@@ -3863,7 +3863,7 @@ function renderAbsenceListForCurrentYear() {
 
   const { year } = getCurrentDashboardMonthInfo();
 
-    // Stornierte Nicht-Krank Absenzen ausblenden
+  // Stornierte Nicht-Krank Absenzen ausblenden
   const isVisible = (a) => !(a.status === 'cancelled' && a.type !== 'krank');
   const yearItems = getAbsencesForYear(year).filter(isVisible);
   // Absenzen, die erst in einem späteren Jahr beginnen (z. B. Ferien fürs
@@ -3871,7 +3871,9 @@ function renderAbsenceListForCurrentYear() {
   const laterItems = absenceRequests.filter((a) => {
     const start = new Date(a.from);
     return (
-      isVisible(a) && !Number.isNaN(start.getTime()) && start.getFullYear() > year
+      isVisible(a) &&
+      !Number.isNaN(start.getTime()) &&
+      start.getFullYear() > year
     );
   });
   const items = [...yearItems, ...laterItems];
@@ -3892,7 +3894,7 @@ function renderAbsenceListForCurrentYear() {
     return da - db;
   });
 
-    let lastGroupYear = null;
+  let lastGroupYear = null;
   items.forEach((req) => {
     const startYear = new Date(req.from).getFullYear();
     const itemYear = startYear > year ? startYear : year;
@@ -3926,7 +3928,7 @@ function renderAbsenceListForCurrentYear() {
       ? req.to
       : formatShortDate(toDate);
 
-        const daysForYear = computeAbsenceDaysForYear(req, itemYear);
+    const daysForYear = computeAbsenceDaysForYear(req, itemYear);
     const typeLabel = absenceTypeLabel(req.type);
 
     // Anzeige: nur Stunden wenn < 1 Tag, nur Tage wenn ganze Tage, kombiniert wenn beides
@@ -4288,7 +4290,7 @@ async function updateOvertimeYearCard() {
     overtimeYearUeZ3El.textContent = formatHours(officialUeZ3);
 
     if (vacationYearSummaryEl) {
-            vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
+      vacationYearSummaryEl.textContent = `${formatDays(officialVacationDays)} / ${formatDays(vacationDaysPerYear)} Tage`;
     }
 
     if (vacationNextYearRowEl) {
@@ -4297,7 +4299,7 @@ async function updateOvertimeYearCard() {
       vacationNextYearRowEl.style.display = showPlanned ? '' : 'none';
       if (showPlanned) {
         vacationNextYearLabelEl.textContent = `Ferien ${plannedInfo.year}:`;
-                vacationNextYearSummaryEl.textContent = `${formatDays(plannedInfo.free)} / ${formatDays(plannedInfo.perYear)} Tage`;
+        vacationNextYearSummaryEl.textContent = `${formatDays(plannedInfo.free)} / ${formatDays(plannedInfo.perYear)} Tage`;
       }
     }
 
@@ -6081,7 +6083,7 @@ function renderAnlagenDetail(data) {
 async function exportAnlagePdf(komNr) {
   if (!komNr) throw new Error('Kom.-Nr fehlt');
 
-    // Ohne teamId: alle Teams zusammengeführt, wie in der Anlagen-Ansicht
+  // Ohne teamId: alle Teams zusammengeführt, wie in der Anlagen-Ansicht
   const teamId = '';
 
   // 1) Detail laden
@@ -7079,7 +7081,7 @@ function loadAdminSummary() {
         }
 
         // Assemble card
-                card.appendChild(header);
+        card.appendChild(header);
         card.appendChild(monthRow);
 
         // Vergangene Tage, deren letzter Stempel ein Einstempeln ist:
@@ -8590,7 +8592,12 @@ function renderAdminUsers(users) {
       </div>
       <div class="admin-user-item-actions">
         <button class="admin-user-btn" data-action="edit" data-id="${u.id}">Bearbeiten</button>
-        <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
+                <button class="admin-user-btn" data-action="password" data-id="${u.id}" data-username="${u.username}">Passwort</button>
+        ${
+          getCurrentUser()?.isFullAdmin && u.active !== false && u.email
+            ? `<button class="admin-user-btn" data-action="invite" data-id="${u.id}" data-username="${escapeHtml(u.username)}" data-email="${escapeHtml(u.email)}">Einladung senden</button>`
+            : ''
+        }
         <button class="admin-user-btn danger" data-action="deactivate" data-id="${u.id}" data-username="${u.username}">Löschen</button>
       </div>
     </div>
@@ -8628,6 +8635,8 @@ function renderAdminUsers(users) {
       const username = btn.dataset.username;
       if (action === 'edit') openEditUserModal(id);
       else if (action === 'password') await resetUserPassword(id, username);
+      else if (action === 'invite')
+        await sendUserInvite(id, username, btn.dataset.email);
       else if (action === 'deactivate') {
         const username = btn.dataset.username;
         if (
@@ -8848,6 +8857,28 @@ async function resetUserPassword(userId, username) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     showToast(`Passwort für ${username} wurde geändert.`);
+  } catch (err) {
+    showToast(`Fehler: ${err.message}`);
+  }
+}
+
+async function sendUserInvite(userId, username, email) {
+  if (
+    !confirm(
+      `Einladung an ${username} senden?\n\nDie E-Mail geht an: ${email}\nDer Link zum Passwort-Festlegen ist 7 Tage gültig.`
+    )
+  )
+    return;
+
+  try {
+    const res = await authFetch(`/api/admin/users/${userId}/send-invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    showToast(`Einladung an ${data.email} gesendet.`);
   } catch (err) {
     showToast(`Fehler: ${err.message}`);
   }
@@ -9279,7 +9310,7 @@ async function sendLiveStamp(todayKey, stamps) {
     const res = await authFetch('/api/stamps/live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ todayKey, stamps }),
+      body: JSON.stringify({ todayKey, stamps }),
       keepalive: true,
       timeoutMs: 20_000,
     });
@@ -9670,7 +9701,7 @@ async function loadDraftFromServer() {
     const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
 
     const localRaw = localStorage.getItem(STORAGE_KEY + '_savedAt');
-        const localTime = localRaw ? new Date(localRaw).getTime() : 0;
+    const localTime = localRaw ? new Date(localRaw).getTime() : 0;
     const localIsDirty =
       localStorage.getItem(STORAGE_KEY + '_pendingSync') === '1';
 
@@ -9722,7 +9753,7 @@ async function loadDraftFromServer() {
             const mergedStamps = Array.from(mergedMap.values());
             if (mergedStamps.length > serverStamps.length) needsPush = true;
 
-                        // Ungesendete lokale Änderungen haben Vorrang vor dem Server-Stand
+            // Ungesendete lokale Änderungen haben Vorrang vor dem Server-Stand
             // dieses Tages, sonst überschreibt ein neuerer Server-Stand
             // lokal erfasste Kommissionen und Stunden. Danach wird hochgeladen.
             if (localIsDirty && localDay) {
@@ -9745,7 +9776,7 @@ async function loadDraftFromServer() {
         // den gesamten dayStore, kein Monats-Feld mehr nötig.
         Object.assign(dayStore, cleanedServerDayStore);
 
-                try {
+        try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(dayStore));
           localStorage.setItem(STORAGE_KEY + '_savedAt', data.updatedAt);
         } catch (err) {
@@ -9855,8 +9886,15 @@ initDinoGame({ authFetch, escapeHtml });
   resetSendBtn?.addEventListener('click', async () => {
     const password = resetInput.value;
     const confirm = resetConfirm.value;
-    if (password.length < 6) {
-      showMsg(resetMsg, 'Passwort muss mindestens 6 Zeichen haben.', 'error');
+    if (
+      password.length < 8 ||
+      !/[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)
+    ) {
+      showMsg(
+        resetMsg,
+        'Passwort muss mindestens 8 Zeichen und eine Zahl oder ein Sonderzeichen enthalten.',
+        'error'
+      );
       return;
     }
     if (password !== confirm) {

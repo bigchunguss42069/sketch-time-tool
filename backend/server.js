@@ -1603,6 +1603,100 @@ app.post(
   }
 );
 
+// POST /api/admin/users/:id/send-invite — Einladungsmail mit Link zum
+// Festlegen des eigenen Passworts. Nutzt den bestehenden Reset-Flow
+// (/?reset=TOKEN), der Link ist aber 7 Tage statt 1 Stunde gültig.
+// Nur Voll-Admins: Die Mail geht immer an die hinterlegte Adresse des
+// Mitarbeiters, ein Admin darf sich so nicht Zugang zu fremden Konten holen.
+const inviteCooldown = new Map(); // userId -> Zeitpunkt der letzten Einladung
+app.post(
+  '/api/admin/users/:id/send-invite',
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    if (!req.user.isFullAdmin) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Nur Voll-Admins dürfen Einladungen senden',
+      });
+    }
+
+    const { id } = req.params;
+    const last = inviteCooldown.get(id);
+    if (last && Date.now() - last < 60_000) {
+      return res.status(429).json({
+        ok: false,
+        error: 'Einladung wurde gerade erst gesendet. Bitte kurz warten.',
+      });
+    }
+
+    try {
+      const found = await db.query(
+        'SELECT id, username, email, active FROM users WHERE id = $1',
+        [id]
+      );
+      const target = found.rows[0];
+      if (!target) {
+        return res.status(404).json({ ok: false, error: 'User not found' });
+      }
+      if (!target.active) {
+        return res
+          .status(400)
+          .json({ ok: false, error: 'Der Account ist inaktiv' });
+      }
+      if (!target.email) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Für diesen Mitarbeiter ist keine E-Mail-Adresse hinterlegt',
+        });
+      }
+
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await db.query(
+        `INSERT INTO password_reset_tokens (token, user_id, expires_at)
+         VALUES ($1, $2, $3)`,
+        [token, target.id, expiresAt]
+      );
+
+      const appUrl = process.env.APP_URL || 'https://xn--normaufzge-heb.app';
+      const inviteUrl = `${appUrl}/?reset=${token}`;
+
+      try {
+        await createMailTransporter().sendMail({
+          from: `"Norm Aufzüge" <${process.env.SMTP_USER}>`,
+          to: target.email,
+          subject: 'Einladung zur Zeiterfassung',
+          text: `Hallo ${target.username}\n\nDu wurdest zur Zeiterfassung von Norm Aufzüge eingeladen.\n\nDein Benutzername: ${target.username}\n\nMit diesem Link legst du dein eigenes Passwort fest (7 Tage gültig):\n\n${inviteUrl}\n\nDanach kannst du dich hier anmelden:\n${appUrl}\n\nFalls du diese Einladung nicht erwartet hast, kannst du diese E-Mail ignorieren.\n\nFreundliche Grüsse\nNorm Aufzüge AG`,
+        });
+      } catch (mailErr) {
+        await db.query('DELETE FROM password_reset_tokens WHERE token = $1', [
+          token,
+        ]);
+        throw mailErr;
+      }
+
+      // Frühere, noch offene Links ungültig machen (nur der neueste gilt)
+      await db.query(
+        `UPDATE password_reset_tokens SET used = TRUE
+         WHERE user_id = $1 AND used = FALSE AND token <> $2`,
+        [target.id, token]
+      );
+
+      inviteCooldown.set(id, Date.now());
+      console.log(
+        `[AUDIT] INVITE_SENT username=${target.username} by=${req.user.username} ip=${req.ip}`
+      );
+      return res.json({ ok: true, email: target.email });
+    } catch (err) {
+      console.error('Failed to send invite', err);
+      return res
+        .status(500)
+        .json({ ok: false, error: 'Einladung konnte nicht gesendet werden' });
+    }
+  }
+);
+
 // POST /api/admin/users/:id/deactivate — löscht User und alle Daten
 app.post(
   '/api/admin/users/:id/deactivate',
